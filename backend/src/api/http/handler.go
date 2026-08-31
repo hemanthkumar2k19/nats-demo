@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -54,11 +55,44 @@ func (h *Handler) GetStatus(c *gin.Context) {
 	}
 
 	processorStatus := "OFFLINE"
+	isProcessing := false
 	if natsStatus == "CONNECTED" {
 		// Ping the processor using Request/Reply
 		reply, err := h.natsClient.Conn.Request("status.processor", nil, 250*time.Millisecond)
 		if err == nil && len(reply.Data) > 0 {
 			processorStatus = "ACTIVE"
+			var statusResp struct {
+				Status     string `json:"status"`
+				Processing bool   `json:"processing"`
+			}
+			if err := json.Unmarshal(reply.Data, &statusResp); err == nil {
+				isProcessing = statusResp.Processing
+			}
+		}
+	}
+
+	// Fetch JetStream JOBS stream pending message count
+	var jsInfo gin.H
+	if natsStatus == "CONNECTED" {
+		js, err := h.natsClient.Conn.JetStream()
+		if err == nil {
+			// First try to bind/query durable consumer stats
+			cinfo, err := js.ConsumerInfo("JOBS", "processor-durable")
+			if err == nil {
+				jsInfo = gin.H{
+					"stream":  "JOBS",
+					"pending": cinfo.NumPending,
+				}
+			} else {
+				// Fallback to general stream message count if consumer is not created yet
+				sinfo, err := js.StreamInfo("JOBS")
+				if err == nil {
+					jsInfo = gin.H{
+						"stream":  "JOBS",
+						"pending": sinfo.State.Msgs,
+					}
+				}
+			}
 		}
 	}
 
@@ -73,10 +107,12 @@ func (h *Handler) GetStatus(c *gin.Context) {
 				"status": "ACTIVE",
 			},
 			{
-				"name":   "processor-service",
-				"status": processorStatus,
+				"name":       "processor-service",
+				"status":     processorStatus,
+				"processing": isProcessing,
 			},
 		},
+		"jetstream": jsInfo,
 	})
 }
 
@@ -88,6 +124,10 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 		return
 	}
 
+	if job.DeliveryMode == "" {
+		job.DeliveryMode = "CORE"
+	}
+
 	correlationID := c.GetHeader("X-Correlation-Id")
 	if correlationID == "" {
 		correlationID = "corr-" + job.JobID
@@ -97,6 +137,37 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// For CORE delivery mode, if processor is OFF (not active or not processing),
+	// publish a SubjectJobNoConsumer lifecycle event immediately to represent transient message loss.
+	if job.DeliveryMode == "CORE" {
+		isProcessing := false
+		reply, err := h.natsClient.Conn.Request("status.processor", nil, 100*time.Millisecond)
+		if err == nil {
+			var processorStatus struct {
+				Status     string `json:"status"`
+				Processing bool   `json:"processing"`
+			}
+			if err := json.Unmarshal(reply.Data, &processorStatus); err == nil {
+				isProcessing = processorStatus.Processing
+			}
+		}
+
+		if !isProcessing {
+			pub := messaging.NewPublisher(h.natsClient)
+			_ = pub.PublishJobLifecycle(
+				messaging.SubjectJobNoConsumer,
+				job.JobID,
+				"NO CONSUMER",
+				1,
+				"No active consumer for Core NATS message",
+				correlationID,
+				"demo-service",
+				job.DeliveryMode,
+				0,
+			)
+		}
 	}
 
 	c.JSON(http.StatusAccepted, resp)
@@ -167,5 +238,39 @@ func (h *Handler) GetAddressingActivity(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"events": events,
 	})
+}
+
+// PutProcessorState handles changing the processing state of the processor service.
+func (h *Handler) PutProcessorState(c *gin.Context) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		return
+	}
+
+	payload, err := json.Marshal(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal control request"})
+		return
+	}
+
+	reply, err := h.natsClient.Conn.Request(messaging.SubjectProcessorStateSet, payload, 1*time.Second)
+	if err != nil {
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "Processor service did not respond. Is it running?"})
+		return
+	}
+
+	var resp struct {
+		Enabled bool   `json:"enabled"`
+		Status  string `json:"status"`
+	}
+	if err := json.Unmarshal(reply.Data, &resp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid response from processor service"})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 

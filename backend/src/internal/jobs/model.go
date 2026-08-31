@@ -4,9 +4,10 @@ import "time"
 
 // Job represents a work item submitted to the platform.
 type Job struct {
-	JobID   string                 `json:"job_id"`
-	Type    string                 `json:"type"`
-	Payload map[string]interface{} `json:"payload"`
+	JobID        string                 `json:"job_id"`
+	Type         string                 `json:"type"`
+	Payload      map[string]interface{} `json:"payload"`
+	DeliveryMode string                 `json:"delivery_mode,omitempty"`
 }
 
 // JobStatusResponse represents the HTTP response returned on job submission or status query.

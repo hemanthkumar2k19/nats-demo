@@ -9,4 +9,10 @@ const (
 	SubjectJobProcessingFailed    = "jobs.processing.failed"
 	SubjectJobCompleted           = "jobs.completed"
 	SubjectJobFailed              = "jobs.failed"
+	SubjectJobStored              = "jobs.stored"
+	SubjectJobDelivered           = "jobs.delivered"
+	SubjectJobAcked               = "jobs.acked"
+	SubjectJobReceived            = "jobs.received"
+	SubjectJobNoConsumer          = "jobs.noconsumer"
+	SubjectProcessorStateSet      = "processor.state.set"
 )

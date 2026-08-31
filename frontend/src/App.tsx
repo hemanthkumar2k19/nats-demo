@@ -21,7 +21,9 @@ import {
   AddressingSubscription,
   AddressingEvent,
   getAddressingSubscriptions,
-  getAddressingActivity
+  getAddressingActivity,
+  JetStreamInfo,
+  updateProcessorState
 } from './api/demoApi';
 
 const DEFAULT_SERVICES: ServiceStatus[] = [
@@ -32,6 +34,7 @@ const DEFAULT_SERVICES: ServiceStatus[] = [
 
 export const App: React.FC = () => {
   const [services, setServices] = useState<ServiceStatus[]>(DEFAULT_SERVICES);
+  const [jetstreamInfo, setJetstreamInfo] = useState<JetStreamInfo | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -72,7 +75,8 @@ export const App: React.FC = () => {
     if (!silent) setError(null);
     try {
       const res = await getServiceStatus();
-      setServices(res);
+      setServices(res.services);
+      setJetstreamInfo(res.jetstream || null);
     } catch (err: any) {
       if (!silent) {
         setError(err.message || 'Failed to refresh service status');
@@ -82,6 +86,7 @@ export const App: React.FC = () => {
         { name: 'demo-service (8080)', status: 'disconnected', details: 'Demo backend is unreachable' },
         { name: 'processor-service', status: 'disconnected', details: 'Demo backend is unreachable' },
       ]);
+      setJetstreamInfo(null);
     } finally {
       if (!silent) {
         setIsRefreshingStatus(false);
@@ -146,18 +151,32 @@ export const App: React.FC = () => {
         subject: 'jobs.submitted',
         worker: '',
         delivery_count: 1,
+        delivery_mode: job.delivery_mode,
       };
       setActivities((prev) => [newActivity, ...prev]);
 
-      // Refresh addressing activity after short delay to let events propagate
+      // Refresh addressing and status activity after short delay to let events propagate
       setTimeout(() => {
-        refreshAddressing(true);
+        refreshActivity(true);
+        refreshStatus(true);
       }, 500);
     } catch (err: any) {
       setError(err.message || 'Job submission failed');
       throw err;
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleProcessor = async (enabled: boolean) => {
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await updateProcessorState(enabled);
+      setSuccess(`Processor state changed to ${res.status}`);
+      await refreshStatus(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to toggle processor state');
     }
   };
 
@@ -240,7 +259,9 @@ export const App: React.FC = () => {
 
           <StatusPanel 
             services={services} 
+            jetstreamInfo={jetstreamInfo}
             onRefresh={() => refreshStatus(false)} 
+            onToggleProcessor={handleToggleProcessor}
             isLoading={isRefreshingStatus}
           />
         </div>

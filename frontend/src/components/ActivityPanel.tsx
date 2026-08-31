@@ -11,13 +11,22 @@ interface ActivityPanelProps {
 export const ActivityPanel: React.FC<ActivityPanelProps> = ({ activities, onRefresh, isLoading, onSelectJob }) => {
   const getBadgeClass = (event: string) => {
     switch (event.toUpperCase()) {
+      case 'PUBLISHED':
       case 'SUBMITTED':
         return 'badge-submitted';
+      case 'STORED':
+        return 'badge-stored';
+      case 'RECEIVED':
+      case 'DELIVERED':
+        return 'badge-delivered';
       case 'PROCESSING':
         return 'badge-processing';
       case 'COMPLETED':
+      case 'ACKED':
         return 'badge-completed';
       case 'FAILED':
+      case 'NO CONSUMER':
+      case 'NO_ACTIVE_CONSUMER':
         return 'badge-failed';
       default:
         return '';
@@ -56,7 +65,9 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({ activities, onRefr
               <tr>
                 <th>Time</th>
                 <th>Job ID</th>
+                <th>Mode</th>
                 <th>Event</th>
+                <th>Seq</th>
                 <th>Subject</th>
                 <th>Worker</th>
                 <th style={{ textAlign: 'center' }}>Dlv. Count</th>
@@ -86,10 +97,16 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({ activities, onRefr
                       {act.job_id}
                     </button>
                   </td>
+                  <td className="mono-cell" style={{ fontSize: '0.8125rem', color: act.delivery_mode === 'JETSTREAM' ? '#A78BFA' : 'var(--text-secondary)' }}>
+                    {act.delivery_mode || '-'}
+                  </td>
                   <td>
                     <span className={`badge ${getBadgeClass(act.event)}`}>
                       {act.event}
                     </span>
+                  </td>
+                  <td className="mono-cell" style={{ color: 'var(--text-muted)' }}>
+                    {act.sequence ? `#${act.sequence}` : '-'}
                   </td>
                   <td className="mono-cell" style={{ color: 'var(--accent-cyan)' }}>
                     {act.subject}

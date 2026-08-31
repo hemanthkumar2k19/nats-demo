@@ -20,7 +20,7 @@ func NewPublisher(client *natsclient.Client) *Publisher {
 	return &Publisher{client: client}
 }
 
-// PublishJobSubmitted marshals the job to JSON and publishes it to the jobs.submitted subject.
+// PublishJobSubmitted marshals the job to JSON and publishes it to the jobs.submitted subject using the selected delivery mode.
 func (p *Publisher) PublishJobSubmitted(job jobs.Job, correlationID string) error {
 	payload, err := json.Marshal(job)
 	if err != nil {
@@ -35,10 +35,24 @@ func (p *Publisher) PublishJobSubmitted(job jobs.Job, correlationID string) erro
 		msg.Header.Set("X-Correlation-Id", correlationID)
 	}
 	msg.Header.Set("X-Source", "demo-service")
+	msg.Header.Set("X-Delivery-Mode", job.DeliveryMode)
 	msg.Data = payload
 
-	if err := p.client.Conn.PublishMsg(msg); err != nil {
-		return fmt.Errorf("failed to publish to NATS: %w", err)
+	if job.DeliveryMode == "JETSTREAM" {
+		js, err := p.client.Conn.JetStream()
+		if err != nil {
+			return fmt.Errorf("failed to get JetStream context: %w", err)
+		}
+		ack, err := js.PublishMsg(msg)
+		if err != nil {
+			return fmt.Errorf("failed to publish to JetStream: %w", err)
+		}
+		// Stored successfully: publish jobs.stored event
+		_ = p.PublishJobLifecycle(SubjectJobStored, job.JobID, "STORED", 1, "", correlationID, "demo-service", job.DeliveryMode, ack.Sequence)
+	} else {
+		if err := p.client.Conn.PublishMsg(msg); err != nil {
+			return fmt.Errorf("failed to publish to NATS: %w", err)
+		}
 	}
 
 	return nil
@@ -76,15 +90,19 @@ type JobLifecycleEvent struct {
 	Status        string `json:"status"`
 	DeliveryCount int    `json:"delivery_count"`
 	Error         string `json:"error,omitempty"`
+	DeliveryMode  string `json:"delivery_mode,omitempty"`
+	Sequence      uint64 `json:"sequence,omitempty"`
 }
 
 // PublishJobLifecycle publishes a job lifecycle transition event.
-func (p *Publisher) PublishJobLifecycle(subject string, jobID string, status string, deliveryCount int, errMsg string, correlationID string, workerName string) error {
+func (p *Publisher) PublishJobLifecycle(subject string, jobID string, status string, deliveryCount int, errMsg string, correlationID string, workerName string, deliveryMode string, sequence uint64) error {
 	event := JobLifecycleEvent{
 		JobID:         jobID,
 		Status:        status,
 		DeliveryCount: deliveryCount,
 		Error:         errMsg,
+		DeliveryMode:  deliveryMode,
+		Sequence:      sequence,
 	}
 
 	payload, err := json.Marshal(event)

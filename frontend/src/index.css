@@ -231,10 +231,10 @@ body {
   opacity: 0.4;
 }
 
-.indicator-dot.active, .indicator-dot.connected {
+.indicator-dot.active, .indicator-dot.connected, .indicator-dot.running {
   background-color: var(--status-success);
 }
-.indicator-dot.active::after, .indicator-dot.connected::after {
+.indicator-dot.active::after, .indicator-dot.connected::after, .indicator-dot.running::after {
   background-color: var(--status-success);
 }
 
@@ -245,10 +245,10 @@ body {
   background-color: var(--status-danger);
 }
 
-.indicator-dot.warning, .indicator-dot.processing {
+.indicator-dot.warning, .indicator-dot.processing, .indicator-dot.stopped {
   background-color: var(--status-warning);
 }
-.indicator-dot.warning::after, .indicator-dot.processing::after {
+.indicator-dot.warning::after, .indicator-dot.processing::after, .indicator-dot.stopped::after {
   background-color: var(--status-warning);
 }
 
@@ -447,6 +447,24 @@ body {
   background: rgba(239, 68, 68, 0.1);
   color: #F87171;
   border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.badge-published {
+  background: rgba(59, 130, 246, 0.1);
+  color: #60A5FA;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.badge-stored {
+  background: rgba(139, 92, 246, 0.1);
+  color: #A78BFA;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.badge-delivered, .badge-received {
+  background: rgba(6, 182, 212, 0.1);
+  color: #22D3EE;
+  border: 1px solid rgba(6, 182, 212, 0.2);
 }
 
 /* Toast/Alert notification banner */

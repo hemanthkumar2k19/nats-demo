@@ -1,14 +1,22 @@
 import React from 'react';
 import { StatusIndicator } from './StatusIndicator';
-import { ServiceStatus } from '../api/demoApi';
+import { ServiceStatus, JetStreamInfo } from '../api/demoApi';
 
 interface StatusPanelProps {
   services: ServiceStatus[];
+  jetstreamInfo?: JetStreamInfo | null;
   onRefresh: () => void;
+  onToggleProcessor: (enabled: boolean) => Promise<void>;
   isLoading: boolean;
 }
 
-export const StatusPanel: React.FC<StatusPanelProps> = ({ services, onRefresh, isLoading }) => {
+export const StatusPanel: React.FC<StatusPanelProps> = ({
+  services,
+  jetstreamInfo,
+  onRefresh,
+  onToggleProcessor,
+  isLoading,
+}) => {
   return (
     <div className="panel">
       <div className="panel-header">
@@ -35,13 +43,64 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({ services, onRefresh, i
           </div>
         ) : (
           services.map((svc) => (
-            <div key={svc.name} className="status-item">
-              <span className="status-name">{svc.name}</span>
-              <StatusIndicator status={svc.status} label={svc.status === 'active' ? 'Active' : svc.status === 'connected' ? 'Connected' : svc.status === 'disconnected' ? 'Disconnected' : 'Unknown'} />
+            <div key={svc.name} className="status-item" style={{ flexWrap: 'wrap', gap: '0.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                <span className="status-name">{svc.name}</span>
+                <StatusIndicator 
+                  status={svc.status} 
+                  label={
+                    svc.status === 'active' ? 'Active' : 
+                    svc.status === 'connected' ? 'Connected' : 
+                    svc.status === 'disconnected' ? 'Disconnected' : 
+                    svc.status === 'stopped' ? 'Stopped' : svc.status
+                  } 
+                />
+              </div>
+              {svc.name === 'processor-service' && svc.status !== 'disconnected' && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginTop: '0.25rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Processing: <strong style={{ color: svc.processing ? '#34D399' : '#F87171' }}>{svc.processing ? 'ON' : 'OFF'}</strong>
+                  </span>
+                  <button
+                    className={`btn ${svc.processing ? 'btn-secondary' : 'btn-primary'}`}
+                    style={{ padding: '0.125rem 0.375rem', fontSize: '0.75rem', height: 'auto', minHeight: 'unset' }}
+                    onClick={() => onToggleProcessor(!svc.processing)}
+                  >
+                    {svc.processing ? 'Turn OFF' : 'Turn ON'}
+                  </button>
+                </div>
+              )}
             </div>
           ))
         )}
       </div>
+
+      {jetstreamInfo && (
+        <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+            JetStream Info
+          </div>
+          <div className="status-item">
+            <span className="status-name">Stream</span>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 500, fontFamily: 'var(--font-mono)' }}>{jetstreamInfo.stream}</span>
+          </div>
+          <div className="status-item">
+            <span className="status-name">Pending Messages</span>
+            <span className="badge" style={{ 
+              fontSize: '0.8125rem', 
+              fontFamily: 'var(--font-mono)',
+              background: jetstreamInfo.pending > 0 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+              color: jetstreamInfo.pending > 0 ? '#FBBF24' : '#34D399',
+              border: jetstreamInfo.pending > 0 ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+              padding: '0.125rem 0.375rem',
+              borderRadius: '4px',
+              fontWeight: 600
+            }}>
+              {jetstreamInfo.pending}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -13,6 +13,8 @@ type Activity struct {
 	Subject       string `json:"subject"`
 	Worker        string `json:"worker"`
 	DeliveryCount int    `json:"delivery_count"`
+	DeliveryMode  string `json:"delivery_mode,omitempty"`
+	Sequence      uint64 `json:"sequence,omitempty"`
 }
 
 // JobStore tracks job details and a capped list of activities.
@@ -31,7 +33,7 @@ func NewJobStore() *JobStore {
 }
 
 // AddEvent records a lifecycle event and updates the corresponding job detail.
-func (s *JobStore) AddEvent(jobID string, status string, deliveryCount int, correlationID string, subject string, worker string) {
+func (s *JobStore) AddEvent(jobID string, status string, deliveryCount int, correlationID string, subject string, worker string, deliveryMode string, sequence uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -69,6 +71,8 @@ func (s *JobStore) AddEvent(jobID string, status string, deliveryCount int, corr
 		Subject:       subject,
 		Worker:        worker,
 		DeliveryCount: deliveryCount,
+		DeliveryMode:  deliveryMode,
+		Sequence:      sequence,
 	}}, s.activities...)
 
 	// Cap activities at 200 to prevent unbounded memory growth

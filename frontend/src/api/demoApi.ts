@@ -2,6 +2,7 @@ export interface Job {
   job_id: string;
   type: string;
   payload: Record<string, any>;
+  delivery_mode?: string;
 }
 
 export interface JobStatusResponse {
@@ -17,12 +18,25 @@ export interface Activity {
   subject: string;
   worker: string;
   delivery_count: number;
+  delivery_mode?: string;
+  sequence?: number;
 }
 
 export interface ServiceStatus {
   name: string;
-  status: 'active' | 'connected' | 'disconnected' | 'unknown';
+  status: 'active' | 'connected' | 'disconnected' | 'unknown' | 'running' | 'stopped';
   details: string;
+  processing?: boolean;
+}
+
+export interface JetStreamInfo {
+  stream: string;
+  pending: number;
+}
+
+export interface SystemStatusResponse {
+  services: ServiceStatus[];
+  jetstream?: JetStreamInfo;
 }
 
 const API_BASE_URL = 'http://localhost:8080';
@@ -74,7 +88,7 @@ export async function validateJob(job: Job): Promise<{ valid: boolean; message: 
  * Retrieves the status/list of services.
  * Calls real GET /status from the Go backend.
  */
-export async function getServiceStatus(): Promise<ServiceStatus[]> {
+export async function getServiceStatus(): Promise<SystemStatusResponse> {
   const response = await fetch(`${API_BASE_URL}/status`);
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
@@ -82,11 +96,11 @@ export async function getServiceStatus(): Promise<ServiceStatus[]> {
   }
 
   const data = await response.json();
-  const result: ServiceStatus[] = [];
+  const services: ServiceStatus[] = [];
 
   // 1. Map NATS Server status
   const natsConnected = data.nats?.status === 'CONNECTED';
-  result.push({
+  services.push({
     name: 'NATS Server',
     status: natsConnected ? 'connected' : 'disconnected',
     details: natsConnected ? 'Connected to NATS broker' : 'Disconnected from NATS broker',
@@ -96,15 +110,32 @@ export async function getServiceStatus(): Promise<ServiceStatus[]> {
   if (Array.isArray(data.services)) {
     data.services.forEach((svc: any) => {
       const isActive = svc.status === 'ACTIVE';
-      result.push({
-        name: svc.name,
-        status: isActive ? 'active' : 'disconnected',
-        details: isActive ? 'Service is operational' : 'Service is offline',
-      });
+      if (svc.name === 'processor-service') {
+        const isProcessing = svc.processing === true;
+        services.push({
+          name: svc.name,
+          status: isActive ? (isProcessing ? 'active' : 'stopped') : 'disconnected',
+          details: isActive 
+            ? (isProcessing ? 'Processor is active and processing messages' : 'Processor is paused')
+            : 'Service is offline',
+          processing: isProcessing,
+        });
+      } else {
+        services.push({
+          name: svc.name,
+          status: isActive ? 'active' : 'disconnected',
+          details: isActive ? 'Service is operational' : 'Service is offline',
+        });
+      }
     });
   }
 
-  return result;
+  const jetstream = data.jetstream ? {
+    stream: data.jetstream.stream,
+    pending: data.jetstream.pending,
+  } : undefined;
+
+  return { services, jetstream };
 }
 
 /**
@@ -217,6 +248,32 @@ export async function getAddressingActivity(): Promise<AddressingEvent[]> {
   }
   const data = await response.json();
   return data.events || [];
+}
+
+export interface ProcessorStateResponse {
+  enabled: boolean;
+  status: string;
+}
+
+/**
+ * Updates the processor state (ON/OFF).
+ * Calls PUT /processor/state.
+ */
+export async function updateProcessorState(enabled: boolean): Promise<ProcessorStateResponse> {
+  const response = await fetch(`${API_BASE_URL}/processor/state`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ enabled }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to update processor state: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+
+  return response.json();
 }
 
 

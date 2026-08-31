@@ -16,6 +16,7 @@ export const JobPanel: React.FC<JobPanelProps> = ({
 }) => {
   const [jobId, setJobId] = useState<string>(`job-${Math.floor(100 + Math.random() * 900)}`);
   const [jobType, setJobType] = useState<string>('image-processing');
+  const [deliveryMode, setDeliveryMode] = useState<string>('CORE');
   const [payloadStr, setPayloadStr] = useState<string>(
     JSON.stringify({ file: 'image-101.jpg', simulate_failure: false, simulate_failure_count: 0 }, null, 2)
   );
@@ -36,6 +37,7 @@ export const JobPanel: React.FC<JobPanelProps> = ({
         job_id: jobId,
         type: jobType,
         payload: parsedPayload,
+        delivery_mode: deliveryMode,
       };
       await onSubmitJob(job);
       // Auto-increment Job ID suffix for convenience in consecutive runs
@@ -64,6 +66,7 @@ export const JobPanel: React.FC<JobPanelProps> = ({
         job_id: jobId,
         type: jobType,
         payload: parsedPayload,
+        delivery_mode: deliveryMode,
       };
       await onValidateJob(job);
     } catch (err: any) {
@@ -87,6 +90,34 @@ export const JobPanel: React.FC<JobPanelProps> = ({
       </div>
 
       <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label className="form-label">Delivery Mode</label>
+          <div style={{ display: 'flex', gap: '1rem', marginTop: '0.25rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', cursor: 'pointer', fontSize: '0.8125rem' }}>
+              <input
+                type="radio"
+                name="deliveryMode"
+                value="CORE"
+                checked={deliveryMode === 'CORE'}
+                onChange={() => setDeliveryMode('CORE')}
+                disabled={isSubmitting || isValidating}
+              />
+              Core NATS (Transient)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', cursor: 'pointer', fontSize: '0.8125rem' }}>
+              <input
+                type="radio"
+                name="deliveryMode"
+                value="JETSTREAM"
+                checked={deliveryMode === 'JETSTREAM'}
+                onChange={() => setDeliveryMode('JETSTREAM')}
+                disabled={isSubmitting || isValidating}
+              />
+              JetStream (Durable)
+            </label>
+          </div>
+        </div>
+
         <div className="form-group">
           <label className="form-label" htmlFor="jobId">Job ID</label>
           <input

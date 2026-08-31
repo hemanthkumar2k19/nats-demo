@@ -49,6 +49,13 @@ func (a *App) Init() error {
 	a.natsClient = client
 	log.Println("[Init] Connected to NATS wrapper client")
 
+	// Ensure the JOBS JetStream stream exists
+	if err := a.natsClient.EnsureJobsStream(); err != nil {
+		log.Printf("[Init] Warning: failed to ensure JOBS stream: %v", err)
+	} else {
+		log.Println("[Init] Guaranteed JOBS JetStream stream exists")
+	}
+
 	publisher := messaging.NewPublisher(a.natsClient)
 	a.jobService = jobs.NewService(publisher)
 	a.observer = messaging.NewObserver()
