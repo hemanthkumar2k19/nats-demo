@@ -103,11 +103,11 @@ func (s *Service) ProcessLifecycleEvent(subject string, data []byte, correlation
 	switch subject {
 	case "jobs.submitted":
 		status = "SUBMITTED"
-	case "jobs.processing":
+	case "jobs.processing.started", "jobs.processing":
 		status = "PROCESSING"
-	case "jobs.completed":
+	case "jobs.processing.completed", "jobs.completed":
 		status = "COMPLETED"
-	case "jobs.failed":
+	case "jobs.processing.failed", "jobs.failed":
 		status = "FAILED"
 	default:
 		status = payload.Status

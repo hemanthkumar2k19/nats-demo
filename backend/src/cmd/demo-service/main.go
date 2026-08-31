@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -28,6 +29,8 @@ type App struct {
 	httpServer   *http.Server
 	jobService   *jobs.Service
 	lifecycleSub *nats.Subscription
+	observer     *messaging.Observer
+	observerSubs []*nats.Subscription
 }
 
 // Init loads configuration, establishes connections, and configures routing.
@@ -48,7 +51,8 @@ func (a *App) Init() error {
 
 	publisher := messaging.NewPublisher(a.natsClient)
 	a.jobService = jobs.NewService(publisher)
-	handler := apihttp.NewHandler(a.jobService, a.natsClient)
+	a.observer = messaging.NewObserver()
+	handler := apihttp.NewHandler(a.jobService, a.natsClient, a.observer)
 
 	router := gin.Default()
 	apihttp.RegisterRoutes(router, handler)
@@ -79,6 +83,35 @@ func (a *App) Run() error {
 	a.lifecycleSub = sub
 	log.Println("[Run] Subscribed to jobs.* NATS wildcard events")
 
+	// Subscribe to NATS observer subjects for subject addressing demo
+	a.observerSubs = make([]*nats.Subscription, 0)
+	subsConfig := []struct {
+		name    string
+		subject string
+	}{
+		{"exact", "jobs.submitted"},
+		{"single-level", "jobs.*"},
+		{"multi-level", "jobs.>"},
+	}
+
+	for _, cfg := range subsConfig {
+		subName := cfg.name
+		subSubject := cfg.subject
+		oSub, err := a.natsClient.Conn.Subscribe(subSubject, func(msg *nats.Msg) {
+			msgID := msg.Header.Get("X-Message-Id")
+			if msgID == "" {
+				msgID = fmt.Sprintf("fallback-%s-%s", msg.Subject, string(msg.Data))
+			}
+			jobID := parseJobID(msg.Data)
+			a.observer.RecordEvent(msgID, subName, msg.Subject, jobID)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to subscribe to observer subject %s: %w", subSubject, err)
+		}
+		a.observerSubs = append(a.observerSubs, oSub)
+		log.Printf("[Observer] Subscribed to subject: %s as %s", subSubject, subName)
+	}
+
 	go func() {
 		log.Printf("[Run] HTTP server listening on :%s", a.cfg.Port)
 		if err := a.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -96,6 +129,15 @@ func (a *App) Run() error {
 
 // Stop gracefully tears down the HTTP server and NATS connection.
 func (a *App) Stop() {
+	log.Println("[Stop] Unsubscribing addressing observer subscriptions...")
+	for _, sub := range a.observerSubs {
+		if sub != nil {
+			if err := sub.Unsubscribe(); err != nil {
+				log.Printf("[Stop] Observer unsubscribe failed: %v", err)
+			}
+		}
+	}
+
 	log.Println("[Stop] Unsubscribing lifecycle events...")
 	if a.lifecycleSub != nil {
 		if err := a.lifecycleSub.Unsubscribe(); err != nil {
@@ -141,4 +183,14 @@ func main() {
 	log.Println("Stopping demo-service...")
 	app.Stop()
 	log.Println("demo-service stopped gracefully")
+}
+
+func parseJobID(data []byte) string {
+	var payload struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return ""
+	}
+	return payload.JobID
 }

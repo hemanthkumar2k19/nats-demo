@@ -72,7 +72,7 @@ func (a *App) Run() error {
 
 		// 1. Publish Processing lifecycle event
 		if err := a.publisher.PublishJobLifecycle(
-			messaging.SubjectJobProcessing,
+			messaging.SubjectJobProcessingStarted,
 			job.JobID,
 			"PROCESSING",
 			attemptCount,
@@ -105,6 +105,18 @@ func (a *App) Run() error {
 
 			// Publish Failed lifecycle event
 			if err := a.publisher.PublishJobLifecycle(
+				messaging.SubjectJobProcessingFailed,
+				job.JobID,
+				"FAILED",
+				attemptCount,
+				errMsg,
+				correlationID,
+				workerName,
+			); err != nil {
+				log.Printf("[%s] Failed to publish processing failed event: %v", workerName, err)
+			}
+
+			if err := a.publisher.PublishJobLifecycle(
 				messaging.SubjectJobFailed,
 				job.JobID,
 				"FAILED",
@@ -120,6 +132,18 @@ func (a *App) Run() error {
 
 		// 4. Publish Completed lifecycle event on success
 		log.Printf("[%s] Job %s processed successfully", workerName, job.JobID)
+		if err := a.publisher.PublishJobLifecycle(
+			messaging.SubjectJobProcessingCompleted,
+			job.JobID,
+			"COMPLETED",
+			attemptCount,
+			"",
+			correlationID,
+			workerName,
+		); err != nil {
+			log.Printf("[%s] Failed to publish processing completed event: %v", workerName, err)
+		}
+
 		if err := a.publisher.PublishJobLifecycle(
 			messaging.SubjectJobCompleted,
 			job.JobID,

@@ -154,6 +154,64 @@ Trigger a JetStream replay. The Demo Service creates an ephemeral replay consume
 
 ---
 
+### 1.6. Get Subscriptions
+Retrieve the active subscriptions configured for demonstrating NATS subject addressing.
+
+* **Endpoint**: `GET /messaging/subscriptions`
+* **Response**: `200 OK`
+* **Response Body**:
+  ```json
+  {
+    "subscriptions": [
+      {
+        "name": "exact",
+        "subject": "jobs.submitted"
+      },
+      {
+        "name": "single-level",
+        "subject": "jobs.*"
+      },
+      {
+        "name": "multi-level",
+        "subject": "jobs.>"
+      }
+    ]
+  }
+  ```
+
+---
+
+### 1.7. Get Addressing Activity
+Retrieve the observed routing activity displaying which subscriptions received each message.
+
+* **Endpoint**: `GET /messaging/activity`
+* **Response**: `200 OK`
+* **Response Body**:
+  ```json
+  {
+    "events": [
+      {
+        "subject": "jobs.submitted",
+        "received_by": [
+          "exact",
+          "single-level",
+          "multi-level"
+        ],
+        "timestamp": "2026-08-31T10:30:00Z"
+      },
+      {
+        "subject": "jobs.processing.started",
+        "received_by": [
+          "multi-level"
+        ],
+        "timestamp": "2026-08-31T10:30:01Z"
+      }
+    ]
+  }
+  ```
+
+---
+
 ## 2. NATS Subjects & Payload Contracts
 
 All NATS message payloads are structured as JSON. Standard metadata is passed via NATS headers to keep the payload clean.
@@ -173,7 +231,9 @@ The following headers must be present in messages:
 | :--- | :--- | :--- | :--- |
 | `jobs.submitted` | Demo -> Processor | Job submission event | `{"job_id": string, "type": string, "payload": object}` |
 | `jobs.validate` | Demo <-> Processor | Req/Rep validation | **Req**: `{"job_id": string, "type": string, "payload": object}`<br>**Rep**: `{"valid": boolean, "message": string}` |
-| `jobs.processing` | Processor -> Demo | Job processing started | `{"job_id": string, "status": "PROCESSING", "delivery_count": int}` |
+| `jobs.processing.started` | Processor -> Demo | Job processing started | `{"job_id": string, "status": "PROCESSING", "delivery_count": int}` |
+| `jobs.processing.completed` | Processor -> Demo | Processing completed successfully | `{"job_id": string, "status": "COMPLETED", "delivery_count": int}` |
+| `jobs.processing.failed` | Processor -> Demo | Processing failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |
 | `jobs.completed` | Processor -> Demo | Job successfully finished | `{"job_id": string, "status": "COMPLETED", "delivery_count": int}` |
 | `jobs.failed` | Processor -> Demo | Job execution failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |
 

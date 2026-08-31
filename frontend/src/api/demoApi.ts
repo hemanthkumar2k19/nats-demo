@@ -179,4 +179,44 @@ export async function replayJobs(req: ReplayRequest): Promise<ReplayResponse> {
   return response.json();
 }
 
+export interface AddressingSubscription {
+  name: string;
+  subject: string;
+}
+
+export interface AddressingEvent {
+  job_id: string;
+  subject: string;
+  received_by: string[];
+  timestamp: string;
+}
+
+/**
+ * Retrieves the active addressing subscriptions from the backend.
+ * Calls GET /messaging/subscriptions.
+ */
+export async function getAddressingSubscriptions(): Promise<AddressingSubscription[]> {
+  const response = await fetch(`${API_BASE_URL}/messaging/subscriptions`);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to fetch addressing subscriptions: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  const data = await response.json();
+  return data.subscriptions || [];
+}
+
+/**
+ * Retrieves observed addressing events from the backend.
+ * Calls GET /messaging/activity.
+ */
+export async function getAddressingActivity(): Promise<AddressingEvent[]> {
+  const response = await fetch(`${API_BASE_URL}/messaging/activity`);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to fetch addressing activity: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  const data = await response.json();
+  return data.events || [];
+}
+
 

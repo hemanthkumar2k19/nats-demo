@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"nats-demo/internal/jobs"
+	"nats-demo/internal/messaging"
 	"nats-demo/internal/natsclient"
 
 	"github.com/gin-gonic/gin"
@@ -24,13 +25,15 @@ type JobService interface {
 type Handler struct {
 	jobService JobService
 	natsClient *natsclient.Client
+	observer   *messaging.Observer
 }
 
 // NewHandler instantiates a new Handler.
-func NewHandler(jobService JobService, natsClient *natsclient.Client) *Handler {
+func NewHandler(jobService JobService, natsClient *natsclient.Client, observer *messaging.Observer) *Handler {
 	return &Handler{
 		jobService: jobService,
 		natsClient: natsClient,
+		observer:   observer,
 	}
 }
 
@@ -143,6 +146,26 @@ func (h *Handler) ReplayJobs(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{
 		"status":   "REPLAY_STARTED",
 		"consumer": "job-replay-001",
+	})
+}
+
+// GetSubscriptions returns the active subscriptions for the addressing demo.
+func (h *Handler) GetSubscriptions(c *gin.Context) {
+	subs := []gin.H{
+		{"name": "exact", "subject": "jobs.submitted"},
+		{"name": "single-level", "subject": "jobs.*"},
+		{"name": "multi-level", "subject": "jobs.>"},
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"subscriptions": subs,
+	})
+}
+
+// GetAddressingActivity returns observed message delivery activity for the addressing demo.
+func (h *Handler) GetAddressingActivity(c *gin.Context) {
+	events := h.observer.GetEvents()
+	c.JSON(http.StatusOK, gin.H{
+		"events": events,
 	})
 }
 

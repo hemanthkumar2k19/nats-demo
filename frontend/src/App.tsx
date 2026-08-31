@@ -5,6 +5,7 @@ import { JobPanel } from './components/JobPanel';
 import { ActivityPanel } from './components/ActivityPanel';
 import { ReplayPanel } from './components/ReplayPanel';
 import { JobInspectorPanel } from './components/JobInspectorPanel';
+import { AddressingPanel } from './components/AddressingPanel';
 import { 
   Job, 
   Activity, 
@@ -16,7 +17,11 @@ import {
   getJobDetail,
   replayJobs,
   JobDetailResponse,
-  ReplayRequest
+  ReplayRequest,
+  AddressingSubscription,
+  AddressingEvent,
+  getAddressingSubscriptions,
+  getAddressingActivity
 } from './api/demoApi';
 
 const DEFAULT_SERVICES: ServiceStatus[] = [
@@ -42,13 +47,21 @@ export const App: React.FC = () => {
   const [isLoadingInspector, setIsLoadingInspector] = useState<boolean>(false);
   const [inspectorError, setInspectorError] = useState<string | null>(null);
 
+  // Addressing state
+  const [subscriptions, setSubscriptions] = useState<AddressingSubscription[]>([]);
+  const [addressingEvents, setAddressingEvents] = useState<AddressingEvent[]>([]);
+  const [isRefreshingAddressing, setIsRefreshingAddressing] = useState<boolean>(false);
+
   // Load initial state and set up status polling
   useEffect(() => {
     refreshStatus(true);
     refreshActivity(true);
+    loadSubscriptions();
+    refreshAddressing(true);
 
     const interval = setInterval(() => {
       refreshStatus(true);
+      refreshAddressing(true);
     }, 5000);
 
     return () => clearInterval(interval);
@@ -82,12 +95,38 @@ export const App: React.FC = () => {
     try {
       const res = await getActivity();
       setActivities(res);
+      await refreshAddressing(silent);
     } catch (err: any) {
       if (!silent) {
         setError(err.message || 'Failed to fetch activity logs');
       }
     } finally {
       if (!silent) setIsRefreshingActivity(false);
+    }
+  };
+
+  const loadSubscriptions = async () => {
+    try {
+      const res = await getAddressingSubscriptions();
+      setSubscriptions(res);
+    } catch (err: any) {
+      console.error('Failed to load subscriptions:', err);
+    }
+  };
+
+  const refreshAddressing = async (silent = false) => {
+    if (!silent) setIsRefreshingAddressing(true);
+    try {
+      const res = await getAddressingActivity();
+      setAddressingEvents(res);
+    } catch (err: any) {
+      if (!silent) {
+        setError(err.message || 'Failed to refresh addressing activity');
+      }
+    } finally {
+      if (!silent) {
+        setIsRefreshingAddressing(false);
+      }
     }
   };
 
@@ -109,6 +148,11 @@ export const App: React.FC = () => {
         delivery_count: 1,
       };
       setActivities((prev) => [newActivity, ...prev]);
+
+      // Refresh addressing activity after short delay to let events propagate
+      setTimeout(() => {
+        refreshAddressing(true);
+      }, 500);
     } catch (err: any) {
       setError(err.message || 'Job submission failed');
       throw err;
@@ -208,6 +252,13 @@ export const App: React.FC = () => {
             onRefresh={() => refreshActivity(false)} 
             isLoading={isRefreshingActivity}
             onSelectJob={handleSelectJob}
+          />
+
+          <AddressingPanel 
+            subscriptions={subscriptions}
+            events={addressingEvents}
+            onRefresh={() => refreshAddressing(false)}
+            isLoading={isRefreshingAddressing}
           />
 
           {(selectedJobId || isLoadingInspector || inspectorError) && (

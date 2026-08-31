@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 ## 2026-08-31
 
 ### Added
+- Implemented **NATS Subject Addressing Demo** feature displaying active subscriptions (`exact`, `single-level`, and `multi-level`) and observed message matching routing activity.
+- Created `internal/messaging/observer.go` thread-safe store in the backend to record message delivery activity.
+- Created NATS observer subscriptions on subjects `jobs.submitted` (`exact`), `jobs.*` (`single-level`), and `jobs.>` (`multi-level`) in `demo-service`.
+- Added endpoints `GET /messaging/subscriptions` and `GET /messaging/activity` to serve active subscriptions and observed events.
+- Created frontend `AddressingPanel.tsx` visual console widget displaying the NATS subscription patterns and routing activity.
+- Added message routing events publication (e.g., `jobs.processing.started`, `jobs.processing.completed`, and `jobs.processing.failed`) in `processor-service`.
+
+### Fixed
+- Added Job ID parsing to NATS observer subscriptions and exposed it as the first column in the frontend Addressing panel routing activity table.
+- Resolved duplication of rows for synchronous validation `jobs.validate` messages by using `RequestMsg` with headers and establishing a deterministic payload-based fallback message ID calculation.
 - Implemented the **Job Details Inspector** panel displaying status state, correlation ID, delivery count, and a chronological history timeline.
 - Integrated the existing `JsonViewer` into the Job Details Inspector to display the raw details payload.
 - Implemented the **JetStream Replay** panel form fields for triggering NATS replay sequences.

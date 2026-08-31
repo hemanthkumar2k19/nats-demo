@@ -30,6 +30,7 @@ func (p *Publisher) PublishJobSubmitted(job jobs.Job, correlationID string) erro
 	msg := nats.NewMsg(SubjectJobSubmitted)
 	msg.Header.Set("Content-Type", "application/json")
 	msg.Header.Set("Nats-Msg-Id", job.JobID)
+	msg.Header.Set("X-Message-Id", fmt.Sprintf("msg-sub-%s-%d", job.JobID, time.Now().UnixNano()))
 	if correlationID != "" {
 		msg.Header.Set("X-Correlation-Id", correlationID)
 	}
@@ -50,13 +51,19 @@ func (p *Publisher) RequestJobValidation(job jobs.Job) (*jobs.JobValidationRespo
 		return nil, fmt.Errorf("failed to marshal validation payload: %w", err)
 	}
 
-	msg, err := p.client.Conn.Request(SubjectJobValidate, payload, 2*time.Second)
+	msg := nats.NewMsg(SubjectJobValidate)
+	msg.Header.Set("Content-Type", "application/json")
+	msg.Header.Set("X-Message-Id", fmt.Sprintf("msg-val-%s-%d", job.JobID, time.Now().UnixNano()))
+	msg.Header.Set("X-Source", "demo-service")
+	msg.Data = payload
+
+	reply, err := p.client.Conn.RequestMsg(msg, 2*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("NATS request to %s failed: %w", SubjectJobValidate, err)
 	}
 
 	var resp jobs.JobValidationResponse
-	if err := json.Unmarshal(msg.Data, &resp); err != nil {
+	if err := json.Unmarshal(reply.Data, &resp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal validation reply: %w", err)
 	}
 
@@ -87,6 +94,7 @@ func (p *Publisher) PublishJobLifecycle(subject string, jobID string, status str
 
 	msg := nats.NewMsg(subject)
 	msg.Header.Set("Content-Type", "application/json")
+	msg.Header.Set("X-Message-Id", fmt.Sprintf("msg-lf-%s-%s-%d", jobID, status, time.Now().UnixNano()))
 	if correlationID != "" {
 		msg.Header.Set("X-Correlation-Id", correlationID)
 	}

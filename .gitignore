@@ -43,3 +43,7 @@ logs/
 # Local runtime data
 data/
 tmp/
+
+# Custom
+feature.md 
+fix.md 
