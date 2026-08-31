@@ -26,7 +26,8 @@ Submit a job for processing. This is a **fire-and-forget** operation. The Demo S
       "file": "image-101.jpg",
       "simulate_failure": false,
       "simulate_failure_count": 0
-    }
+    },
+    "delivery_mode": "CORE"
   }
   ```
   *(Note: `simulate_failure` and `simulate_failure_count` can be passed in the payload to test NACKs and redeliveries in Phase 7).*
@@ -212,6 +213,84 @@ Retrieve the observed routing activity displaying which subscriptions received e
 
 ---
 
+### 1.8. Get Activities
+Retrieve flat chronological NATS activity logs for the dashboard.
+* **Endpoint**: `GET /activities`
+* **Response**: `200 OK`
+* **Response Body**:
+  ```json
+  [
+    {
+      "timestamp": "17:07:34",
+      "job_id": "job-772",
+      "event": "PUBLISHED",
+      "subject": "jobs.submitted",
+      "worker": "demo-service",
+      "delivery_count": 1,
+      "delivery_mode": "CORE"
+    },
+    {
+      "timestamp": "17:07:34",
+      "job_id": "job-772",
+      "event": "RECEIVED",
+      "subject": "jobs.received",
+      "worker": "processor-1",
+      "delivery_count": 1,
+      "delivery_mode": "CORE"
+    }
+  ]
+  ```
+
+---
+
+### 1.9. Get System Status
+Retrieve overall service connectivity and JetStream Stream pending stats.
+* **Endpoint**: `GET /status`
+* **Response**: `200 OK`
+* **Response Body**:
+  ```json
+  {
+    "nats": {
+      "status": "CONNECTED"
+    },
+    "services": [
+      {
+        "name": "processor-service",
+        "status": "ACTIVE",
+        "details": "Processor is active and processing messages",
+        "processing": true
+      }
+    ],
+    "jetstream": {
+      "stream": "JOBS",
+      "pending": 0
+    }
+  }
+  ```
+
+---
+
+### 1.10. Put Processor State
+Dynamically toggle whether the processor-service background processing is enabled or disabled.
+* **Endpoint**: `PUT /processor/state`
+* **Content-Type**: `application/json`
+* **Request Body**:
+  ```json
+  {
+    "enabled": false
+  }
+  ```
+* **Response**: `200 OK`
+* **Response Body**:
+  ```json
+  {
+    "enabled": false,
+    "status": "STOPPED"
+  }
+  ```
+
+---
+
 ## 2. NATS Subjects & Payload Contracts
 
 All NATS message payloads are structured as JSON. Standard metadata is passed via NATS headers to keep the payload clean.
@@ -229,8 +308,8 @@ The following headers must be present in messages:
 
 | Subject | Direction | Purpose | Payload Schema |
 | :--- | :--- | :--- | :--- |
-| `jobs.submitted` | Demo -> Processor | Job submission event | `{"job_id": string, "type": string, "payload": object}` |
-| `jobs.validate` | Demo <-> Processor | Req/Rep validation | **Req**: `{"job_id": string, "type": string, "payload": object}`<br>**Rep**: `{"valid": boolean, "message": string}` |
+| `jobs.submitted` | Demo -> Processor | Job submission event | `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}` |
+| `jobs.validate` | Demo <-> Processor | Req/Rep validation | **Req**: `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}`<br>**Rep**: `{"valid": boolean, "message": string}` |
 | `jobs.processing.started` | Processor -> Demo | Job processing started | `{"job_id": string, "status": "PROCESSING", "delivery_count": int}` |
 | `jobs.processing.completed` | Processor -> Demo | Processing completed successfully | `{"job_id": string, "status": "COMPLETED", "delivery_count": int}` |
 | `jobs.processing.failed` | Processor -> Demo | Processing failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |

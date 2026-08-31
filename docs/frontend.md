@@ -272,22 +272,29 @@ Example:
 ```text
 ACTIVITY
 
-Time      Job       Event          Subject              Worker
+Time      Job       Mode       Event          Seq   Subject              Worker
 
-14:32:01  job-101   Submitted      jobs.submitted       -
-14:32:01  job-101   Processing     jobs.processing      processor-1
-14:32:02  job-101   Completed      jobs.completed       processor-1
+14:32:01  job-101   CORE       PUBLISHED      -     jobs.submitted       -
+14:32:01  job-101   CORE       RECEIVED       -     jobs.received        processor-1
+14:32:02  job-101   CORE       COMPLETED      -     jobs.completed       processor-1
+14:33:01  job-102   JETSTREAM  PUBLISHED      -     jobs.submitted       -
+14:33:01  job-102   JETSTREAM  STORED         #1    jobs.stored          -
+14:33:05  job-102   JETSTREAM  DELIVERED      #1    jobs.delivered       processor-1
+14:33:06  job-102   JETSTREAM  ACKED          #1    jobs.acked           processor-1
 ```
 
-The activity view should eventually support events such as:
+The activity view supports events such as:
 
 ```text
-SUBMITTED
+PUBLISHED
+STORED
+RECEIVED
+DELIVERED
 PROCESSING
 COMPLETED
 FAILED
-REDELIVERED
 ACKED
+NO CONSUMER
 ```
 
 Keep the event representation simple.

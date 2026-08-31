@@ -102,6 +102,12 @@ jobs.submitted
 jobs.processing
 jobs.completed
 jobs.failed
+jobs.stored
+jobs.delivered
+jobs.acked
+jobs.received
+jobs.noconsumer
+processor.state.set
 ```
 
 ### Wildcard examples
@@ -174,17 +180,19 @@ Represents a job submitted to the platform.
   "type": "image-processing",
   "payload": {
     "file": "image-101.jpg"
-  }
+  },
+  "delivery_mode": "CORE"
 }
 ```
 
 Fields:
 
-| Field     | Type   | Description           |
-| --------- | ------ | --------------------- |
-| `job_id`  | string | Unique job identifier |
-| `type`    | string | Type of job           |
-| `payload` | object | Job-specific data     |
+| Field           | Type   | Description           |
+| --------------- | ------ | --------------------- |
+| `job_id`        | string | Unique job identifier |
+| `type`          | string | Type of job           |
+| `payload`       | object | Job-specific data     |
+| `delivery_mode` | string | Delivery mode: CORE / JETSTREAM |
 
 ---
 
@@ -261,7 +269,8 @@ Accept a new job and publish it to NATS using fire-and-forget messaging.
   "type": "image-processing",
   "payload": {
     "file": "image-101.jpg"
-  }
+  },
+  "delivery_mode": "CORE"
 }
 ```
 
@@ -1191,13 +1200,60 @@ Return the current status of the demo platform and its services.
     },
     {
       "name": "processor-service",
-      "status": "ACTIVE"
+      "status": "ACTIVE",
+      "processing": true
     }
-  ]
+  ],
+  "jetstream": {
+    "stream": "JOBS",
+    "pending": 3
+  }
 }
 ```
 
 The exact response can evolve as additional services and status information are introduced.
+
+## Processor State Control API
+
+### Endpoint
+
+```http
+PUT /processor/state
+```
+
+### Request
+
+```json
+{
+  "enabled": false
+}
+```
+
+### Response
+
+```json
+{
+  "enabled": false,
+  "status": "STOPPED"
+}
+```
+
+To enable processing:
+
+```json
+{
+  "enabled": true
+}
+```
+
+Response:
+
+```json
+{
+  "enabled": true,
+  "status": "RUNNING"
+}
+```
 
 ## Responsibilities
 
@@ -1207,6 +1263,7 @@ The backend should provide status information for:
 * Demo Service
 * Processor Service
 * Processor instances, when applicable
+* JetStream Stream and Pending count
 * Future backend components
 
 NATS status should be determined using the backend's NATS connection/client rather than by exposing NATS connectivity directly to the browser.
