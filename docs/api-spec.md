@@ -49,6 +49,8 @@ Synchronously validates a job configuration using NATS **Request/Reply**. The De
 
 * **Endpoint**: `POST /jobs/validate`
 * **Content-Type**: `application/json`
+* **Request Headers**:
+  * `X-Correlation-Id`: (Optional) Custom correlation ID string for tracing.
 * **Request Body**:
   ```json
   {
@@ -59,7 +61,7 @@ Synchronously validates a job configuration using NATS **Request/Reply**. The De
     }
   }
   ```
-* **Response**: `200 OK`
+* **Response (Success)**: `200 OK`
 * **Response Body**:
   ```json
   {
@@ -67,7 +69,15 @@ Synchronously validates a job configuration using NATS **Request/Reply**. The De
     "message": "Job configuration is valid."
   }
   ```
-* **NATS Action**: Sends a request to subject `jobs.validate` with a timeout (e.g., 2 seconds) and returns the reply.
+* **Response (Timeout - Processor OFF)**: `504 Gateway Timeout`
+* **Response Body**:
+  ```json
+  {
+    "error": "request timed out",
+    "message": "No response received from processor service"
+  }
+  ```
+* **NATS Action**: Sends a request to subject `jobs.validate` with a 2-second timeout. If the Processor is OFF, the handler declines to respond and `POST /jobs/validate` returns `504 Gateway Timeout`.
 
 ---
 
@@ -310,6 +320,8 @@ The following headers must be present in messages:
 | :--- | :--- | :--- | :--- |
 | `jobs.submitted` | Demo -> Processor | Job submission event | `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}` |
 | `jobs.validate` | Demo <-> Processor | Req/Rep validation | **Req**: `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}`<br>**Rep**: `{"valid": boolean, "message": string}` |
+| `jobs.request.received` | Processor -> Demo | Validation request received event | `{"job_id": string, "status": "REQUEST_RECEIVED", "delivery_count": 1}` |
+| `jobs.reply.sent` | Processor -> Demo | Validation reply dispatched event | `{"job_id": string, "status": "REPLY_SENT", "delivery_count": 1}` |
 | `jobs.processing.started` | Processor -> Demo | Job processing started | `{"job_id": string, "status": "PROCESSING", "delivery_count": int}` |
 | `jobs.processing.completed` | Processor -> Demo | Processing completed successfully | `{"job_id": string, "status": "COMPLETED", "delivery_count": int}` |
 | `jobs.processing.failed` | Processor -> Demo | Processing failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |
@@ -340,13 +352,22 @@ sequenceDiagram
     NATS->>DS: Deliver jobs.completed event (status updated in memory)
     PS->>NATS: ACK message
 
-    Note over Client, PS: Request/Reply Workflow (Phase 3)
-    Client->>DS: POST /jobs/validate
+    Note over Client, PS: Request/Reply Workflow (Success Path)
+    Client->>DS: POST /jobs/validate (X-Correlation-Id)
     DS->>NATS: Request jobs.validate
     NATS->>PS: Deliver validation request
-    PS-->>NATS: Reply response
+    PS->>NATS: Publish jobs.request.received
+    PS-->>NATS: Reply validation response
+    PS->>NATS: Publish jobs.reply.sent
     NATS-->>DS: Deliver validation response
     DS-->>Client: 200 OK (valid: true)
+
+    Note over Client, PS: Request/Reply Workflow (Timeout Path - PS OFF)
+    Client->>DS: POST /jobs/validate
+    DS->>NATS: Request jobs.validate (2s timeout)
+    Note over PS: Processor is OFF (not responding)
+    NATS--xDS: Timeout (2s elapsed, no reply)
+    DS-->>Client: 504 Gateway Timeout
 ```
 
 ---

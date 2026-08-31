@@ -312,6 +312,12 @@ POST /jobs/validate
 
 Validate a job using NATS Request/Reply.
 
+### Request Headers
+
+```http
+X-Correlation-Id: corr-val-101 (Optional, passed to NATS request)
+```
+
 ### Request
 
 ```json
@@ -324,7 +330,7 @@ Validate a job using NATS Request/Reply.
 }
 ```
 
-### Response
+### Response (Success)
 
 ```http
 200 OK
@@ -333,7 +339,20 @@ Validate a job using NATS Request/Reply.
 ```json
 {
   "valid": true,
-  "message": "Job is valid"
+  "message": "Job configuration is valid."
+}
+```
+
+### Response (Processor OFF / Timeout)
+
+```http
+504 Gateway Timeout
+```
+
+```json
+{
+  "error": "request timed out",
+  "message": "No response received from processor service"
 }
 ```
 
@@ -342,13 +361,15 @@ Validate a job using NATS Request/Reply.
 ```text
 Demo Service
      |
-     | Request
+     | Request (X-Correlation-Id)
      v
 jobs.validate
      |
+     +---> Publish jobs.request.received
      v
 Processor Service
      |
+     +---> Publish jobs.reply.sent
      | Reply
      v
 Demo Service
@@ -579,8 +600,10 @@ JOBS
 ### Subjects
 
 ```text
-jobs.>
+jobs.submitted
 ```
+
+*(Note: Stream is scoped to `jobs.submitted` rather than `jobs.>` so that transient Request/Reply subjects like `jobs.validate` are not intercepted or persisted by JetStream).*
 
 ### Purpose
 
@@ -597,7 +620,7 @@ Conceptually:
 
 ```text
                      +----------------+
-jobs.> ------------> |     JOBS       |
+jobs.submitted ----> |     JOBS       |
                      |   JetStream    |
                      +-------+--------+
                              |

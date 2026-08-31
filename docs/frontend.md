@@ -470,6 +470,10 @@ src/
 |   +-- Header
 |   +-- StatusPanel
 |   +-- JobPanel
+|   +-- RequestReplyPanel
+|   +-- ReplayPanel
+|   +-- JobInspectorPanel
+|   +-- AddressingPanel
 |   +-- ActivityPanel
 |   +-- ActivityItem
 |   +-- JsonViewer
@@ -477,11 +481,6 @@ src/
 |
 +-- api/
 |   +-- demoApi
-|
-+-- types/
-|   +-- job
-|   +-- activity
-|   +-- service
 |
 +-- App
 +-- main

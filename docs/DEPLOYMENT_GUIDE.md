@@ -98,3 +98,9 @@ Once all services are running, verify the setup with these steps:
    - Verify the stream pending count increases by 1.
    - Turn the processor back `ON`.
    - Verify the job is immediately pulled and processed, bringing the pending count back to 0.
+3. **Request/Reply Validation**:
+   - With Processor state `ON`, use the Request/Reply panel to send a validation request.
+   - Verify the result status is `SUCCESS` (`valid: true`) and the interaction timeline shows:
+     - `REQUEST_SENT` -> `REQUEST_RECEIVED` -> `REPLY_SENT` -> `REPLY_RECEIVED`
+   - Turn Processor state `OFF` and send a validation request.
+   - Verify after ~2 seconds the result status shows `TIMEOUT` (`No response received from processor service`), HTTP 504 is returned, and the interaction timeline records `REQUEST_SENT` -> `REQUEST_TIMEOUT`.
