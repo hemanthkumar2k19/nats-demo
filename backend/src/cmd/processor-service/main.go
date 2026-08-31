@@ -185,26 +185,11 @@ func (a *App) Run() error {
 	a.jsPullCancel = pullCancel
 	go a.jsPullLoop(pullCtx, workerName, attempts, &attemptsMu)
 
-	// Subscribe to jobs.validate Request/Reply
-	validationHandler := func(job jobs.Job) (jobs.JobValidationResponse, error) {
-		log.Printf("[%s] Received validation request for job: %s of type %s", workerName, job.JobID, job.Type)
-		if job.JobID == "" {
-			return jobs.JobValidationResponse{Valid: false, Message: "job_id is required"}, nil
-		}
-		if job.Type != "image-processing" && job.Type != "data-sync" && job.Type != "email-alert" {
-			return jobs.JobValidationResponse{Valid: false, Message: fmt.Sprintf("unsupported job type: %s", job.Type)}, nil
-		}
-		if len(job.Payload) == 0 {
-			return jobs.JobValidationResponse{Valid: false, Message: "payload is required"}, nil
-		}
-		return jobs.JobValidationResponse{Valid: true, Message: "Job configuration is valid."}, nil
-	}
-
-	valSub, err := a.consumer.SubscribeJobValidate(validationHandler)
-	if err != nil {
+	// Subscribe to jobs.validate Request/Reply.
+	// subscribeValidation manages the subscription lifecycle when the processor toggles.
+	if err := a.subscribeValidation(workerName); err != nil {
 		return fmt.Errorf("failed to subscribe to validation subject: %w", err)
 	}
-	a.valSub = valSub
 	log.Printf("[Run] Subscribed to validation subject: %s", messaging.SubjectJobValidate)
 
 	// Subscribe to status ping responder
@@ -245,12 +230,18 @@ func (a *App) Run() error {
 			if err := a.subscribeCore(workerName, jobHandler); err != nil {
 				log.Printf("[Processor] Core NATS subscription failed on toggle: %v", err)
 			}
-			// Trigger JetStream subscription try if missing
+			// Trigger JetStream subscription try if missing.
 			if err := a.subscribeJetStream(); err != nil {
 				log.Printf("[Processor] JetStream subscription failed on toggle: %v", err)
 			}
+			// Note: the validation subscription is NOT toggled here.
+			// The jobs.validate subscriber stays active; the handler checks
+			// processingEnabled and declines to respond when the processor is OFF.
 		} else {
 			a.unsubscribeCore()
+			// Note: validation subscription stays active - the handler gates
+			// on processingEnabled so it stops responding without a racy
+			// unsubscribe/re-subscribe cycle.
 		}
 
 		log.Printf("[Processor] Processing toggled to enabled=%t (status: %s)", req.Enabled, statusVal)
@@ -300,6 +291,101 @@ func (a *App) unsubscribeCore() {
 		_ = a.sub.Unsubscribe()
 		a.sub = nil
 		log.Println("[Processor] Core NATS subscriber deactivated")
+	}
+}
+
+// subscribeValidation registers the jobs.validate Request/Reply handler.
+// The subscription stays active for the lifetime of the processor.
+// Whether to respond is controlled by the processingEnabled flag checked
+// inside the handler - if OFF the handler returns without replying, so the
+// requester times out naturally with no race window.
+func (a *App) subscribeValidation(workerName string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.valSub != nil {
+		return nil
+	}
+
+	validationHandler := func(job jobs.Job, correlationID string) (jobs.JobValidationResponse, error) {
+		// Check the processing flag before doing anything.
+		// If the processor is OFF, return a sentinel error that tells
+		// consumer.SubscribeJobValidate to skip Respond, letting the
+		// requester time out naturally.
+		a.mu.RLock()
+		enabled := a.processingEnabled
+		a.mu.RUnlock()
+
+		if !enabled {
+			log.Printf("[%s] Validation request for job %s received but processing is disabled - not responding", workerName, job.JobID)
+			// Return a special sentinel so consumer.go skips msg.Respond.
+			return jobs.JobValidationResponse{}, jobs.ErrProcessorDisabled
+		}
+
+		log.Printf("[%s] Received validation request for job: %s of type %s", workerName, job.JobID, job.Type)
+
+		// Publish REQUEST_RECEIVED so demo-service activity log captures it.
+		_ = a.publisher.PublishJobLifecycle(
+			messaging.SubjectJobRequestReceived,
+			job.JobID,
+			"REQUEST_RECEIVED",
+			1,
+			"",
+			correlationID,
+			workerName,
+			"",
+			0,
+		)
+
+		var resp jobs.JobValidationResponse
+		if job.JobID == "" {
+			resp = jobs.JobValidationResponse{Valid: false, Message: "job_id is required"}
+		} else if job.Type != "image-processing" && job.Type != "data-sync" && job.Type != "email-alert" {
+			resp = jobs.JobValidationResponse{Valid: false, Message: fmt.Sprintf("unsupported job type: %s", job.Type)}
+		} else if len(job.Payload) == 0 {
+			resp = jobs.JobValidationResponse{Valid: false, Message: "payload is required"}
+		} else {
+			resp = jobs.JobValidationResponse{Valid: true, Message: "Job configuration is valid."}
+		}
+
+		// Publish REPLY_SENT before the reply is dispatched.
+		_ = a.publisher.PublishJobLifecycle(
+			messaging.SubjectJobReplySent,
+			job.JobID,
+			"REPLY_SENT",
+			1,
+			"",
+			correlationID,
+			workerName,
+			"",
+			0,
+		)
+
+		return resp, nil
+	}
+
+	sub, err := a.consumer.SubscribeJobValidate(validationHandler)
+	if err != nil {
+		return err
+	}
+	a.valSub = sub
+	log.Printf("[%s] Validation subscriber activated on subject: %s", workerName, messaging.SubjectJobValidate)
+	return nil
+}
+
+// unsubscribeValidation removes the jobs.validate subscriber.
+// When the processor is OFF, this causes NATS requests to time out naturally.
+func (a *App) unsubscribeValidation() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.valSub != nil {
+		if err := a.valSub.Unsubscribe(); err != nil {
+			log.Printf("[Processor] Validation unsubscribe failed: %v", err)
+		} else {
+			log.Println("[Processor] Validation subscriber deactivated")
+		}
+		a.valSub = nil
 	}
 }
 
@@ -502,13 +588,7 @@ func (a *App) Stop() {
 	a.unsubscribeJetStream()
 
 	log.Println("[Stop] Unsubscribing validation consumer...")
-	if a.valSub != nil {
-		if err := a.valSub.Unsubscribe(); err != nil {
-			log.Printf("[Stop] Validation unsubscribe failed: %v", err)
-		} else {
-			log.Println("[Stop] Validation unsubscribed successfully")
-		}
-	}
+	a.unsubscribeValidation()
 
 	log.Println("[Stop] Unsubscribing status responder...")
 	if a.statusSub != nil {

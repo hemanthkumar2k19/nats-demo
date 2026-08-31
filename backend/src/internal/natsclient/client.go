@@ -36,10 +36,14 @@ func (c *Client) EnsureJobsStream() error {
 
 	_, err = js.StreamInfo("JOBS")
 	if err != nil {
-		// If stream does not exist, create it
+		// If stream does not exist, create it.
+		// Only capture jobs.submitted - the subject that should be durably persisted.
+		// Using jobs.> would cause JetStream to intercept jobs.validate RequestMsg
+		// messages and immediately return a PubAck to the request's reply inbox,
+		// which the NATS RequestMsg call would mistake for a validation reply.
 		_, err = js.AddStream(&nats.StreamConfig{
 			Name:     "JOBS",
-			Subjects: []string{"jobs.>"},
+			Subjects: []string{"jobs.submitted"},
 		})
 		if err != nil {
 			return fmt.Errorf("failed to add JOBS stream: %w", err)

@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"nats-demo/internal/jobs"
@@ -14,7 +15,11 @@ import (
 type JobHandler func(job jobs.Job, correlationID string) error
 
 // ValidationHandler defines the callback function signature for validating a job request.
-type ValidationHandler func(job jobs.Job) (jobs.JobValidationResponse, error)
+// correlationID is extracted from the NATS message headers and forwarded so the
+// handler can include it in any lifecycle events it publishes.
+// Returning jobs.ErrProcessorDisabled signals that the handler chose not to respond;
+// msg.Respond is skipped so the requester times out naturally.
+type ValidationHandler func(job jobs.Job, correlationID string) (jobs.JobValidationResponse, error)
 
 // Consumer manages NATS subscriptions.
 type Consumer struct {
@@ -52,8 +57,14 @@ func (c *Consumer) SubscribeJobSubmitted(handler JobHandler) (*nats.Subscription
 }
 
 // SubscribeJobValidate registers a subscription to SubjectJobValidate and replies synchronously using the handler.
+// The X-Correlation-Id header from the request is extracted and passed to the handler so lifecycle
+// events published by the handler carry the same correlation ID.
+// If the handler returns jobs.ErrProcessorDisabled, msg.Respond is skipped so the
+// NATS requester times out naturally - this is the intended "processor OFF" behaviour.
 func (c *Consumer) SubscribeJobValidate(handler ValidationHandler) (*nats.Subscription, error) {
 	sub, err := c.client.Conn.Subscribe(SubjectJobValidate, func(msg *nats.Msg) {
+		correlationID := msg.Header.Get("X-Correlation-Id")
+
 		var job jobs.Job
 		if err := json.Unmarshal(msg.Data, &job); err != nil {
 			log.Printf("[Consumer] Failed to unmarshal validation request: %v", err)
@@ -63,8 +74,13 @@ func (c *Consumer) SubscribeJobValidate(handler ValidationHandler) (*nats.Subscr
 			return
 		}
 
-		resp, err := handler(job)
+		resp, err := handler(job, correlationID)
 		if err != nil {
+			// ErrProcessorDisabled means the handler deliberately chose not to respond.
+			// Skip msg.Respond so the requester's 2-second timeout fires naturally.
+			if errors.Is(err, jobs.ErrProcessorDisabled) {
+				return
+			}
 			resp = jobs.JobValidationResponse{Valid: false, Message: err.Error()}
 		}
 
@@ -85,4 +101,3 @@ func (c *Consumer) SubscribeJobValidate(handler ValidationHandler) (*nats.Subscr
 
 	return sub, nil
 }
-

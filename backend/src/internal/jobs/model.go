@@ -1,6 +1,15 @@
 package jobs
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrProcessorDisabled is returned by the validation handler when processing
+// is disabled. consumer.SubscribeJobValidate treats this as a signal to skip
+// msg.Respond(), letting the NATS requester time out naturally.
+var ErrProcessorDisabled = errors.New("processor is disabled")
+
 
 // Job represents a work item submitted to the platform.
 type Job struct {

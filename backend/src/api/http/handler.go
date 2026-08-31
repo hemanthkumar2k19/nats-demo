@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 // JobService specifies the domain service functionality needed by HTTP handlers.
 type JobService interface {
 	SubmitJob(job jobs.Job, correlationID string) (*jobs.JobStatusResponse, error)
-	ValidateJob(job jobs.Job) (*jobs.JobValidationResponse, error)
+	ValidateJob(job jobs.Job, correlationID string) (*jobs.JobValidationResponse, error)
 	ListJobs() []*jobs.JobDetailResponse
 	GetJob(jobID string) (*jobs.JobDetailResponse, bool)
 	GetActivities() []jobs.Activity
@@ -181,8 +182,22 @@ func (h *Handler) ValidateJob(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.jobService.ValidateJob(job)
+	correlationID := c.GetHeader("X-Correlation-Id")
+	if correlationID == "" {
+		correlationID = "corr-val-" + job.JobID
+	}
+
+	resp, err := h.jobService.ValidateJob(job, correlationID)
 	if err != nil {
+		// When the processor has no active responder the request times out.
+		// Return 504 so the UI can display the timeout scenario clearly.
+		if errors.Is(err, messaging.ErrRequestTimeout) {
+			c.JSON(http.StatusGatewayTimeout, gin.H{
+				"error":   "request timed out",
+				"message": "No response received from processor service",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

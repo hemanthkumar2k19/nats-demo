@@ -6,10 +6,12 @@ import { ActivityPanel } from './components/ActivityPanel';
 import { ReplayPanel } from './components/ReplayPanel';
 import { JobInspectorPanel } from './components/JobInspectorPanel';
 import { AddressingPanel } from './components/AddressingPanel';
+import { RequestReplyPanel } from './components/RequestReplyPanel';
 import { 
   Job, 
   Activity, 
   ServiceStatus, 
+  ValidationResult,
   submitJob, 
   validateJob, 
   getServiceStatus, 
@@ -185,11 +187,13 @@ export const App: React.FC = () => {
     setError(null);
     setSuccess(null);
     try {
-      const res = await validateJob(job);
-      if (res.valid) {
-        setSuccess(`Validation Success: ${res.message}`);
-      } else {
+      const res: ValidationResult = await validateJob(job);
+      if (res.timedOut) {
+        setError('Request timeout: No response received from processor service (is it ON?)');
+      } else if (res.valid === false) {
         setError(`Validation Failed: ${res.message}`);
+      } else {
+        setSuccess(`Validation Success: ${res.message}`);
       }
     } catch (err: any) {
       setError(err.message || 'Validation failed');
@@ -251,6 +255,11 @@ export const App: React.FC = () => {
             onValidateJob={handleJobValidate} 
             isSubmitting={isSubmitting}
             isValidating={isValidating}
+          />
+
+          <RequestReplyPanel
+            activities={activities}
+            onValidated={() => refreshActivity(true)}
           />
           
           <ReplayPanel 

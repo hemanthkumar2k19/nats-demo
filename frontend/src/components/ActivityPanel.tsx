@@ -13,20 +13,25 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({ activities, onRefr
     switch (event.toUpperCase()) {
       case 'PUBLISHED':
       case 'SUBMITTED':
+      case 'REQUEST_SENT':
         return 'badge-submitted';
       case 'STORED':
         return 'badge-stored';
       case 'RECEIVED':
       case 'DELIVERED':
+      case 'REQUEST_RECEIVED':
         return 'badge-delivered';
       case 'PROCESSING':
+      case 'REPLY_SENT':
         return 'badge-processing';
       case 'COMPLETED':
       case 'ACKED':
+      case 'REPLY_RECEIVED':
         return 'badge-completed';
       case 'FAILED':
       case 'NO CONSUMER':
       case 'NO_ACTIVE_CONSUMER':
+      case 'REQUEST_TIMEOUT':
         return 'badge-failed';
       default:
         return '';

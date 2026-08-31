@@ -10,7 +10,7 @@ import (
 // Publisher interface abstracts the messaging layer to decouple the domain layer from NATS.
 type Publisher interface {
 	PublishJobSubmitted(job Job, correlationID string) error
-	RequestJobValidation(job Job) (*JobValidationResponse, error)
+	RequestJobValidation(job Job, correlationID string) (*JobValidationResponse, error)
 }
 
 // Service manages the business workflows for jobs.
@@ -49,8 +49,22 @@ func (s *Service) SubmitJob(job Job, correlationID string) (*JobStatusResponse, 
 }
 
 // ValidateJob validates a job payload by sending a Request/Reply call over NATS.
-func (s *Service) ValidateJob(job Job) (*JobValidationResponse, error) {
-	return s.publisher.RequestJobValidation(job)
+// correlationID is propagated into the NATS request so the full interaction can
+// be traced in the activity log.
+func (s *Service) ValidateJob(job Job, correlationID string) (*JobValidationResponse, error) {
+	// Record that demo-service is about to send the request.
+	s.store.AddEvent(job.JobID, "REQUEST_SENT", 1, correlationID, "jobs.validate", "demo-service", "", 0)
+
+	resp, err := s.publisher.RequestJobValidation(job, correlationID)
+	if err != nil {
+		// Record timeout so it appears in the activity log.
+		s.store.AddEvent(job.JobID, "REQUEST_TIMEOUT", 1, correlationID, "jobs.validate", "demo-service", "", 0)
+		return nil, err
+	}
+
+	// Record that demo-service received the reply.
+	s.store.AddEvent(job.JobID, "REPLY_RECEIVED", 1, correlationID, "jobs.validate", "demo-service", "", 0)
+	return resp, nil
 }
 
 // ListJobs returns the list of all tracked jobs.
@@ -76,13 +90,13 @@ func (s *Service) GetJob(jobID string) (*JobDetailResponse, bool) {
 
 func getStatusWeight(status string) int {
 	switch status {
-	case "PUBLISHED", "STORED":
+	case "PUBLISHED", "STORED", "REQUEST_SENT":
 		return 1
-	case "RECEIVED", "DELIVERED":
+	case "RECEIVED", "DELIVERED", "REQUEST_RECEIVED":
 		return 2
-	case "PROCESSING":
+	case "PROCESSING", "REPLY_SENT":
 		return 3
-	case "COMPLETED", "FAILED", "ACKED", "NO CONSUMER":
+	case "COMPLETED", "FAILED", "ACKED", "NO CONSUMER", "REPLY_RECEIVED", "REQUEST_TIMEOUT":
 		return 4
 	default:
 		return 0
@@ -133,6 +147,11 @@ func (s *Service) ProcessLifecycleEvent(subject string, data []byte, correlation
 
 	var status string
 	switch subject {
+	case "jobs.validate":
+		// demo-service's jobs.> wildcard subscription catches its own outgoing
+		// RequestMsg to jobs.validate. That message is a Job payload, not a
+		// lifecycle event. Silently discard it to avoid a blank activity row.
+		return nil
 	case "jobs.submitted":
 		status = "PUBLISHED"
 	case "jobs.stored":
@@ -151,6 +170,10 @@ func (s *Service) ProcessLifecycleEvent(subject string, data []byte, correlation
 		status = "NO CONSUMER"
 	case "jobs.processing.started", "jobs.processing":
 		status = "PROCESSING"
+	case "jobs.request.received":
+		status = "REQUEST_RECEIVED"
+	case "jobs.reply.sent":
+		status = "REPLY_SENT"
 	default:
 		status = payload.Status
 	}

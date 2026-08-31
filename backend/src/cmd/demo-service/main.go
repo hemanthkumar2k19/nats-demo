@@ -74,8 +74,19 @@ func (a *App) Init() error {
 
 // Run starts the HTTP server and blocks until an interrupt signal is received.
 func (a *App) Run() error {
-	// Subscribe to jobs.* to capture NATS lifecycle events in-memory
-	sub, err := a.natsClient.Conn.Subscribe("jobs.*", func(msg *nats.Msg) {
+	// Subscribe to jobs.> to capture all NATS lifecycle events in-memory.
+	// The multi-level wildcard ensures multi-segment subjects such as
+	// jobs.request.received and jobs.reply.sent are included alongside
+	// the single-segment ones like jobs.submitted and jobs.completed.
+	// Skip messages that have a Reply field - those are Request/Reply request
+	// messages, not lifecycle events. demo-service publishes RequestMsg to
+	// jobs.validate which also matches jobs.>, and we must not treat it as
+	// a lifecycle event.
+	sub, err := a.natsClient.Conn.Subscribe("jobs.>", func(msg *nats.Msg) {
+		if msg.Reply != "" {
+			// This is a NATS request message, not a lifecycle publish event.
+			return
+		}
 		correlationID := msg.Header.Get("X-Correlation-Id")
 		source := msg.Header.Get("X-Source")
 		log.Printf("[App] Received event on subject %s (correlation: %s, source: %s)", msg.Subject, correlationID, source)
@@ -88,7 +99,7 @@ func (a *App) Run() error {
 		return fmt.Errorf("failed to subscribe to lifecycle events: %w", err)
 	}
 	a.lifecycleSub = sub
-	log.Println("[Run] Subscribed to jobs.* NATS wildcard events")
+	log.Println("[Run] Subscribed to jobs.> NATS wildcard events")
 
 	// Subscribe to NATS observer subjects for subject addressing demo
 	a.observerSubs = make([]*nats.Subscription, 0)
@@ -105,6 +116,11 @@ func (a *App) Run() error {
 		subName := cfg.name
 		subSubject := cfg.subject
 		oSub, err := a.natsClient.Conn.Subscribe(subSubject, func(msg *nats.Msg) {
+			// Skip request messages - we only want to observe published events,
+			// not the outgoing jobs.validate RequestMsg that also matches jobs.*.
+			if msg.Reply != "" {
+				return
+			}
 			msgID := msg.Header.Get("X-Message-Id")
 			if msgID == "" {
 				msgID = fmt.Sprintf("fallback-%s-%s", msg.Subject, string(msg.Data))

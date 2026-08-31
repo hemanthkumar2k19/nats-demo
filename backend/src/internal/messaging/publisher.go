@@ -58,8 +58,14 @@ func (p *Publisher) PublishJobSubmitted(job jobs.Job, correlationID string) erro
 	return nil
 }
 
+// ErrRequestTimeout is returned when a NATS Request/Reply call times out or
+// finds no active responder. The HTTP handler uses this to return 504.
+var ErrRequestTimeout = fmt.Errorf("request timed out: no response from processor service")
+
 // RequestJobValidation sends a sync validation request via NATS Request/Reply.
-func (p *Publisher) RequestJobValidation(job jobs.Job) (*jobs.JobValidationResponse, error) {
+// correlationID is forwarded as X-Correlation-Id so the interaction can be
+// traced across the demo-service and processor-service logs.
+func (p *Publisher) RequestJobValidation(job jobs.Job, correlationID string) (*jobs.JobValidationResponse, error) {
 	payload, err := json.Marshal(job)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal validation payload: %w", err)
@@ -69,10 +75,18 @@ func (p *Publisher) RequestJobValidation(job jobs.Job) (*jobs.JobValidationRespo
 	msg.Header.Set("Content-Type", "application/json")
 	msg.Header.Set("X-Message-Id", fmt.Sprintf("msg-val-%s-%d", job.JobID, time.Now().UnixNano()))
 	msg.Header.Set("X-Source", "demo-service")
+	if correlationID != "" {
+		msg.Header.Set("X-Correlation-Id", correlationID)
+	}
 	msg.Data = payload
 
 	reply, err := p.client.Conn.RequestMsg(msg, 2*time.Second)
 	if err != nil {
+		// Surface timeout and no-responder as a typed sentinel so the caller
+		// can distinguish them from internal errors.
+		if err == nats.ErrTimeout || err == nats.ErrNoResponders {
+			return nil, ErrRequestTimeout
+		}
 		return nil, fmt.Errorf("NATS request to %s failed: %w", SubjectJobValidate, err)
 	}
 

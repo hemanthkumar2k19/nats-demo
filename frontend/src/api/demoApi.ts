@@ -63,25 +63,43 @@ export async function submitJob(job: Job): Promise<JobStatusResponse> {
   return response.json();
 }
 
+export interface ValidationResult {
+  valid?: boolean;
+  message?: string;
+  error?: string;
+  timedOut?: boolean;
+  correlationId?: string;
+}
+
 /**
  * Validates a job using Request/Reply.
- * Sends a validation request to the backend.
+ * Returns a ValidationResult. On processor timeout (HTTP 504), timedOut is set to true
+ * rather than throwing so the UI can display the timeout scenario cleanly.
  */
-export async function validateJob(job: Job): Promise<{ valid: boolean; message: string }> {
+export async function validateJob(job: Job): Promise<ValidationResult> {
+  const correlationId = `corr-val-${job.job_id}-${Date.now().toString(36)}`;
   const response = await fetch(`${API_BASE_URL}/jobs/validate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'X-Correlation-Id': correlationId,
     },
     body: JSON.stringify(job),
   });
+
+  // 504 means the NATS request timed out - no responder was available.
+  // Return a structured result rather than throwing so the UI can display the timeout panel.
+  if (response.status === 504) {
+    return { timedOut: true, error: 'No response received from processor service', correlationId };
+  }
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
     throw new Error(`Failed to validate job: ${response.status} ${response.statusText}. ${errorText}`);
   }
 
-  return response.json();
+  const data = await response.json();
+  return { ...data, correlationId };
 }
 
 /**
