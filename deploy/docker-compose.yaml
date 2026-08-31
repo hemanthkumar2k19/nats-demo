@@ -1,0 +1,26 @@
+services:
+  nats:
+    image: docker.io/library/nats:latest
+    container_name: nats
+    command:
+      - "-c"
+      - "/etc/nats/nats.conf"
+    ports:
+      - "4222:4222"
+      - "6222:6222"
+      - "8222:8222"
+      - "9222:9222"
+    volumes:
+      - nats-data:/data
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+    
+  nats-ui:
+    image: ghcr.io/gastbob40/nats-ui:latest
+    container_name: nats-ui
+    ports:
+      - "3000:3000"
+    depends_on:
+      - nats
+
+volumes:
+  nats-data:
