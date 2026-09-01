@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 
 interface HeaderProps {
-  systemOk: boolean;
+  systemOk?: boolean;
+  natsConnected?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ systemOk }) => {
+export const Header: React.FC<HeaderProps> = ({ systemOk = true, natsConnected = true }) => {
   const [time, setTime] = useState<string>('');
 
   useEffect(() => {
@@ -17,10 +18,12 @@ export const Header: React.FC<HeaderProps> = ({ systemOk }) => {
     return () => clearInterval(interval);
   }, []);
 
+  const isConnected = natsConnected && systemOk;
+
   return (
     <header className="app-header">
       <div className="app-title-group">
-        <span className="app-logo">⚡</span>
+        <span className="app-badge-logo">NATS</span>
         <h1 className="app-title">NATS Platform Demo Console</h1>
       </div>
       
@@ -28,15 +31,15 @@ export const Header: React.FC<HeaderProps> = ({ systemOk }) => {
         <div className="mono-cell" style={{ letterSpacing: '0.05em' }}>
           {time}
         </div>
-        {systemOk ? (
+        {isConnected ? (
           <div className="system-status-indicator">
-            <span>●</span>
-            <span>SYSTEM OK</span>
+            <span style={{ fontWeight: 'bold' }}>*</span>
+            <span>NATS CONNECTED</span>
           </div>
         ) : (
           <div className="system-status-indicator" style={{ color: 'var(--status-danger)', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-            <span>●</span>
-            <span>SYSTEM ERR</span>
+            <span style={{ fontWeight: 'bold' }}>*</span>
+            <span>NATS DISCONNECTED</span>
           </div>
         )}
       </div>

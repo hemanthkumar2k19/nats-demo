@@ -222,9 +222,14 @@ export const App: React.FC = () => {
     return replayJobs(req);
   };
 
+  const natsConnected = !services.some(
+    (s) => s.name.toLowerCase().includes('nats') && s.status === 'disconnected'
+  );
+  const systemOk = !error && !services.some((s) => s.status === 'disconnected');
+
   return (
     <div className="app-container">
-      <Header systemOk={!error && !services.some(s => s.status === 'disconnected')} />
+      <Header natsConnected={natsConnected} systemOk={systemOk} />
 
       {/* Global Alerts Banner */}
       {error && (
@@ -233,7 +238,7 @@ export const App: React.FC = () => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
           <div style={{ flex: 1 }}>{error}</div>
-          <span className="alert-close" onClick={() => setError(null)}>✕</span>
+          <span className="alert-close" onClick={() => setError(null)}>x</span>
         </div>
       )}
 
@@ -243,13 +248,26 @@ export const App: React.FC = () => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <div style={{ flex: 1 }}>{success}</div>
-          <span className="alert-close" onClick={() => setSuccess(null)}>✕</span>
+          <span className="alert-close" onClick={() => setSuccess(null)}>x</span>
         </div>
       )}
 
+      {/* Full-Width Platform Status Bar */}
+      <StatusPanel 
+        services={services} 
+        jetstreamInfo={jetstreamInfo}
+        onRefresh={() => refreshStatus(false)} 
+        onToggleProcessor={handleToggleProcessor}
+        isLoading={isRefreshingStatus}
+      />
+
       <main className="dashboard-grid">
-        {/* Left Column: Forms & Services */}
+        {/* Left Column: DEMO ACTIONS */}
         <div className="left-column">
+          <div className="column-section-header">
+            <span>DEMO ACTIONS</span>
+          </div>
+
           <JobPanel 
             onSubmitJob={handleJobSubmit} 
             onValidateJob={handleJobValidate} 
@@ -265,30 +283,19 @@ export const App: React.FC = () => {
           <ReplayPanel 
             onTriggerReplay={handleTriggerReplay}
           />
-
-          <StatusPanel 
-            services={services} 
-            jetstreamInfo={jetstreamInfo}
-            onRefresh={() => refreshStatus(false)} 
-            onToggleProcessor={handleToggleProcessor}
-            isLoading={isRefreshingStatus}
-          />
         </div>
 
-        {/* Right Column: Activity Logs & Inspector */}
+        {/* Right Column: LIVE OBSERVABILITY */}
         <div className="right-column">
+          <div className="column-section-header">
+            <span>LIVE OBSERVABILITY</span>
+          </div>
+
           <ActivityPanel 
             activities={activities} 
             onRefresh={() => refreshActivity(false)} 
             isLoading={isRefreshingActivity}
             onSelectJob={handleSelectJob}
-          />
-
-          <AddressingPanel 
-            subscriptions={subscriptions}
-            events={addressingEvents}
-            onRefresh={() => refreshAddressing(false)}
-            isLoading={isRefreshingAddressing}
           />
 
           {(selectedJobId || isLoadingInspector || inspectorError) && (
@@ -299,6 +306,13 @@ export const App: React.FC = () => {
               onClose={() => setSelectedJobId(null)}
             />
           )}
+
+          <AddressingPanel 
+            subscriptions={subscriptions}
+            events={addressingEvents}
+            onRefresh={() => refreshAddressing(false)}
+            isLoading={isRefreshingAddressing}
+          />
         </div>
       </main>
     </div>

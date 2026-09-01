@@ -60,7 +60,7 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({ activities, onRefr
       <div className="activity-table-wrapper">
         {activities.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">📥</div>
+            <div className="empty-state-icon">[ ]</div>
             <p style={{ fontWeight: 500, marginBottom: '0.25rem' }}>No activity logged yet</p>
             <p style={{ fontSize: '0.8125rem' }}>Submit a job using the panel on the left to see NATS activity.</p>
           </div>

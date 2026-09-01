@@ -159,7 +159,7 @@ export const JobPanel: React.FC<JobPanelProps> = ({
 
         {jsonError && (
           <div style={{ color: 'var(--status-danger)', fontSize: '0.8125rem', marginTop: '0.5rem', fontFamily: 'var(--font-mono)' }}>
-            ⚠️ {jsonError}
+            * {jsonError}
           </div>
         )}
 

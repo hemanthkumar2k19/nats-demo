@@ -102,36 +102,46 @@ The UI should make this flow visible without requiring the developer to inspect 
 Use a single primary screen initially.
 
 ```text
-+------------------------------------------------------------------+
-| NATS Platform Demo                               System Status OK |
-+------------------------------------------------------------------+
-|                                                                  |
-| SERVICES                                                         |
-|                                                                  |
-| NATS Server             ● Connected                              |
-| Demo Service            ● Active                                 |
-| Processor Service       ● Active                                 |
-| Processor-1             ● Active                                 |
-| Processor-2             ● Active                                 |
-|                                                                  |
-+------------------------------------------------------------------+
-|                                                                  |
-| JOB DEMO                                                         |
-|                                                                  |
-| Job Type: [ image-processing v ]                                 |
-| Job ID:   [ job-101             ]                                |
-|                                                                  |
-| [ Submit Job ]       [ Validate Job ]                            |
-|                                                                  |
-+------------------------------------------------------------------+
-|                                                                  |
-| ACTIVITY                                                         |
-|                                                                  |
-| 14:32:01  job-101   SUBMITTED     jobs.submitted                 |
-| 14:32:01  job-101   PROCESSING    processor-1                   |
-| 14:32:02  job-101   COMPLETED     jobs.completed                 |
-|                                                                  |
-+------------------------------------------------------------------+
++=======================================================================================================================================+
+| [Header]                                                                                                                              |
+|  NATS Platform Demo Console                                                                10:30:00    [ NATS CONNECTED ]            |
++=======================================================================================================================================+
+| [Dynamic Alert Banner - success / error / warning]                                                                                   |
++=======================================================================================================================================+
+| PLATFORM STATUS                                                                                                                       |
++---------------------------------------------------------------------------------------------------------------------------------------+
+| NATS Server       [ Connected ]     Demo Service      [ Active ]     Processor Service   [ Active ]     Processing [ ON ]           |
+| JetStream         [ Available ]     Stream: JOBS     Pending: 0     Workers: 1            Consumer: Active                           |
++=======================================================================================================================================+
+| LEFT: DEMO ACTIONS                                      | RIGHT: LIVE OBSERVABILITY                                                   |
++---------------------------------------------------------+-----------------------------------------------------------------------------+
+| [JobPanel]                                              | [ActivityPanel]                                                             |
+| +-----------------------------------------------------+ | +-------------------------------------------------------------------------+ |
+| | Submit Job                                          | | Activity Log                                                [Refresh] | |
+| |                                                     | | Time     Job ID    Mode       Event        Subject      Worker  Dlv  | |
+| | Delivery Mode: (o) Core NATS  ( ) JetStream         | | ----------------------------------------------------------------------- | |
+| | Job ID:    [ job-101                 ]              | | 10:30:01 job-101   CORE       PUBLISHED    jobs.sub...  -       1    | |
+| | Job Type:  [ image-processing        v ]            | | 10:30:01 job-101   CORE       RECEIVED     jobs.rec...  proc-1  1    | |
+| | Payload:   { "file": "img.jpg"       }              | | 10:30:02 job-101   CORE       COMPLETED    jobs.com...  proc-1  1    | |
+| | [ Submit Job ]                    [ Validate ]      | +-------------------------------------------------------------------------+ |
+| +-----------------------------------------------------+                                                                               |
+|                                                         | [JobInspectorPanel] (When Job ID is clicked)                                |
+| [RequestReplyPanel]                                     | +-------------------------------------------------------------------------+ |
+| +-----------------------------------------------------+ | | Job Details                                      [Close]              | |
+| | Request / Reply                                    | | | Job ID: job-101        Status: COMPLETED                              | |
+| | Subject: jobs.validate                             | | | Correlation ID: abc-123    Delivery Count: 1                          | |
+| | Job ID:    [ job-val-101 ]                          | | | Status History: SUBMITTED -> PROCESSING -> COMPLETED                  | |
+| | [ Send Request ]                                    | | | Raw Payload: { ... }                                                  | |
+| | Status: [ SUCCESS / TIMEOUT ]                       | | +-------------------------------------------------------------------------+ |
+| +-----------------------------------------------------+                                                                               |
+|                                                         | [AddressingPanel]                                                          |
+| [ReplayPanel]                                           | +-------------------------------------------------------------------------+ |
+| +-----------------------------------------------------+ | | NATS Subject Addressing                                                 | |
+| | JetStream Replay                                    | | | Exact, Single (*), Multi (>) active subscriptions                     | |
+| | From Sequence: [ 100 ]   To Sequence: [ 120 ]       | | | Subject Routing Activity matrix                                       | |
+| | [ Start Replay ]                                     | | +-------------------------------------------------------------------------+ |
+| +-----------------------------------------------------+                                                                               |
++=======================================================================================================================================+
 ```
 
 Keep the initial UI to one main screen.

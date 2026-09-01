@@ -17,18 +17,39 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
   onToggleProcessor,
   isLoading,
 }) => {
+  // Extract individual service statuses
+  const natsService = services.find((s) => s.name.toLowerCase().includes('nats'));
+  const demoService = services.find((s) => s.name.toLowerCase().includes('demo'));
+  const processorService = services.find((s) => s.name.toLowerCase().includes('processor'));
+
+  const natsStatus = natsService?.status || 'unknown';
+  const demoStatus = demoService?.status || 'unknown';
+  const processorStatus = processorService?.status || 'unknown';
+
+  const isProcessing = processorService?.processing ?? false;
+  const isNatsConnected = natsStatus === 'connected' || natsStatus === 'active';
+  const isProcessorActive = processorStatus === 'active' || processorStatus === 'connected';
+
+  // Compute worker count and consumer status
+  const workerCount = isProcessorActive ? 1 : 0;
+  const consumerStatus = isProcessorActive
+    ? isProcessing
+      ? 'Active'
+      : 'Paused'
+    : 'Offline';
+
   return (
-    <div className="panel">
-      <div className="panel-header">
+    <div className="panel platform-status-panel">
+      <div className="panel-header" style={{ marginBottom: '0.75rem' }}>
         <h2 className="panel-title">
           <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
-          Services Status
+          PLATFORM STATUS
         </h2>
-        <button 
-          className="btn btn-secondary" 
-          onClick={onRefresh} 
+        <button
+          className="btn btn-secondary"
+          onClick={onRefresh}
           disabled={isLoading}
           style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
         >
@@ -36,71 +57,108 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
         </button>
       </div>
 
-      <div className="status-list">
-        {services.length === 0 ? (
-          <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', textAlign: 'center', padding: '1rem 0' }}>
-            No service statuses loaded. Click Refresh.
+      <div className="platform-status-grid">
+        {/* Row 1: Core Services & Processing Toggle */}
+        <div className="platform-status-row">
+          <div className="status-metric-cell">
+            <span className="status-metric-label">NATS Server</span>
+            <StatusIndicator
+              status={natsStatus as any}
+              label={isNatsConnected ? 'Connected' : 'Disconnected'}
+            />
           </div>
-        ) : (
-          services.map((svc) => (
-            <div key={svc.name} className="status-item" style={{ flexWrap: 'wrap', gap: '0.25rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                <span className="status-name">{svc.name}</span>
-                <StatusIndicator 
-                  status={svc.status} 
-                  label={
-                    svc.status === 'active' ? 'Active' : 
-                    svc.status === 'connected' ? 'Connected' : 
-                    svc.status === 'disconnected' ? 'Disconnected' : 
-                    svc.status === 'stopped' ? 'Stopped' : svc.status
-                  } 
-                />
-              </div>
-              {svc.name === 'processor-service' && svc.status !== 'disconnected' && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginTop: '0.25rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                    Processing: <strong style={{ color: svc.processing ? '#34D399' : '#F87171' }}>{svc.processing ? 'ON' : 'OFF'}</strong>
-                  </span>
-                  <button
-                    className={`btn ${svc.processing ? 'btn-secondary' : 'btn-primary'}`}
-                    style={{ padding: '0.125rem 0.375rem', fontSize: '0.75rem', height: 'auto', minHeight: 'unset' }}
-                    onClick={() => onToggleProcessor(!svc.processing)}
-                  >
-                    {svc.processing ? 'Turn OFF' : 'Turn ON'}
-                  </button>
-                </div>
-              )}
-            </div>
-          ))
-        )}
-      </div>
 
-      {jetstreamInfo && (
-        <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-            JetStream Info
+          <div className="status-metric-cell">
+            <span className="status-metric-label">Demo Service</span>
+            <StatusIndicator
+              status={demoStatus as any}
+              label={demoStatus === 'active' ? 'Active' : 'Disconnected'}
+            />
           </div>
-          <div className="status-item">
-            <span className="status-name">Stream</span>
-            <span style={{ fontSize: '0.8125rem', fontWeight: 500, fontFamily: 'var(--font-mono)' }}>{jetstreamInfo.stream}</span>
+
+          <div className="status-metric-cell">
+            <span className="status-metric-label">Processor Service</span>
+            <StatusIndicator
+              status={processorStatus as any}
+              label={processorStatus === 'active' ? 'Active' : 'Disconnected'}
+            />
           </div>
-          <div className="status-item">
-            <span className="status-name">Pending Messages</span>
-            <span className="badge" style={{ 
-              fontSize: '0.8125rem', 
-              fontFamily: 'var(--font-mono)',
-              background: jetstreamInfo.pending > 0 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-              color: jetstreamInfo.pending > 0 ? '#FBBF24' : '#34D399',
-              border: jetstreamInfo.pending > 0 ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
-              padding: '0.125rem 0.375rem',
-              borderRadius: '4px',
-              fontWeight: 600
-            }}>
-              {jetstreamInfo.pending}
+
+          <div className="status-metric-cell">
+            <span className="status-metric-label">Processing</span>
+            <button
+              className={`status-toggle-btn ${isProcessing ? 'toggle-on' : 'toggle-off'}`}
+              onClick={() => onToggleProcessor(!isProcessing)}
+              disabled={!isProcessorActive}
+              title={isProcessorActive ? 'Click to toggle processor state' : 'Processor is offline'}
+            >
+              <span className="toggle-dot" />
+              <span>{isProcessing ? 'ON' : 'OFF'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Row 2: JetStream, Stream Info, Pending, Workers & Consumer */}
+        <div className="platform-status-row secondary-row">
+          <div className="status-metric-cell">
+            <span className="status-metric-label">JetStream</span>
+            <span
+              className="badge"
+              style={{
+                background: isNatsConnected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                color: isNatsConnected ? '#34D399' : '#F87171',
+                border: isNatsConnected ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(239, 68, 68, 0.25)',
+              }}
+            >
+              {isNatsConnected ? 'Available' : 'Unavailable'}
+            </span>
+          </div>
+
+          <div className="status-metric-cell">
+            <span className="status-metric-label">Stream</span>
+            <span className="mono-cell" style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>
+              {jetstreamInfo?.stream || 'JOBS'}
+            </span>
+          </div>
+
+          <div className="status-metric-cell">
+            <span className="status-metric-label">Pending</span>
+            <span
+              className="badge"
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontWeight: 600,
+                background: (jetstreamInfo?.pending ?? 0) > 0 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                color: (jetstreamInfo?.pending ?? 0) > 0 ? '#FBBF24' : '#34D399',
+                border: (jetstreamInfo?.pending ?? 0) > 0 ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+              }}
+            >
+              {jetstreamInfo?.pending ?? 0}
+            </span>
+          </div>
+
+          <div className="status-metric-cell">
+            <span className="status-metric-label">Workers</span>
+            <span className="mono-cell" style={{ fontWeight: 600 }}>
+              {workerCount}
+            </span>
+          </div>
+
+          <div className="status-metric-cell">
+            <span className="status-metric-label">Consumer</span>
+            <span
+              className="badge"
+              style={{
+                background: consumerStatus === 'Active' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(107, 114, 128, 0.15)',
+                color: consumerStatus === 'Active' ? '#60A5FA' : '#9CA3AF',
+                border: consumerStatus === 'Active' ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(107, 114, 128, 0.3)',
+              }}
+            >
+              {consumerStatus}
             </span>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };
