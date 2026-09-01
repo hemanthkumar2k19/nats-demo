@@ -37,7 +37,8 @@ Submit a job for processing. This is a **fire-and-forget** operation. The Demo S
   {
     "job_id": "job-101",
     "status": "SUBMITTED",
-    "correlation_id": "8f32a1c2"
+    "correlation_id": "8f32a1c2",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
   }
   ```
 * **NATS Action**: Publishes message to subject `jobs.submitted`.
@@ -66,7 +67,8 @@ Synchronously validates a job configuration using NATS **Request/Reply**. The De
   ```json
   {
     "valid": true,
-    "message": "Job configuration is valid."
+    "message": "Job configuration is valid.",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
   }
   ```
 * **Response (Timeout - Processor OFF)**: `504 Gateway Timeout`
@@ -93,6 +95,7 @@ Retrieve the status of a specific job. Initially, this status is tracked in-memo
     "status": "COMPLETED",
     "delivery_count": 1,
     "correlation_id": "8f32a1c2",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
     "history": [
       {
         "status": "SUBMITTED",
@@ -237,16 +240,24 @@ Retrieve flat chronological NATS activity logs for the dashboard.
       "subject": "jobs.submitted",
       "worker": "demo-service",
       "delivery_count": 1,
-      "delivery_mode": "CORE"
+      "delivery_mode": "CORE",
+      "correlation_id": "corr-job-772",
+      "msg_id": "job-772",
+      "job_type": "image-processing",
+      "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
     },
     {
-      "timestamp": "17:07:34",
+      "timestamp": "17:07:35",
       "job_id": "job-772",
       "event": "RECEIVED",
       "subject": "jobs.received",
       "worker": "processor-1",
       "delivery_count": 1,
-      "delivery_mode": "CORE"
+      "delivery_mode": "CORE",
+      "correlation_id": "corr-job-772",
+      "msg_id": "job-772",
+      "job_type": "image-processing",
+      "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
     }
   ]
   ```
@@ -344,11 +355,12 @@ Dynamically configure consumer settings (Durable vs Ephemeral, worker pool size,
 All NATS message payloads are structured as JSON. Standard metadata is passed via NATS headers to keep the payload clean.
 
 ### 2.1. Headers
-The following headers must be present in messages:
+The following headers are present in messages:
 * `Content-Type`: `application/json`
 * `Nats-Msg-Id`: Unique message ID (used for JetStream message deduplication).
 * `X-Correlation-Id`: Correlation ID passed down from the client.
 * `X-Source`: Identifier of the sending service (e.g., `demo-service` or `processor-service`).
+* `traceparent`: Standard W3C distributed tracing header (`00-<trace_id>-<span_id>-01`) for OpenTelemetry context propagation.
 
 ---
 

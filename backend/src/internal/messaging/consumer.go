@@ -1,25 +1,23 @@
 package messaging
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"nats-demo/internal/jobs"
 	"nats-demo/internal/natsclient"
+	"nats-demo/internal/telemetry"
 
 	"github.com/nats-io/nats.go"
 )
 
 // JobHandler defines the callback function signature for processing a job.
-type JobHandler func(job jobs.Job, correlationID string) error
+type JobHandler func(ctx context.Context, job jobs.Job, correlationID string) error
 
 // ValidationHandler defines the callback function signature for validating a job request.
-// correlationID is extracted from the NATS message headers and forwarded so the
-// handler can include it in any lifecycle events it publishes.
-// Returning jobs.ErrProcessorDisabled signals that the handler chose not to respond;
-// msg.Respond is skipped so the requester times out naturally.
-type ValidationHandler func(job jobs.Job, correlationID string) (jobs.JobValidationResponse, error)
+type ValidationHandler func(ctx context.Context, job jobs.Job, correlationID string) (jobs.JobValidationResponse, error)
 
 // Consumer manages NATS subscriptions.
 type Consumer struct {
@@ -44,7 +42,8 @@ func (c *Consumer) SubscribeJobSubmitted(handler JobHandler) (*nats.Subscription
 
 		log.Printf("[Consumer] Received message on subject: %s | Job ID: %s | Correlation ID: %s", msg.Subject, job.JobID, correlationID)
 
-		if err := handler(job, correlationID); err != nil {
+		parentCtx := telemetry.ExtractTraceContext(context.Background(), msg.Header)
+		if err := handler(parentCtx, job, correlationID); err != nil {
 			log.Printf("[Consumer] Error handling job %s: %v", job.JobID, err)
 		}
 	})
@@ -57,10 +56,6 @@ func (c *Consumer) SubscribeJobSubmitted(handler JobHandler) (*nats.Subscription
 }
 
 // SubscribeJobValidate registers a subscription to SubjectJobValidate and replies synchronously using the handler.
-// The X-Correlation-Id header from the request is extracted and passed to the handler so lifecycle
-// events published by the handler carry the same correlation ID.
-// If the handler returns jobs.ErrProcessorDisabled, msg.Respond is skipped so the
-// NATS requester times out naturally - this is the intended "processor OFF" behaviour.
 func (c *Consumer) SubscribeJobValidate(handler ValidationHandler) (*nats.Subscription, error) {
 	sub, err := c.client.Conn.Subscribe(SubjectJobValidate, func(msg *nats.Msg) {
 		correlationID := msg.Header.Get("X-Correlation-Id")
@@ -74,7 +69,8 @@ func (c *Consumer) SubscribeJobValidate(handler ValidationHandler) (*nats.Subscr
 			return
 		}
 
-		resp, err := handler(job, correlationID)
+		parentCtx := telemetry.ExtractTraceContext(context.Background(), msg.Header)
+		resp, err := handler(parentCtx, job, correlationID)
 		if err != nil {
 			// ErrProcessorDisabled means the handler deliberately chose not to respond.
 			// Skip msg.Respond so the requester's 2-second timeout fires naturally.

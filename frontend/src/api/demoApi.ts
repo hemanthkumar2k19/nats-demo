@@ -3,12 +3,14 @@ export interface Job {
   type: string;
   payload: Record<string, any>;
   delivery_mode?: string;
+  trace_id?: string;
 }
 
 export interface JobStatusResponse {
   job_id: string;
   status: string;
   correlation_id?: string;
+  trace_id?: string;
 }
 
 export interface Activity {
@@ -23,6 +25,7 @@ export interface Activity {
   correlation_id?: string;
   msg_id?: string;
   job_type?: string;
+  trace_id?: string;
 }
 
 export interface ServiceStatus {
@@ -183,6 +186,7 @@ export interface JobDetailResponse {
   status: string;
   delivery_count: number;
   correlation_id: string;
+  trace_id?: string;
   history: JobHistoryItem[];
 }
 

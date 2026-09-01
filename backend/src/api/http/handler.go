@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -13,12 +14,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // JobService specifies the domain service functionality needed by HTTP handlers.
 type JobService interface {
-	SubmitJob(job jobs.Job, correlationID string) (*jobs.JobStatusResponse, error)
-	ValidateJob(job jobs.Job, correlationID string) (*jobs.JobValidationResponse, error)
+	SubmitJob(ctx context.Context, job jobs.Job, correlationID string) (*jobs.JobStatusResponse, error)
+	ValidateJob(ctx context.Context, job jobs.Job, correlationID string) (*jobs.JobValidationResponse, error)
 	ListJobs() []*jobs.JobDetailResponse
 	GetJob(jobID string) (*jobs.JobDetailResponse, bool)
 	GetActivities() []jobs.Activity
@@ -154,16 +158,38 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 		correlationID = "corr-" + job.JobID
 	}
 
-	resp, err := h.jobService.SubmitJob(job, correlationID)
+	// Start HTTP Server Span
+	ctx, span := telemetry.StartSpan(c.Request.Context(), "POST /jobs",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("http.request.method", "POST"),
+			attribute.String("http.route", "/jobs"),
+			attribute.String("delivery.mode", job.DeliveryMode),
+			attribute.String("job.id", job.JobID),
+			attribute.String("job.type", job.Type),
+		),
+	)
+	defer span.End()
+
+	traceID := span.SpanContext().TraceID().String()
+	job.TraceID = traceID
+
+	resp, err := h.jobService.SubmitJob(ctx, job, correlationID)
 	duration := time.Since(startTime)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		span.SetAttributes(attribute.Int("http.response.status_code", http.StatusInternalServerError))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "trace_id": traceID})
 		return
 	}
 
+	span.SetStatus(codes.Ok, "submitted")
+	span.SetAttributes(attribute.Int("http.response.status_code", http.StatusAccepted))
+
 	// Record application metrics via central telemetry package
-	telemetry.RecordJobSubmitted(c.Request.Context(), job.DeliveryMode, job.Type, duration)
-	telemetry.RecordNatsPublish(c.Request.Context(), job.DeliveryMode, messaging.SubjectJobSubmitted)
+	telemetry.RecordJobSubmitted(ctx, job.DeliveryMode, job.Type, duration)
+	telemetry.RecordNatsPublish(ctx, job.DeliveryMode, messaging.SubjectJobSubmitted)
 
 	// For CORE delivery mode, if processor is OFF (not active or not processing),
 	// publish a SubjectJobNoConsumer lifecycle event immediately to represent transient message loss.
@@ -196,6 +222,9 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 		}
 	}
 
+	if resp != nil {
+		resp.TraceID = traceID
+	}
 	c.JSON(http.StatusAccepted, resp)
 }
 
@@ -214,7 +243,22 @@ func (h *Handler) ValidateJob(c *gin.Context) {
 		correlationID = "corr-val-" + job.JobID
 	}
 
-	resp, err := h.jobService.ValidateJob(job, correlationID)
+	// Start HTTP Server Span
+	ctx, span := telemetry.StartSpan(c.Request.Context(), "POST /jobs/validate",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("http.request.method", "POST"),
+			attribute.String("http.route", "/jobs/validate"),
+			attribute.String("job.id", job.JobID),
+			attribute.String("job.type", job.Type),
+		),
+	)
+	defer span.End()
+
+	traceID := span.SpanContext().TraceID().String()
+	job.TraceID = traceID
+
+	resp, err := h.jobService.ValidateJob(ctx, job, correlationID)
 	duration := time.Since(startTime)
 
 	// Determine validation result for metric label
@@ -227,23 +271,34 @@ func (h *Handler) ValidateJob(c *gin.Context) {
 	} else if resp != nil && !resp.Valid {
 		result = "invalid"
 	}
-	telemetry.RecordValidationRequest(c.Request.Context(), result, duration)
-	telemetry.RecordNatsRequest(c.Request.Context(), messaging.SubjectJobValidate, duration, err)
+	telemetry.RecordValidationRequest(ctx, result, duration)
+	telemetry.RecordNatsRequest(ctx, messaging.SubjectJobValidate, duration, err)
 
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		// When the processor has no active responder the request times out.
 		// Return 504 so the UI can display the timeout scenario clearly.
 		if errors.Is(err, messaging.ErrRequestTimeout) {
+			span.SetAttributes(attribute.Int("http.response.status_code", http.StatusGatewayTimeout))
 			c.JSON(http.StatusGatewayTimeout, gin.H{
-				"error":   "request timed out",
-				"message": "No response received from processor service",
+				"error":    "request timed out",
+				"message":  "No response received from processor service",
+				"trace_id": traceID,
 			})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		span.SetAttributes(attribute.Int("http.response.status_code", http.StatusInternalServerError))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "trace_id": traceID})
 		return
 	}
 
+	span.SetStatus(codes.Ok, "validated")
+	span.SetAttributes(attribute.Int("http.response.status_code", http.StatusOK))
+
+	if resp != nil {
+		resp.TraceID = traceID
+	}
 	c.JSON(http.StatusOK, resp)
 }
 

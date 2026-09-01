@@ -22,7 +22,7 @@ The compose configuration starts:
 1. **NATS Server (`nats`)**: Runs the official NATS image, exposes port `4222` (client connection), port `8222` (monitoring server), and maps a local volume `nats-data` to `/data` for JetStream persistence.
 2. **NATS UI (`nats-ui`)**: A web console exposed on port `3001` to inspect NATS connections and cluster configurations.
 3. **NATS Prometheus Exporter (`nats-exporter`)**: Exposes NATS monitoring metrics on port `7777` (`/metrics`), scraping NATS port `8222` with `-jsz`, `-connz`, `-subz`, `-varz`.
-4. **Grafana OTEL-LGTM (`otel-lgtm`)**: Unified local observability stack combining OpenTelemetry Collector (`:4317` gRPC / `:4318` HTTP), Prometheus (`:9090`), and Grafana (`:3000`). Pre-provisioned with the `NATS Platform Demo - Metrics` dashboard.
+4. **Grafana OTEL-LGTM (`otel-lgtm`)**: Unified local observability stack combining OpenTelemetry Collector (`:4317` gRPC / `:4318` HTTP), Prometheus (`:9090`), Tempo (`:3200` / OTLP `:4317`), and Grafana (`:3000`). Pre-provisioned with the `NATS Platform Demo - Metrics` dashboard and Tempo distributed trace explorer.
 
 ### Command to Start:
 From the project root directory, run:
@@ -109,4 +109,9 @@ Once all services are running, verify the setup with these steps:
 4. **Metrics Observability in Grafana**:
    - Access Grafana at `http://localhost:3000` (credentials: `admin` / `admin`).
    - Open the provisioned dashboard: `NATS Platform Demo - Metrics`.
-   - Submit jobs and send validation requests in the UI; observe live metrics update across the 4 sections: NATS Server, JetStream, Application Activity, and Processing Performance.
+   - Submit jobs and send validation requests in the UI; observe live metrics update across the 5 sections: NATS Health, Messaging, JetStream, Consumers, and JetStream Activity.
+5. **Distributed Tracing in Tempo**:
+   - Access Grafana Explore at `http://localhost:3000/explore`.
+   - Select the `Tempo` data source.
+   - Click **[ View in Tempo -> ]** from any inspected job in the Job Details Inspector in the React UI (or paste the Trace ID into the Tempo query bar).
+   - Observe the full distributed trace waterfall spanning `demo-service` HTTP handlers, NATS context-injected headers, and `processor-service` consumer and execution spans.

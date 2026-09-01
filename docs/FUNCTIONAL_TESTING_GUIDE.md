@@ -9,6 +9,9 @@ This guide provides step-by-step instructions for evaluating, demonstrating, and
 Open three terminal windows to launch the demo components:
 
 ```bash
+# Terminal 0: Start NATS Broker, Exporter, and Grafana OTEL-LGTM
+docker compose -f deploy/docker-compose.yaml up -d
+
 # Terminal 1: Demo Service (HTTP API, Publisher, Lifecycle Observer)
 cd backend && go run ./src/cmd/demo-service/main.go
 
@@ -338,6 +341,43 @@ NATS CONNECTED (Port 4222)
 
 ---
 
+### Scenario 13: End-to-End Distributed Tracing with OpenTelemetry & Tempo
+
+#### What NATS Feature Is Demonstrated?
+* **W3C Trace Context Propagation over NATS Headers**:
+  - OpenTelemetry `traceparent` header injection into `nats.Msg.Header` upon publish.
+  - Context extraction by consumers to link consumer receive and processing spans to the original publisher trace.
+  - Distributed tracing across asynchronous pub/sub, JetStream persistent delivery, and synchronous request/reply patterns.
+  - Trace visualization in Grafana Tempo.
+
+#### Steps:
+1. Ensure the stack is running:
+   ```bash
+   docker compose -f deploy/docker-compose.yaml up -d
+   ```
+2. In the React UI, submit a JetStream job.
+3. In the **ACTIVITY LOG**, click on the newly submitted job ID to open the **Job Details Inspector**.
+4. Observe the **Trace ID** field displayed in purple/indigo monospace, alongside a **[ View in Tempo -> ]** button.
+5. Click **[ View in Tempo -> ]** (or open `http://localhost:3000/explore` and paste the Trace ID in the Tempo query input).
+6. Observe the complete distributed trace waterfall diagram in Tempo:
+   - `POST /jobs` (Server span, demo-service)
+     - `NATS Publish jobs.submitted` (Producer span, messaging.system: nats, jetstream.stream: JOBS)
+       - `Consumer Receive` (Consumer span, processor-service, messaging.destination: jobs.submitted)
+         - `Process Job` (Internal span, worker: processor-1, delivery.count: 1)
+7. **Trace Validation RPC (Request/Reply)**:
+   - In the **REQUEST / REPLY VALIDATION** panel, click **Send Validation Request**.
+   - Check the response card or the Activity Log for the Trace ID.
+   - In Tempo, view the synchronous trace waterfall:
+     - `POST /jobs/validate` (Server span, demo-service)
+       - `NATS Request jobs.validate` (Client span, demo-service)
+         - `Process Validation Request` (Server span, processor-service)
+           - `NATS Reply` (Producer span, processor-service)
+8. **Trace Error / Redelivery Scenarios**:
+   - Submit a job with "Simulate Failure" checked.
+   - In Tempo, note that the `Process Job` span records the error with `status: Error` and the `Consumer Receive` span registers the `redelivery_scheduled` event.
+
+---
+
 ## Troubleshooting & Verification Checklist
 
 | Symptom | Likely Cause | Solution |
@@ -347,3 +387,5 @@ NATS CONNECTED (Port 4222)
 | JetStream Jobs Not Processing | Processing is toggled OFF | Click `[ Turn ON ]` in Platform Status. |
 | Replay yields no messages | No JetStream messages in stream | Submit at least 1 JetStream job before triggering Replay. |
 | Duplicate job processed anyway | Outside 2-minute dedup window | JetStream deduplication window is 2 minutes; submit duplicate within 120 seconds. |
+| Tempo shows no traces | OTLP exporter not connected | Ensure `otel-lgtm` is running and port 4317 is accessible. |
+

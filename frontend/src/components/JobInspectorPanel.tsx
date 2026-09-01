@@ -112,6 +112,23 @@ export const JobInspectorPanel: React.FC<JobInspectorPanelProps> = ({
                 {job.delivery_count}
               </span>
             </div>
+            {job.trace_id && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.25rem', fontSize: '0.875rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Trace ID</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span className="mono-cell" style={{ color: '#818cf8', fontSize: '0.75rem' }}>{job.trace_id}</span>
+                  <a
+                    href={`http://localhost:3000/explore?left=%5B%22now-1h%22,%22now%22,%22tempo%22,%7B%22query%22:%22${job.trace_id}%22%7D%5D`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn btn-secondary"
+                    style={{ padding: '0.125rem 0.375rem', fontSize: '0.7rem', color: '#818cf8', textDecoration: 'none' }}
+                  >
+                    View in Tempo -&gt;
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* History log list */}

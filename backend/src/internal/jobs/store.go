@@ -18,6 +18,7 @@ type Activity struct {
 	CorrelationID string `json:"correlation_id,omitempty"`
 	MsgID         string `json:"msg_id,omitempty"`
 	JobType       string `json:"job_type,omitempty"`
+	TraceID       string `json:"trace_id,omitempty"`
 }
 
 // JobStore tracks job details and a capped list of activities.
@@ -96,5 +97,21 @@ func (s *JobStore) AddEvent(jobID string, status string, deliveryCount int, corr
 	// Cap activities at 200 to prevent unbounded memory growth
 	if len(s.activities) > 200 {
 		s.activities = s.activities[:200]
+	}
+}
+
+// SetTraceID associates a trace ID with an existing job and its activities.
+func (s *JobStore) SetTraceID(jobID, traceID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if job, exists := s.jobs[jobID]; exists {
+		job.TraceID = traceID
+	}
+
+	for i := range s.activities {
+		if s.activities[i].JobID == jobID && s.activities[i].TraceID == "" {
+			s.activities[i].TraceID = traceID
+		}
 	}
 }

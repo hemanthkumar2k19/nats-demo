@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { NatsComponentInfo } from '../../data/natsInfoData';
+import { NatsComponentInfo } from '../../content/natsInfo';
 
 interface InfoPopoverProps {
   info: NatsComponentInfo | null;

@@ -1,13 +1,18 @@
 package messaging
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 	"nats-demo/internal/jobs"
 	"nats-demo/internal/natsclient"
+	"nats-demo/internal/telemetry"
 
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Publisher manages NATS message publishing operations.
@@ -21,11 +26,24 @@ func NewPublisher(client *natsclient.Client) *Publisher {
 }
 
 // PublishJobSubmitted marshals the job to JSON and publishes it to the jobs.submitted subject using the selected delivery mode.
-func (p *Publisher) PublishJobSubmitted(job jobs.Job, correlationID string) error {
+func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job, correlationID string) error {
 	payload, err := json.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("failed to marshal job payload: %w", err)
 	}
+
+	pubCtx, pubSpan := telemetry.StartSpan(ctx, "NATS Publish "+SubjectJobSubmitted,
+		trace.WithSpanKind(trace.SpanKindProducer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "nats"),
+			attribute.String("messaging.operation", "publish"),
+			attribute.String("messaging.destination.name", SubjectJobSubmitted),
+			attribute.String("delivery.mode", job.DeliveryMode),
+			attribute.String("job.id", job.JobID),
+			attribute.String("job.type", job.Type),
+		),
+	)
+	defer pubSpan.End()
 
 	msg := nats.NewMsg(SubjectJobSubmitted)
 	msg.Header.Set("Content-Type", "application/json")
@@ -38,16 +56,26 @@ func (p *Publisher) PublishJobSubmitted(job jobs.Job, correlationID string) erro
 	msg.Header.Set("X-Delivery-Mode", job.DeliveryMode)
 	msg.Data = payload
 
+	// Inject W3C traceparent into NATS message headers
+	telemetry.InjectTraceContext(pubCtx, msg.Header)
+
 	if job.DeliveryMode == "JETSTREAM" {
+		pubSpan.SetAttributes(attribute.String("jetstream.stream", "JOBS"))
 		js, err := p.client.Conn.JetStream()
 		if err != nil {
+			pubSpan.RecordError(err)
+			pubSpan.SetStatus(codes.Error, err.Error())
 			return fmt.Errorf("failed to get JetStream context: %w", err)
 		}
 		ack, err := js.PublishMsg(msg)
 		if err != nil {
+			pubSpan.RecordError(err)
+			pubSpan.SetStatus(codes.Error, err.Error())
 			return fmt.Errorf("failed to publish to JetStream: %w", err)
 		}
+		pubSpan.SetAttributes(attribute.Int64("jetstream.sequence", int64(ack.Sequence)))
 		if ack.Duplicate {
+			pubSpan.SetAttributes(attribute.Bool("jetstream.duplicate", true))
 			// Duplicate publish recognized by JetStream deduplication window
 			_ = p.PublishJobLifecycle(SubjectJobDeduplicated, job.JobID, "DEDUPLICATED", 1, "Duplicate message recognized by JetStream deduplication window", correlationID, "demo-service", job.DeliveryMode, ack.Sequence)
 		} else {
@@ -56,10 +84,13 @@ func (p *Publisher) PublishJobSubmitted(job jobs.Job, correlationID string) erro
 		}
 	} else {
 		if err := p.client.Conn.PublishMsg(msg); err != nil {
+			pubSpan.RecordError(err)
+			pubSpan.SetStatus(codes.Error, err.Error())
 			return fmt.Errorf("failed to publish to NATS: %w", err)
 		}
 	}
 
+	pubSpan.SetStatus(codes.Ok, "published")
 	return nil
 }
 
@@ -70,11 +101,23 @@ var ErrRequestTimeout = fmt.Errorf("request timed out: no response from processo
 // RequestJobValidation sends a sync validation request via NATS Request/Reply.
 // correlationID is forwarded as X-Correlation-Id so the interaction can be
 // traced across the demo-service and processor-service logs.
-func (p *Publisher) RequestJobValidation(job jobs.Job, correlationID string) (*jobs.JobValidationResponse, error) {
+func (p *Publisher) RequestJobValidation(ctx context.Context, job jobs.Job, correlationID string) (*jobs.JobValidationResponse, error) {
 	payload, err := json.Marshal(job)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal validation payload: %w", err)
 	}
+
+	reqCtx, reqSpan := telemetry.StartSpan(ctx, "NATS Request "+SubjectJobValidate,
+		trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "nats"),
+			attribute.String("messaging.operation", "request"),
+			attribute.String("messaging.destination.name", SubjectJobValidate),
+			attribute.String("job.id", job.JobID),
+			attribute.String("job.type", job.Type),
+		),
+	)
+	defer reqSpan.End()
 
 	msg := nats.NewMsg(SubjectJobValidate)
 	msg.Header.Set("Content-Type", "application/json")
@@ -85,8 +128,13 @@ func (p *Publisher) RequestJobValidation(job jobs.Job, correlationID string) (*j
 	}
 	msg.Data = payload
 
+	// Inject W3C traceparent into NATS message headers
+	telemetry.InjectTraceContext(reqCtx, msg.Header)
+
 	reply, err := p.client.Conn.RequestMsg(msg, 2*time.Second)
 	if err != nil {
+		reqSpan.RecordError(err)
+		reqSpan.SetStatus(codes.Error, err.Error())
 		// Surface timeout and no-responder as a typed sentinel so the caller
 		// can distinguish them from internal errors.
 		if err == nats.ErrTimeout || err == nats.ErrNoResponders {
@@ -97,9 +145,12 @@ func (p *Publisher) RequestJobValidation(job jobs.Job, correlationID string) (*j
 
 	var resp jobs.JobValidationResponse
 	if err := json.Unmarshal(reply.Data, &resp); err != nil {
+		reqSpan.RecordError(err)
+		reqSpan.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("failed to unmarshal validation reply: %w", err)
 	}
 
+	reqSpan.SetStatus(codes.Ok, "validated")
 	return &resp, nil
 }
 

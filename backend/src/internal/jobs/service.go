@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,8 +10,8 @@ import (
 
 // Publisher interface abstracts the messaging layer to decouple the domain layer from NATS.
 type Publisher interface {
-	PublishJobSubmitted(job Job, correlationID string) error
-	RequestJobValidation(job Job, correlationID string) (*JobValidationResponse, error)
+	PublishJobSubmitted(ctx context.Context, job Job, correlationID string) error
+	RequestJobValidation(ctx context.Context, job Job, correlationID string) (*JobValidationResponse, error)
 }
 
 // Service manages the business workflows for jobs.
@@ -28,7 +29,7 @@ func NewService(publisher Publisher) *Service {
 }
 
 // SubmitJob processes and submits a job to the publisher.
-func (s *Service) SubmitJob(job Job, correlationID string) (*JobStatusResponse, error) {
+func (s *Service) SubmitJob(ctx context.Context, job Job, correlationID string) (*JobStatusResponse, error) {
 	if job.JobID == "" {
 		return nil, errors.New("job_id is required")
 	}
@@ -37,25 +38,33 @@ func (s *Service) SubmitJob(job Job, correlationID string) (*JobStatusResponse, 
 	}
 
 	// Publish to NATS
-	if err := s.publisher.PublishJobSubmitted(job, correlationID); err != nil {
+	if err := s.publisher.PublishJobSubmitted(ctx, job, correlationID); err != nil {
 		return nil, fmt.Errorf("failed to publish job: %w", err)
+	}
+
+	if job.TraceID != "" {
+		s.store.SetTraceID(job.JobID, job.TraceID)
 	}
 
 	return &JobStatusResponse{
 		JobID:         job.JobID,
 		Status:        "SUBMITTED",
 		CorrelationID: correlationID,
+		TraceID:       job.TraceID,
 	}, nil
 }
 
 // ValidateJob validates a job payload by sending a Request/Reply call over NATS.
 // correlationID is propagated into the NATS request so the full interaction can
 // be traced in the activity log.
-func (s *Service) ValidateJob(job Job, correlationID string) (*JobValidationResponse, error) {
+func (s *Service) ValidateJob(ctx context.Context, job Job, correlationID string) (*JobValidationResponse, error) {
 	// Record that demo-service is about to send the request.
 	s.store.AddEvent(job.JobID, "REQUEST_SENT", 1, correlationID, "jobs.validate", "demo-service", "", 0, job.JobID, job.Type)
+	if job.TraceID != "" {
+		s.store.SetTraceID(job.JobID, job.TraceID)
+	}
 
-	resp, err := s.publisher.RequestJobValidation(job, correlationID)
+	resp, err := s.publisher.RequestJobValidation(ctx, job, correlationID)
 	if err != nil {
 		// Record timeout so it appears in the activity log.
 		s.store.AddEvent(job.JobID, "REQUEST_TIMEOUT", 1, correlationID, "jobs.validate", "demo-service", "", 0, job.JobID, job.Type)

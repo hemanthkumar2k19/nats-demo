@@ -10,7 +10,7 @@ import { RequestReplyPanel } from './components/RequestReplyPanel';
 import { DemoSetupPanel } from './components/DemoSetup/DemoSetupPanel';
 import { ObservabilityPanel } from './components/ObservabilityPanel';
 import { InfoPopover } from './components/DemoSetup/InfoPopover';
-import { NATS_COMPONENTS_INFO } from './data/natsInfoData';
+import { NATS_COMPONENTS_INFO } from './content/natsInfo';
 import { 
   Job, 
   Activity, 

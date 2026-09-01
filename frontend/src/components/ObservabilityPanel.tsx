@@ -10,37 +10,50 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
       <div className="panel-header" style={{ marginBottom: '1.25rem' }}>
         <div>
           <div className="panel-title" style={{ gap: '0.625rem' }}>
-            <span>OBSERVABILITY SETUP</span>
+            <span>OBSERVABILITY SETUP (METRICS & TRACING)</span>
             <button
               className="info-btn"
               onClick={() => onShowInfo('metrics-observability')}
-              title="Learn about NATS & OpenTelemetry Metrics Observability"
+              title="Learn about NATS, OpenTelemetry Tracing & Metrics Observability"
             >
               (i)
             </button>
           </div>
           <p className="panel-subtitle">
-            Local metrics observability pipeline combining OpenTelemetry application instrumentation, NATS Prometheus exporter, and Grafana OTEL-LGTM.
+            Local observability pipeline combining OpenTelemetry distributed tracing (Tempo), application metrics, NATS Prometheus exporter, and Grafana OTEL-LGTM.
           </p>
         </div>
 
-        <a
-          href="http://localhost:3000"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-open-grafana"
-          title="Open Grafana Metrics Dashboard in a new window"
-        >
-          <span>Open Grafana</span>
-          <span style={{ fontSize: '0.875rem' }}>-&gt;</span>
-        </a>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <a
+            href="http://localhost:3000/explore"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-secondary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', textDecoration: 'none', fontSize: '0.8125rem' }}
+            title="Explore Distributed Traces in Tempo"
+          >
+            <span>Tempo Traces</span>
+            <span style={{ fontSize: '0.875rem' }}>-&gt;</span>
+          </a>
+          <a
+            href="http://localhost:3000"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-open-grafana"
+            title="Open Grafana Metrics Dashboard in a new window"
+          >
+            <span>Open Grafana</span>
+            <span style={{ fontSize: '0.875rem' }}>-&gt;</span>
+          </a>
+        </div>
       </div>
 
       {/* Observability Architecture Diagram */}
       <div className="obs-architecture-container">
         {/* Source 1: Application Services (OTel) */}
         <div className="obs-source-group">
-          <div className="obs-group-title">APPLICATION METRICS (OTEL)</div>
+          <div className="obs-group-title">APPLICATION TELEMETRY (OTEL)</div>
           
           <div className="obs-node-card">
             <div className="obs-node-header">
@@ -48,10 +61,10 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
               <span className="badge badge-published" style={{ fontSize: '0.625rem' }}>OTLP</span>
             </div>
             <div className="obs-node-body">
-              <div>jobs_submitted_total</div>
-              <div>job_submission_duration</div>
-              <div>nats_publish_total</div>
-              <div>nats_request_total</div>
+              <div style={{ color: '#818cf8', fontWeight: 600 }}>Spans: HTTP & Publish</div>
+              <div>POST /jobs, jobs.validate</div>
+              <div>NATS traceparent header</div>
+              <div style={{ color: 'var(--text-muted)' }}>jobs_submitted_total</div>
             </div>
           </div>
 
@@ -63,10 +76,10 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
               <span className="badge badge-published" style={{ fontSize: '0.625rem' }}>OTLP</span>
             </div>
             <div className="obs-node-body">
-              <div>jobs_processed_total</div>
-              <div>jobs_failed_total</div>
-              <div>job_processing_duration</div>
-              <div>nats_messages_acked_total</div>
+              <div style={{ color: '#818cf8', fontWeight: 600 }}>Spans: Consumer & Process</div>
+              <div>Consumer Receive, Process Job</div>
+              <div>Context extracted from NATS</div>
+              <div style={{ color: 'var(--text-muted)' }}>jobs_processed_total</div>
             </div>
           </div>
         </div>
@@ -74,7 +87,7 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
         {/* Arrow to LGTM */}
         <div className="obs-flow-arrow">
           <div className="obs-arrow-line">-----------------&gt;</div>
-          <span className="obs-arrow-label">OTLP gRPC (:4317)</span>
+          <span className="obs-arrow-label">OTLP gRPC (:4317) [Traces + Metrics]</span>
         </div>
 
         {/* Central: Grafana OTEL-LGTM Stack */}
@@ -88,7 +101,12 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
           <div className="obs-central-submodules">
             <div className="obs-submodule-item">
               <div className="obs-submodule-name">OpenTelemetry Collector</div>
-              <div className="obs-submodule-desc">Receives application OTLP metrics (:4317 / :4318)</div>
+              <div className="obs-submodule-desc">Receives OTLP traces & metrics (:4317 / :4318)</div>
+            </div>
+
+            <div className="obs-submodule-item" style={{ borderColor: 'rgba(129, 140, 248, 0.4)' }}>
+              <div className="obs-submodule-name" style={{ color: '#818cf8' }}>Tempo Distributed Tracing</div>
+              <div className="obs-submodule-desc">End-to-end trace spans across NATS & services</div>
             </div>
 
             <div className="obs-submodule-item">
@@ -97,8 +115,8 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
             </div>
 
             <div className="obs-submodule-item obs-submodule-highlight">
-              <div className="obs-submodule-name">Grafana Dashboard</div>
-              <div className="obs-submodule-desc">NATS Platform Demo - Metrics (:3000)</div>
+              <div className="obs-submodule-name">Grafana Dashboard & Explore</div>
+              <div className="obs-submodule-desc">Top 20 NATS Metrics & Tempo Traces (:3000)</div>
             </div>
           </div>
         </div>
@@ -156,9 +174,19 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
         </div>
 
         <div className="obs-endpoint-card">
+          <div className="obs-endpoint-label">Tempo Trace Explorer</div>
+          <div className="obs-endpoint-val">
+            <a href="http://localhost:3000/explore" target="_blank" rel="noopener noreferrer" style={{ color: '#818cf8' }}>
+              http://localhost:3000/explore
+            </a>
+          </div>
+          <div className="obs-endpoint-hint">Query by Trace ID across NATS</div>
+        </div>
+
+        <div className="obs-endpoint-card">
           <div className="obs-endpoint-label">OTLP Ingestion Endpoint</div>
           <div className="obs-endpoint-val">localhost:4317 (gRPC) / 4318 (HTTP)</div>
-          <div className="obs-endpoint-hint">Periodic push interval: 2s</div>
+          <div className="obs-endpoint-hint">Traces & Metrics, 2s export interval</div>
         </div>
 
         <div className="obs-endpoint-card">
@@ -169,12 +197,6 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
             </a>
           </div>
           <div className="obs-endpoint-hint">Prometheus format, scraped every 2s</div>
-        </div>
-
-        <div className="obs-endpoint-card">
-          <div className="obs-endpoint-label">Dashboard Name</div>
-          <div className="obs-endpoint-val" style={{ color: '#A78BFA' }}>NATS Platform Demo - Metrics</div>
-          <div className="obs-endpoint-hint">4 sections: NATS, JetStream, App, Processing</div>
         </div>
       </div>
     </section>

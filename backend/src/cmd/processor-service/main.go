@@ -20,6 +20,9 @@ import (
 	"nats-demo/internal/telemetry"
 
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // App manages the lifecycle of the processor service.
@@ -96,7 +99,7 @@ func (a *App) Run() error {
 	var coreWorkerCounter uint64
 
 	// Core NATS job processing handler
-	jobHandler := func(job jobs.Job, correlationID string) error {
+	jobHandler := func(ctx context.Context, job jobs.Job, correlationID string) error {
 		deliveryMode := job.DeliveryMode
 		if deliveryMode == "" {
 			deliveryMode = "CORE"
@@ -124,8 +127,24 @@ func (a *App) Run() error {
 
 		log.Printf("[%s] Received Core NATS job %s | Attempt: %d | Correlation: %s", assignedWorkerName, job.JobID, attemptCount, correlationID)
 
+		// Start Consumer Receive Span
+		recvCtx, recvSpan := telemetry.StartSpan(ctx, "Consumer Receive",
+			trace.WithSpanKind(trace.SpanKindConsumer),
+			trace.WithAttributes(
+				attribute.String("messaging.system", "nats"),
+				attribute.String("messaging.operation", "receive"),
+				attribute.String("messaging.destination.name", messaging.SubjectJobSubmitted),
+				attribute.String("worker.id", assignedWorkerName),
+				attribute.String("delivery.mode", deliveryMode),
+				attribute.String("job.id", job.JobID),
+				attribute.String("job.type", job.Type),
+				attribute.Int64("delivery.count", int64(attemptCount)),
+			),
+		)
+		defer recvSpan.End()
+
 		// Record message received metric
-		telemetry.RecordMessageReceived(context.Background(), deliveryMode, assignedWorkerName, messaging.SubjectJobSubmitted)
+		telemetry.RecordMessageReceived(recvCtx, deliveryMode, assignedWorkerName, messaging.SubjectJobSubmitted)
 
 		// 1. Publish RECEIVED lifecycle event
 		_ = a.publisher.PublishJobLifecycle(
@@ -138,6 +157,17 @@ func (a *App) Run() error {
 			assignedWorkerName,
 			deliveryMode,
 			0,
+		)
+
+		// Start internal Process Job Span
+		procCtx, procSpan := telemetry.StartSpan(recvCtx, "Process Job",
+			trace.WithSpanKind(trace.SpanKindInternal),
+			trace.WithAttributes(
+				attribute.String("job.id", job.JobID),
+				attribute.String("job.type", job.Type),
+				attribute.String("worker.id", assignedWorkerName),
+				attribute.Int64("delivery.count", int64(attemptCount)),
+			),
 		)
 
 		// 2. Simulate processing duration
@@ -162,8 +192,14 @@ func (a *App) Run() error {
 			errMsg := fmt.Sprintf("Simulated failure attempt %d of %d", attemptCount, simulateFailureCount)
 			log.Printf("[%s] Job %s failed: %s", assignedWorkerName, job.JobID, errMsg)
 
+			// Record error on processing span
+			procSpan.RecordError(fmt.Errorf("%s", errMsg))
+			procSpan.SetStatus(codes.Error, errMsg)
+			procSpan.SetAttributes(attribute.String("processing.result", "failure"))
+			procSpan.End()
+
 			// Record job failure metric
-			telemetry.RecordJobFailed(context.Background(), deliveryMode, assignedWorkerName)
+			telemetry.RecordJobFailed(procCtx, deliveryMode, assignedWorkerName)
 
 			_ = a.publisher.PublishJobLifecycle(
 				messaging.SubjectJobProcessingFailed,
@@ -191,11 +227,17 @@ func (a *App) Run() error {
 			return fmt.Errorf("simulated failure: %s", errMsg)
 		}
 
+		procSpan.SetStatus(codes.Ok, "success")
+		procSpan.SetAttributes(attribute.String("processing.result", "success"))
+		procSpan.End()
+
+		recvSpan.AddEvent("message_processed")
+
 		// 4. Publish Completed lifecycle event on success
 		log.Printf("[%s] Job %s processed successfully", assignedWorkerName, job.JobID)
 
 		// Record job processed metric
-		telemetry.RecordJobProcessed(context.Background(), deliveryMode, assignedWorkerName, "COMPLETED", procDuration)
+		telemetry.RecordJobProcessed(recvCtx, deliveryMode, assignedWorkerName, "COMPLETED", procDuration)
 
 		_ = a.publisher.PublishJobLifecycle(
 			messaging.SubjectJobCompleted,
@@ -384,7 +426,7 @@ func (a *App) Run() error {
 }
 
 // subscribeCore registers Core NATS subscriber if missing
-func (a *App) subscribeCore(workerName string, jobHandler func(jobs.Job, string) error) error {
+func (a *App) subscribeCore(workerName string, jobHandler messaging.JobHandler) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -397,7 +439,7 @@ func (a *App) subscribeCore(workerName string, jobHandler func(jobs.Job, string)
 		return err
 	}
 	a.sub = sub
-	log.Printf("[%s] Core NATS subscriber activated on subject: %s", workerName, messaging.SubjectJobSubmitted)
+	log.Printf("[%s] Subscribed to Core NATS subject: %s", workerName, messaging.SubjectJobSubmitted)
 	return nil
 }
 
@@ -426,7 +468,7 @@ func (a *App) subscribeValidation(workerName string) error {
 		return nil
 	}
 
-	validationHandler := func(job jobs.Job, correlationID string) (jobs.JobValidationResponse, error) {
+	validationHandler := func(ctx context.Context, job jobs.Job, correlationID string) (jobs.JobValidationResponse, error) {
 		// Check the processing flag before doing anything.
 		// If the processor is OFF, return a sentinel error that tells
 		// consumer.SubscribeJobValidate to skip Respond, letting the
@@ -440,6 +482,19 @@ func (a *App) subscribeValidation(workerName string) error {
 			// Return a special sentinel so consumer.go skips msg.Respond.
 			return jobs.JobValidationResponse{}, jobs.ErrProcessorDisabled
 		}
+
+		// Start Process Validation Request Span
+		reqCtx, reqSpan := telemetry.StartSpan(ctx, "Process Validation Request",
+			trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(
+				attribute.String("messaging.system", "nats"),
+				attribute.String("messaging.destination.name", messaging.SubjectJobValidate),
+				attribute.String("worker.id", workerName),
+				attribute.String("job.id", job.JobID),
+				attribute.String("job.type", job.Type),
+			),
+		)
+		defer reqSpan.End()
 
 		log.Printf("[%s] Received validation request for job: %s of type %s", workerName, job.JobID, job.Type)
 
@@ -466,6 +521,18 @@ func (a *App) subscribeValidation(workerName string) error {
 		} else {
 			resp = jobs.JobValidationResponse{Valid: true, Message: "Job configuration is valid."}
 		}
+
+		if resp.Valid {
+			reqSpan.SetStatus(codes.Ok, "valid")
+			reqSpan.SetAttributes(attribute.Bool("validation.valid", true))
+		} else {
+			reqSpan.SetStatus(codes.Error, resp.Message)
+			reqSpan.SetAttributes(attribute.Bool("validation.valid", false))
+		}
+
+		// Create child span for NATS Reply
+		_, replySpan := telemetry.StartSpan(reqCtx, "NATS Reply", trace.WithSpanKind(trace.SpanKindProducer))
+		defer replySpan.End()
 
 		// Publish REPLY_SENT before the reply is dispatched.
 		_ = a.publisher.PublishJobLifecycle(
@@ -688,11 +755,30 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 		attemptsMu.Unlock()
 	}
 
-	// 1. Publish DELIVERED or REDELIVERED lifecycle event
-	telemetry.RecordMessageReceived(context.Background(), deliveryMode, workerName, messaging.SubjectJobSubmitted)
+	// 1. Extract Trace Context and start Consumer Receive span
+	parentCtx := telemetry.ExtractTraceContext(context.Background(), msg.Header)
+	recvCtx, recvSpan := telemetry.StartSpan(parentCtx, "Consumer Receive",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "nats"),
+			attribute.String("messaging.operation", "receive"),
+			attribute.String("messaging.destination.name", messaging.SubjectJobSubmitted),
+			attribute.String("messaging.consumer.name", a.consumerName),
+			attribute.String("worker.id", workerName),
+			attribute.String("delivery.mode", deliveryMode),
+			attribute.String("job.id", job.JobID),
+			attribute.String("job.type", job.Type),
+			attribute.Int64("delivery.count", int64(attemptCount)),
+			attribute.Int64("jetstream.sequence", int64(sequence)),
+			attribute.String("jetstream.stream", "JOBS"),
+		),
+	)
+	defer recvSpan.End()
+
+	telemetry.RecordMessageReceived(recvCtx, deliveryMode, workerName, messaging.SubjectJobSubmitted)
 
 	if numDelivered > 1 {
-		telemetry.RecordMessageRedelivered(context.Background(), deliveryMode, workerName)
+		telemetry.RecordMessageRedelivered(recvCtx, deliveryMode, workerName)
 		log.Printf("[%s] JetStream job %s REDELIVERED (delivery #%d) | Correlation: %s", workerName, job.JobID, attemptCount, correlationID)
 		_ = a.publisher.PublishJobLifecycle(
 			messaging.SubjectJobDelivered,
@@ -720,6 +806,17 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 		)
 	}
 
+	// Start internal Process Job Span
+	procCtx, procSpan := telemetry.StartSpan(recvCtx, "Process Job",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("job.id", job.JobID),
+			attribute.String("job.type", job.Type),
+			attribute.String("worker.id", workerName),
+			attribute.Int64("delivery.count", int64(attemptCount)),
+		),
+	)
+
 	// 2. Simulate processing duration
 	procStart := time.Now()
 	time.Sleep(1 * time.Second)
@@ -742,8 +839,16 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 		errMsg := fmt.Sprintf("Simulated failure attempt %d of %d", attemptCount, simulateFailureCount)
 		log.Printf("[%s] JetStream Job %s failed: %s", workerName, job.JobID, errMsg)
 
+		// Record error on processing span
+		procSpan.RecordError(fmt.Errorf("%s", errMsg))
+		procSpan.SetStatus(codes.Error, errMsg)
+		procSpan.SetAttributes(attribute.String("processing.result", "failure"))
+		procSpan.End()
+
+		recvSpan.AddEvent("redelivery_scheduled")
+
 		// Record failure metric
-		telemetry.RecordJobFailed(context.Background(), deliveryMode, workerName)
+		telemetry.RecordJobFailed(procCtx, deliveryMode, workerName)
 
 		// Nak for redelivery
 		_ = msg.Nak()
@@ -779,9 +884,15 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 		log.Printf("[%s] Failed to ACK message %s: %v", workerName, job.JobID, err)
 	}
 
+	procSpan.SetStatus(codes.Ok, "success")
+	procSpan.SetAttributes(attribute.String("processing.result", "success"))
+	procSpan.End()
+
+	recvSpan.AddEvent("message_acknowledged")
+
 	// Record ACK and completion metrics
-	telemetry.RecordMessageAcked(context.Background(), deliveryMode, workerName)
-	telemetry.RecordJobProcessed(context.Background(), deliveryMode, workerName, "COMPLETED", procDuration)
+	telemetry.RecordMessageAcked(recvCtx, deliveryMode, workerName)
+	telemetry.RecordJobProcessed(recvCtx, deliveryMode, workerName, "COMPLETED", procDuration)
 
 	log.Printf("[%s] JetStream Job %s processed successfully", workerName, job.JobID)
 	_ = a.publisher.PublishJobLifecycle(

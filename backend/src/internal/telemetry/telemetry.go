@@ -4,21 +4,28 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 var (
-	meter metric.Meter
+	meter  metric.Meter
+	tracer trace.Tracer
 
 	// Demo Service Instruments
 	jobsSubmittedCounter          metric.Int64Counter
@@ -38,51 +45,146 @@ var (
 	jobProcessingDurationHist     metric.Float64Histogram
 )
 
-// Init initializes the OpenTelemetry MeterProvider with an OTLP gRPC exporter.
-// It exports metrics periodically (every 2 seconds) for a responsive demo experience.
+// Init initializes OpenTelemetry MeterProvider and TracerProvider with OTLP gRPC export.
 func Init(ctx context.Context, serviceName, endpoint string, isInsecure bool) (func(context.Context) error, error) {
-	var opts []otlpmetricgrpc.Option
-	opts = append(opts, otlpmetricgrpc.WithEndpoint(endpoint))
+	var metricOpts []otlpmetricgrpc.Option
+	metricOpts = append(metricOpts, otlpmetricgrpc.WithEndpoint(endpoint))
+
+	var traceOpts []otlptracegrpc.Option
+	traceOpts = append(traceOpts, otlptracegrpc.WithEndpoint(endpoint))
 
 	if isInsecure {
-		opts = append(opts, otlpmetricgrpc.WithInsecure())
-		opts = append(opts, otlpmetricgrpc.WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
-	}
+		metricOpts = append(metricOpts, otlpmetricgrpc.WithInsecure())
+		metricOpts = append(metricOpts, otlpmetricgrpc.WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 
-	exporter, err := otlpmetricgrpc.New(ctx, opts...)
-	if err != nil {
-		log.Printf("[telemetry] Warning: failed to create OTLP metric exporter: %v. Continuing without OTLP.", err)
-		initNoopInstruments()
-		return func(context.Context) error { return nil }, nil
+		traceOpts = append(traceOpts, otlptracegrpc.WithInsecure())
+		traceOpts = append(traceOpts, otlptracegrpc.WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
 	}
 
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String(serviceName),
-			attribute.String("environment", "demo"),
+			semconv.ServiceVersionKey.String("1.0.0"),
+			attribute.String("deployment.environment", "demo"),
 		),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create otel resource: %w", err)
 	}
 
-	// 2-second reader interval for responsive live Grafana demo updates
-	reader := sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(2*time.Second))
-	mp := sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(res),
-		sdkmetric.WithReader(reader),
-	)
-
-	otel.SetMeterProvider(mp)
-	meter = mp.Meter(serviceName)
-
-	if err := registerInstruments(); err != nil {
-		return nil, fmt.Errorf("failed to register metric instruments: %w", err)
+	// 1. Initialize Tracing Provider
+	var tp *sdktrace.TracerProvider
+	traceExporter, err := otlptracegrpc.New(ctx, traceOpts...)
+	if err != nil {
+		log.Printf("[telemetry] Warning: failed to create OTLP trace exporter: %v. Continuing with no-op tracer.", err)
+		tracer = otel.GetTracerProvider().Tracer(serviceName)
+	} else {
+		tp = sdktrace.NewTracerProvider(
+			sdktrace.WithResource(res),
+			sdktrace.WithBatcher(traceExporter),
+			sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		)
+		otel.SetTracerProvider(tp)
+		tracer = tp.Tracer(serviceName)
 	}
 
-	log.Printf("[telemetry] OpenTelemetry metrics initialized for %s -> %s", serviceName, endpoint)
+	// Register global W3C text map propagator for context injection across NATS
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
 
-	return mp.Shutdown, nil
+	// 2. Initialize Metrics Provider
+	var mp *sdkmetric.MeterProvider
+	metricExporter, err := otlpmetricgrpc.New(ctx, metricOpts...)
+	if err != nil {
+		log.Printf("[telemetry] Warning: failed to create OTLP metric exporter: %v. Continuing with no-op metrics.", err)
+		initNoopInstruments()
+	} else {
+		reader := sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(2*time.Second))
+		mp = sdkmetric.NewMeterProvider(
+			sdkmetric.WithResource(res),
+			sdkmetric.WithReader(reader),
+		)
+		otel.SetMeterProvider(mp)
+		meter = mp.Meter(serviceName)
+
+		if err := registerInstruments(); err != nil {
+			return nil, fmt.Errorf("failed to register metric instruments: %w", err)
+		}
+	}
+
+	log.Printf("[telemetry] OpenTelemetry (Metrics & Traces) initialized for %s -> %s", serviceName, endpoint)
+
+	shutdown := func(shutdownCtx context.Context) error {
+		var firstErr error
+		if tp != nil {
+			if err := tp.Shutdown(shutdownCtx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		if mp != nil {
+			if err := mp.Shutdown(shutdownCtx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		return firstErr
+	}
+
+	return shutdown, nil
+}
+
+// Tracer returns the global tracer.
+func Tracer() trace.Tracer {
+	if tracer == nil {
+		return otel.GetTracerProvider().Tracer("nats-demo")
+	}
+	return tracer
+}
+
+// StartSpan starts a new span using the global tracer.
+func StartSpan(ctx context.Context, name string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+	return Tracer().Start(ctx, name, opts...)
+}
+
+// NatsHeaderCarrier implements propagation.TextMapCarrier for nats.Header.
+type NatsHeaderCarrier nats.Header
+
+func (c NatsHeaderCarrier) Get(key string) string {
+	for k, v := range c {
+		if strings.EqualFold(k, key) && len(v) > 0 {
+			return v[0]
+		}
+	}
+	return ""
+}
+
+func (c NatsHeaderCarrier) Set(key, val string) {
+	c[key] = []string{val}
+}
+
+func (c NatsHeaderCarrier) Keys() []string {
+	keys := make([]string, 0, len(c))
+	for k := range c {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// InjectTraceContext injects W3C traceparent headers into a nats.Header.
+func InjectTraceContext(ctx context.Context, header nats.Header) {
+	if header == nil {
+		return
+	}
+	otel.GetTextMapPropagator().Inject(ctx, NatsHeaderCarrier(header))
+}
+
+// ExtractTraceContext extracts W3C trace context from a nats.Header.
+func ExtractTraceContext(ctx context.Context, header nats.Header) context.Context {
+	if header == nil {
+		return ctx
+	}
+	return otel.GetTextMapPropagator().Extract(ctx, NatsHeaderCarrier(header))
 }
 
 func initNoopInstruments() {

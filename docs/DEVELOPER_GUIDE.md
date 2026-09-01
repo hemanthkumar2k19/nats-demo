@@ -73,6 +73,7 @@ nats-demo/
 | **Request/Reply** | Sync job validation is processed on the subject `jobs.validate` with a 2-second requester timeout. |
 | **Replay / Rewind** | Replays historical stream events from the `JOBS` stream based on sequence number or time constraints. |
 | **Metrics Observability** | OpenTelemetry OTLP metrics exported to Grafana OTEL-LGTM stack alongside NATS Prometheus Exporter infrastructure metrics. |
+| **Distributed Tracing** | End-to-end W3C trace context propagation (`traceparent`) via NATS headers with OpenTelemetry spans visualized in Tempo. |
 
 ---
 
@@ -138,4 +139,47 @@ UI                 demo-service          NATS          processor-service
 3. Add a `Request<Name>` method in `internal/messaging/publisher.go` following `RequestJobValidation`.
 4. Add the corresponding `subscribe<Name>` / `unsubscribe<Name>` lifecycle methods in `processor-service/main.go`.
 5. Wire the new API endpoint in `api/http/handler.go` and register it in `api/http/routes.go`.
+
+---
+
+## 7. OpenTelemetry Distributed Tracing & Telemetry
+
+### Trace Propagation across NATS
+Distributed traces use the standard W3C `traceparent` HTTP header format (`00-<trace-id>-<span-id>-01`), carried natively inside `nats.Msg.Header` (`map[string][]string`).
+
+```text
+React UI              demo-service                NATS Server              processor-service
+   |                       |                           |                           |
+   | POST /jobs            |                           |                           |
+   |---------------------->| Span: POST /jobs (Server) |                           |
+   |                       | Span: NATS Publish (Prod) |                           |
+   |                       | Inject traceparent        |                           |
+   |                       |-- Publish msg + header -->|                           |
+   |                       |                           |-- Deliver msg + header -->|
+   |                       |                           |                           | Extract traceparent
+   |                       |                           |                           | Span: Consumer Receive (Cons)
+   |                       |                           |                           | Span: Process Job (Internal)
+   |                       |                           |                           | Ack / Nak
+   | 202 Accepted          |                           |                           |
+   |<----------------------|                           |                           |
+```
+
+### Trace Span Hierarchy
+1. **Asynchronous Job Processing**:
+   - `POST /jobs` (`SpanKindServer`): Root span created by HTTP handler in `demo-service`.
+     - `NATS Publish jobs.submitted` (`SpanKindProducer`): Child span created by `Publisher.PublishJobSubmitted`.
+       - `Consumer Receive` (`SpanKindConsumer`): Span created upon message delivery in `processor-service`.
+         - `Process Job` (`SpanKindInternal`): Child span representing job execution. Records errors and failure status if simulation fails.
+2. **Synchronous Validation RPC (Request/Reply)**:
+   - `POST /jobs/validate` (`SpanKindServer`): Root span in `demo-service`.
+     - `NATS Request jobs.validate` (`SpanKindClient`): Child span in `demo-service` covering the 2-second timeout window.
+       - `Process Validation Request` (`SpanKindServer`): Span in `processor-service` validating parameters.
+         - `NATS Reply` (`SpanKindProducer`): Response span dispatched back to requester inbox.
+
+### Central Telemetry Package (`internal/telemetry`)
+- `Init(ctx, serviceName, otelEndpoint, insecure)`: Initializes both `TracerProvider` and `MeterProvider` targeting the OTLP gRPC collector.
+- `InjectTraceContext(ctx, header)`: Injects active span context into `nats.Header`.
+- `ExtractTraceContext(ctx, header)`: Extracts span context from `nats.Header` to become parent context for consumer spans.
+- `StartSpan(ctx, name, opts...)`: Convenience wrapper around OpenTelemetry tracer.
+
 

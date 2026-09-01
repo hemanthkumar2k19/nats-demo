@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-01
 
+### Added (Feature: End-to-End Distributed Tracing with OpenTelemetry and Tempo)
+- **Trace Context Propagation over NATS**: Implemented W3C `traceparent` context propagation across NATS message headers (`nats.Msg.Header`) using `telemetry.InjectTraceContext` on publish and `telemetry.ExtractTraceContext` on consumption.
+- **Trace Span Hierarchy**:
+  - `POST /jobs` (HTTP Server span) -> `NATS Publish jobs.submitted` (Producer span) -> `Consumer Receive` (Consumer span) -> `Process Job` (Internal span) -> ACK / Redelivery events.
+  - `POST /jobs/validate` (HTTP Server span) -> `NATS Request jobs.validate` (Client span) -> `Process Validation Request` (Server span) -> `NATS Reply` (Producer span).
+- **Tempo Integration**: Connected OpenTelemetry OTLP trace exporter to Grafana OTEL-LGTM Tempo instance via port 4317.
+- **Trace ID in Models & Store**: Propagated `trace_id` through `Job`, `JobStatusResponse`, `JobValidationResponse`, `JobDetailResponse`, and `Activity`.
+- **UI Trace Exploration**: Added `Trace ID` display with direct `[ View in Tempo -> ]` deep-link in `JobInspectorPanel`, opening the trace waterfall directly in Grafana Tempo Explore (`http://localhost:3000/explore`).
+- **Observability Panel Updates**: Expanded Observability architecture diagram and endpoints to showcase both Distributed Tracing (Tempo) and Prometheus Metrics.
+
 ### Added (Feature: Metrics Observability)
 - **Central Telemetry Package**: Created `backend/src/internal/telemetry` implementing OpenTelemetry metrics instrumentation using standard OTLP gRPC export with a 2-second periodic push interval.
 - **Application Metrics**: Instrumented `demo-service` and `processor-service` for job submissions, processing counts, failure simulations, ACK tracking, redelivery occurrences, and latency distributions (p50/p95).
