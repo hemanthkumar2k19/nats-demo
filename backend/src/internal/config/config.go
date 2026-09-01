@@ -9,8 +9,10 @@ import (
 
 // Config holds runtime configuration configuration variables.
 type Config struct {
-	NATSURL string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
-	Port    string `env:"PORT" envDefault:"8080"`
+	NATSURL      string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
+	Port         string `env:"PORT" envDefault:"8080"`
+	OtelEndpoint string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:4317"`
+	OtelInsecure bool   `env:"OTEL_EXPORTER_OTLP_INSECURE" envDefault:"true"`
 }
 
 // Load loads configuration from a local .env file (if present) and the environment.

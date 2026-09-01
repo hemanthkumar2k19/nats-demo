@@ -304,6 +304,40 @@ NATS CONNECTED (Port 4222)
 
 ---
 
+### Scenario 12: Observing NATS & Application Metrics in Grafana
+
+#### What NATS Feature Is Demonstrated?
+* **Full-stack Metrics Observability**:
+  - NATS Server connections, subscriptions, and message rates via `nats-io/prometheus-nats-exporter`.
+  - JetStream stream storage, pending message queue build-up, and consumer lag.
+  - Application job submissions, validation RPCs, and execution latencies via OpenTelemetry.
+
+#### Steps:
+1. Ensure the observability stack is running:
+   ```bash
+   docker compose -f deploy/docker-compose.yaml up -d
+   ```
+2. Open Grafana at: `http://localhost:3000` (or click **[ Open Grafana -> ]** in the **OBSERVABILITY SETUP** section of the React UI).
+3. Log in with credentials: `admin` / `admin`.
+4. Open the dashboard: **NATS Platform Demo - Metrics**.
+5. **Observe NATS Server Metrics**:
+   - Verify **Connections** shows active clients (e.g. 2 or 3).
+   - Verify **Subscriptions** shows active topic registrations.
+6. **Observe JetStream Metrics Under Load**:
+   - In the React UI, toggle **Processing: OFF**.
+   - Submit 5 JetStream jobs.
+   - In Grafana, observe **Pending Messages** in the JetStream section rise to `5`.
+   - In the React UI, toggle **Processing: ON**.
+   - In Grafana, observe **Pending Messages** drop back down to `0` and **Jobs Processed** increment by 5.
+7. **Observe Failure & Redelivery Metrics**:
+   - In Submit Job, tick "Simulate Failure" and submit a JetStream job.
+   - In Grafana, observe **Redelivered Messages** and **Jobs Failed** increase.
+8. **Observe Request/Reply RPC Latency**:
+   - In Request / Reply, click **Send Validation Request**.
+   - In Grafana, observe **NATS Requests** count increment and latency registered in **Job Processing Duration (Latency)**.
+
+---
+
 ## Troubleshooting & Verification Checklist
 
 | Symptom | Likely Cause | Solution |

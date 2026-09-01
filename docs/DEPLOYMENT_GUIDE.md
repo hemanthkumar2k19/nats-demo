@@ -20,7 +20,9 @@ The NATS message broker and management UI are run via Docker.
 ### Configuration (`deploy/docker-compose.yaml`)
 The compose configuration starts:
 1. **NATS Server (`nats`)**: Runs the official NATS image, exposes port `4222` (client connection), port `8222` (monitoring server), and maps a local volume `nats-data` to `/data` for JetStream persistence.
-2. **NATS UI (`nats-ui`)**: A web console exposed on port `3000` to inspect NATS connections and cluster configurations.
+2. **NATS UI (`nats-ui`)**: A web console exposed on port `3001` to inspect NATS connections and cluster configurations.
+3. **NATS Prometheus Exporter (`nats-exporter`)**: Exposes NATS monitoring metrics on port `7777` (`/metrics`), scraping NATS port `8222` with `-jsz`, `-connz`, `-subz`, `-varz`.
+4. **Grafana OTEL-LGTM (`otel-lgtm`)**: Unified local observability stack combining OpenTelemetry Collector (`:4317` gRPC / `:4318` HTTP), Prometheus (`:9090`), and Grafana (`:3000`). Pre-provisioned with the `NATS Platform Demo - Metrics` dashboard.
 
 ### Command to Start:
 From the project root directory, run:
@@ -83,7 +85,7 @@ The console will expose the local URL (e.g., `http://localhost:5173`). Open it i
 Once all services are running, verify the setup with these steps:
 
 ### Connection Checks
-1. Access NATS UI at `http://localhost:3000` and confirm the NATS client connection lists `demo-service` and `processor-service`.
+1. Access NATS UI at `http://localhost:3001` and confirm the NATS client connection lists `demo-service` and `processor-service`.
 2. Confirm the main header status bar in the React UI displays:
    - **NATS Server: Connected**
    - **demo-service: Active**
@@ -104,3 +106,7 @@ Once all services are running, verify the setup with these steps:
      - `REQUEST_SENT` -> `REQUEST_RECEIVED` -> `REPLY_SENT` -> `REPLY_RECEIVED`
    - Turn Processor state `OFF` and send a validation request.
    - Verify after ~2 seconds the result status shows `TIMEOUT` (`No response received from processor service`), HTTP 504 is returned, and the interaction timeline records `REQUEST_SENT` -> `REQUEST_TIMEOUT`.
+4. **Metrics Observability in Grafana**:
+   - Access Grafana at `http://localhost:3000` (credentials: `admin` / `admin`).
+   - Open the provisioned dashboard: `NATS Platform Demo - Metrics`.
+   - Submit jobs and send validation requests in the UI; observe live metrics update across the 4 sections: NATS Server, JetStream, Application Activity, and Processing Performance.

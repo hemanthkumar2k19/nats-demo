@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-01
 
+### Added (Feature: Metrics Observability)
+- **Central Telemetry Package**: Created `backend/src/internal/telemetry` implementing OpenTelemetry metrics instrumentation using standard OTLP gRPC export with a 2-second periodic push interval.
+- **Application Metrics**: Instrumented `demo-service` and `processor-service` for job submissions, processing counts, failure simulations, ACK tracking, redelivery occurrences, and latency distributions (p50/p95).
+- **Observability Infrastructure**: Added `docker.io/grafana/otel-lgtm` and `natsio/prometheus-nats-exporter` to `deploy/docker-compose.yaml`. Shifted `nats-ui` to port 3001 and mapped Grafana to port 3000.
+- **Grafana Dashboard**: Provisioned `NATS Platform Demo - Metrics` dashboard structured into 5 dedicated sections covering the Top 20 NATS metrics: NATS HEALTH (Health, Connections, Subscriptions, CPU, Memory, Uptime), MESSAGING (Messages In/Out rates, Throughput Bytes In/Out), JETSTREAM (Streams, Messages, Bytes, Ingress Rate, Storage), CONSUMERS (Consumers, Pending, Ack Pending, Redeliveries), and JETSTREAM ACTIVITY (Delivery & Ingress rates).
+- **Dedicated Observability Setup UI**: Added standalone `OBSERVABILITY SETUP` panel at the bottom of the React dashboard with an architectural pipeline diagram, contextual `(i)` educational popover, and direct `[ Open Grafana -> ]` link.
+- **Docker Compose Container Networking**: Added dedicated bridge network `nats-net` connecting `nats`, `nats-exporter`, and `otel-lgtm`. Configured `nats-exporter` target to `http://nats:8222` and Prometheus scrape target to `nats-exporter:7777` for deterministic container DNS resolution.
+
 ### Documentation
 - **Functional Testing Guide**: Created [docs/FUNCTIONAL_TESTING_GUIDE.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/nats-demo/docs/FUNCTIONAL_TESTING_GUIDE.md) providing an end-to-end evaluation guide with 11 hands-on testing scenarios covering Core NATS transient messaging, JetStream persistent delivery, offline message accumulation, message deduplication (`Nats-Msg-Id`), competing consumers, durable vs ephemeral lifecycles, ordered sequence consumption, stream replays, synchronous Request/Reply with timeouts, hierarchical subject wildcard addressing, and Activity Log search/filtering.
 

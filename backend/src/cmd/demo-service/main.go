@@ -17,6 +17,7 @@ import (
 	"nats-demo/internal/jobs"
 	"nats-demo/internal/messaging"
 	"nats-demo/internal/natsclient"
+	"nats-demo/internal/telemetry"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
@@ -31,6 +32,7 @@ type App struct {
 	lifecycleSub *nats.Subscription
 	observer     *messaging.Observer
 	observerSubs []*nats.Subscription
+	otelShutdown func(context.Context) error
 }
 
 // Init loads configuration, establishes connections, and configures routing.
@@ -41,6 +43,13 @@ func (a *App) Init() error {
 	}
 	a.cfg = cfg
 	log.Printf("[Init] Loaded configuration: NATS_URL=%s, PORT=%s", a.cfg.NATSURL, a.cfg.Port)
+
+	// Initialize OpenTelemetry metric pipeline for demo-service
+	otelShutdown, err := telemetry.Init(context.Background(), "demo-service", a.cfg.OtelEndpoint, a.cfg.OtelInsecure)
+	if err != nil {
+		log.Printf("[Init] Telemetry warning: %v", err)
+	}
+	a.otelShutdown = otelShutdown
 
 	client, err := natsclient.Connect(a.cfg.NATSURL)
 	if err != nil {
@@ -188,6 +197,11 @@ func (a *App) Stop() {
 	if a.natsClient != nil {
 		a.natsClient.Close()
 		log.Println("[Stop] NATS connection closed successfully")
+	}
+
+	if a.otelShutdown != nil {
+		log.Println("[Stop] Shutting down OpenTelemetry metrics...")
+		_ = a.otelShutdown(context.Background())
 	}
 
 	log.Println("[Stop] Teardown completed")

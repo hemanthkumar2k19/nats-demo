@@ -72,6 +72,7 @@ nats-demo/
 | **JetStream Deduplication** | Publishes with `Nats-Msg-Id` within the 2-minute deduplication window recognize duplicates (`DEDUPLICATED`). |
 | **Request/Reply** | Sync job validation is processed on the subject `jobs.validate` with a 2-second requester timeout. |
 | **Replay / Rewind** | Replays historical stream events from the `JOBS` stream based on sequence number or time constraints. |
+| **Metrics Observability** | OpenTelemetry OTLP metrics exported to Grafana OTEL-LGTM stack alongside NATS Prometheus Exporter infrastructure metrics. |
 
 ---
 

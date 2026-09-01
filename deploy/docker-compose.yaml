@@ -13,14 +13,49 @@ services:
     volumes:
       - nats-data:/data
       - ./nats/nats.conf:/etc/nats/nats.conf:ro
+    networks:
+      - nats-net
     
-  nats-ui:
-    image: ghcr.io/gastbob40/nats-ui:latest
-    container_name: nats-ui
+  nats-exporter:
+    image: docker.io/natsio/prometheus-nats-exporter:latest
+    container_name: nats-exporter
+    command:
+      - "-connz"
+      - "-subz"
+      - "-varz"
+      - "-jsz=all"
+      - "http://nats:8222"
     ports:
-      - "3000:3000"
+      - "7777:7777"
     depends_on:
       - nats
+    networks:
+      - nats-net
+
+  otel-lgtm:
+    image: docker.io/grafana/otel-lgtm:latest
+    container_name: otel-lgtm
+    ports:
+      - "3000:3000"
+      - "4317:4317"
+      - "4318:4318"
+      - "9090:9090"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./lgtm/prometheus.yaml:/otel-lgtm/prometheus.yaml:ro
+      - ./lgtm/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./lgtm/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - nats
+    networks:
+      - nats-net
 
 volumes:
   nats-data:
+
+networks:
+  nats-net:
+    driver: bridge

@@ -17,6 +17,7 @@ import (
 	"nats-demo/internal/jobs"
 	"nats-demo/internal/messaging"
 	"nats-demo/internal/natsclient"
+	"nats-demo/internal/telemetry"
 
 	"github.com/nats-io/nats.go"
 )
@@ -38,6 +39,7 @@ type App struct {
 	consumerConfig    jobs.ConsumerConfig
 	consumerName      string
 	workerCancels     []context.CancelFunc
+	otelShutdown      func(context.Context) error
 }
 
 // Init loads configuration, connects to NATS, and instantiates components.
@@ -48,6 +50,13 @@ func (a *App) Init() error {
 	}
 	a.cfg = cfg
 	log.Printf("[Init] Loaded configuration: NATS_URL=%s", a.cfg.NATSURL)
+
+	// Initialize OpenTelemetry metric pipeline for processor-service
+	otelShutdown, err := telemetry.Init(context.Background(), "processor-service", a.cfg.OtelEndpoint, a.cfg.OtelInsecure)
+	if err != nil {
+		log.Printf("[Init] Telemetry warning: %v", err)
+	}
+	a.otelShutdown = otelShutdown
 
 	client, err := natsclient.Connect(a.cfg.NATSURL)
 	if err != nil {
@@ -115,6 +124,9 @@ func (a *App) Run() error {
 
 		log.Printf("[%s] Received Core NATS job %s | Attempt: %d | Correlation: %s", assignedWorkerName, job.JobID, attemptCount, correlationID)
 
+		// Record message received metric
+		telemetry.RecordMessageReceived(context.Background(), deliveryMode, assignedWorkerName, messaging.SubjectJobSubmitted)
+
 		// 1. Publish RECEIVED lifecycle event
 		_ = a.publisher.PublishJobLifecycle(
 			messaging.SubjectJobReceived,
@@ -129,7 +141,9 @@ func (a *App) Run() error {
 		)
 
 		// 2. Simulate processing duration
+		procStart := time.Now()
 		time.Sleep(1 * time.Second)
+		procDuration := time.Since(procStart)
 
 		// 3. Evaluate failure simulation
 		simulateFailure := false
@@ -147,6 +161,9 @@ func (a *App) Run() error {
 		if simulateFailure && (simulateFailureCount == 0 || attemptCount <= simulateFailureCount) {
 			errMsg := fmt.Sprintf("Simulated failure attempt %d of %d", attemptCount, simulateFailureCount)
 			log.Printf("[%s] Job %s failed: %s", assignedWorkerName, job.JobID, errMsg)
+
+			// Record job failure metric
+			telemetry.RecordJobFailed(context.Background(), deliveryMode, assignedWorkerName)
 
 			_ = a.publisher.PublishJobLifecycle(
 				messaging.SubjectJobProcessingFailed,
@@ -176,6 +193,10 @@ func (a *App) Run() error {
 
 		// 4. Publish Completed lifecycle event on success
 		log.Printf("[%s] Job %s processed successfully", assignedWorkerName, job.JobID)
+
+		// Record job processed metric
+		telemetry.RecordJobProcessed(context.Background(), deliveryMode, assignedWorkerName, "COMPLETED", procDuration)
+
 		_ = a.publisher.PublishJobLifecycle(
 			messaging.SubjectJobCompleted,
 			job.JobID,
@@ -668,7 +689,10 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 	}
 
 	// 1. Publish DELIVERED or REDELIVERED lifecycle event
+	telemetry.RecordMessageReceived(context.Background(), deliveryMode, workerName, messaging.SubjectJobSubmitted)
+
 	if numDelivered > 1 {
+		telemetry.RecordMessageRedelivered(context.Background(), deliveryMode, workerName)
 		log.Printf("[%s] JetStream job %s REDELIVERED (delivery #%d) | Correlation: %s", workerName, job.JobID, attemptCount, correlationID)
 		_ = a.publisher.PublishJobLifecycle(
 			messaging.SubjectJobDelivered,
@@ -697,7 +721,9 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 	}
 
 	// 2. Simulate processing duration
+	procStart := time.Now()
 	time.Sleep(1 * time.Second)
+	procDuration := time.Since(procStart)
 
 	// 3. Evaluate failure simulation
 	simulateFailure := false
@@ -715,6 +741,9 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 	if simulateFailure && (simulateFailureCount == 0 || attemptCount <= simulateFailureCount) {
 		errMsg := fmt.Sprintf("Simulated failure attempt %d of %d", attemptCount, simulateFailureCount)
 		log.Printf("[%s] JetStream Job %s failed: %s", workerName, job.JobID, errMsg)
+
+		// Record failure metric
+		telemetry.RecordJobFailed(context.Background(), deliveryMode, workerName)
 
 		// Nak for redelivery
 		_ = msg.Nak()
@@ -749,6 +778,10 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 	if err := msg.Ack(); err != nil {
 		log.Printf("[%s] Failed to ACK message %s: %v", workerName, job.JobID, err)
 	}
+
+	// Record ACK and completion metrics
+	telemetry.RecordMessageAcked(context.Background(), deliveryMode, workerName)
+	telemetry.RecordJobProcessed(context.Background(), deliveryMode, workerName, "COMPLETED", procDuration)
 
 	log.Printf("[%s] JetStream Job %s processed successfully", workerName, job.JobID)
 	_ = a.publisher.PublishJobLifecycle(
@@ -811,6 +844,11 @@ func (a *App) Stop() {
 	if a.natsClient != nil {
 		a.natsClient.Close()
 		log.Println("[Stop] NATS connection closed successfully")
+	}
+
+	if a.otelShutdown != nil {
+		log.Println("[Stop] Shutting down OpenTelemetry metrics...")
+		_ = a.otelShutdown(context.Background())
 	}
 
 	log.Println("[Stop] Teardown completed")

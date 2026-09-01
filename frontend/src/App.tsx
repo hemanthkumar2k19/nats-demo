@@ -8,6 +8,7 @@ import { JobInspectorPanel } from './components/JobInspectorPanel';
 import { AddressingPanel } from './components/AddressingPanel';
 import { RequestReplyPanel } from './components/RequestReplyPanel';
 import { DemoSetupPanel } from './components/DemoSetup/DemoSetupPanel';
+import { ObservabilityPanel } from './components/ObservabilityPanel';
 import { InfoPopover } from './components/DemoSetup/InfoPopover';
 import { NATS_COMPONENTS_INFO } from './data/natsInfoData';
 import { 
@@ -356,6 +357,9 @@ export const App: React.FC = () => {
           />
         </div>
       </main>
+
+      {/* Dedicated Observability Setup Section */}
+      <ObservabilityPanel onShowInfo={setActiveInfoKey} />
 
       {/* Global Contextual NATS Information Modal */}
       <InfoPopover

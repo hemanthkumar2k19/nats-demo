@@ -9,6 +9,7 @@ import (
 	"nats-demo/internal/jobs"
 	"nats-demo/internal/messaging"
 	"nats-demo/internal/natsclient"
+	"nats-demo/internal/telemetry"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
@@ -136,6 +137,8 @@ func (h *Handler) GetStatus(c *gin.Context) {
 
 // SubmitJob handles job submission HTTP POST requests.
 func (h *Handler) SubmitJob(c *gin.Context) {
+	startTime := time.Now()
+
 	var job jobs.Job
 	if err := c.ShouldBindJSON(&job); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
@@ -152,10 +155,15 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 	}
 
 	resp, err := h.jobService.SubmitJob(job, correlationID)
+	duration := time.Since(startTime)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Record application metrics via central telemetry package
+	telemetry.RecordJobSubmitted(c.Request.Context(), job.DeliveryMode, job.Type, duration)
+	telemetry.RecordNatsPublish(c.Request.Context(), job.DeliveryMode, messaging.SubjectJobSubmitted)
 
 	// For CORE delivery mode, if processor is OFF (not active or not processing),
 	// publish a SubjectJobNoConsumer lifecycle event immediately to represent transient message loss.
@@ -193,6 +201,8 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 
 // ValidateJob handles sync validation requests using Request/Reply.
 func (h *Handler) ValidateJob(c *gin.Context) {
+	startTime := time.Now()
+
 	var job jobs.Job
 	if err := c.ShouldBindJSON(&job); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
@@ -205,6 +215,21 @@ func (h *Handler) ValidateJob(c *gin.Context) {
 	}
 
 	resp, err := h.jobService.ValidateJob(job, correlationID)
+	duration := time.Since(startTime)
+
+	// Determine validation result for metric label
+	result := "valid"
+	if err != nil {
+		result = "error"
+		if errors.Is(err, messaging.ErrRequestTimeout) {
+			result = "timeout"
+		}
+	} else if resp != nil && !resp.Valid {
+		result = "invalid"
+	}
+	telemetry.RecordValidationRequest(c.Request.Context(), result, duration)
+	telemetry.RecordNatsRequest(c.Request.Context(), messaging.SubjectJobValidate, duration, err)
+
 	if err != nil {
 		// When the processor has no active responder the request times out.
 		// Return 504 so the UI can display the timeout scenario clearly.
