@@ -125,49 +125,69 @@ export const AddressingPanel: React.FC<AddressingPanelProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {events.map((evt, idx) => (
-                  <tr key={`${evt.subject}-${idx}`}>
-                    <td className="mono-cell" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {evt.job_id || '-'}
-                    </td>
-                    <td className="mono-cell" style={{ color: 'var(--text-secondary)' }}>
-                      {formatTime(evt.timestamp)}
-                    </td>
-                    <td className="mono-cell" style={{ fontWeight: 600, color: 'var(--accent-cyan)' }}>
-                      {evt.subject}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <span 
-                        style={{ 
-                          color: hasReceived(evt, 'exact') ? 'var(--status-success)' : 'var(--text-muted)',
-                          fontWeight: hasReceived(evt, 'exact') ? 'bold' : 'normal'
-                        }}
-                      >
-                        {hasReceived(evt, 'exact') ? 'Yes' : 'No'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <span 
-                        style={{ 
-                          color: hasReceived(evt, 'single-level') ? 'var(--status-success)' : 'var(--text-muted)',
-                          fontWeight: hasReceived(evt, 'single-level') ? 'bold' : 'normal'
-                        }}
-                      >
-                        {hasReceived(evt, 'single-level') ? 'Yes' : 'No'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <span 
-                        style={{ 
-                          color: hasReceived(evt, 'multi-level') ? 'var(--status-success)' : 'var(--text-muted)',
-                          fontWeight: hasReceived(evt, 'multi-level') ? 'bold' : 'normal'
-                        }}
-                      >
-                        {hasReceived(evt, 'multi-level') ? 'Yes' : 'No'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {events.map((evt, idx) => {
+                  const tokenCount = evt.subject.split('.').length;
+                  const isMultiTokenOnly = hasReceived(evt, 'multi-level') && !hasReceived(evt, 'single-level');
+
+                  return (
+                    <tr key={`${evt.subject}-${idx}`} style={isMultiTokenOnly ? { background: 'rgba(99, 102, 241, 0.05)' } : undefined}>
+                      <td className="mono-cell" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {evt.job_id || '-'}
+                      </td>
+                      <td className="mono-cell" style={{ color: 'var(--text-secondary)' }}>
+                        {formatTime(evt.timestamp)}
+                      </td>
+                      <td className="mono-cell">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--accent-cyan)' }}>{evt.subject}</span>
+                          <span 
+                            style={{ 
+                              fontSize: '0.6875rem', 
+                              padding: '0.0625rem 0.375rem', 
+                              borderRadius: '4px',
+                              background: tokenCount > 2 ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                              color: tokenCount > 2 ? '#c084fc' : 'var(--text-muted)',
+                              border: `1px solid ${tokenCount > 2 ? 'rgba(168, 85, 247, 0.3)' : 'var(--border-color)'}`,
+                              fontFamily: 'var(--font-mono)'
+                            }}
+                          >
+                            {tokenCount} tokens
+                          </span>
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span 
+                          style={{ 
+                            color: hasReceived(evt, 'exact') ? 'var(--status-success)' : 'var(--text-muted)',
+                            fontWeight: hasReceived(evt, 'exact') ? 'bold' : 'normal'
+                          }}
+                        >
+                          {hasReceived(evt, 'exact') ? 'Yes' : 'No'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span 
+                          style={{ 
+                            color: hasReceived(evt, 'single-level') ? 'var(--status-success)' : 'var(--text-muted)',
+                            fontWeight: hasReceived(evt, 'single-level') ? 'bold' : 'normal'
+                          }}
+                        >
+                          {hasReceived(evt, 'single-level') ? 'Yes' : 'No'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span 
+                          style={{ 
+                            color: hasReceived(evt, 'multi-level') ? (isMultiTokenOnly ? '#818cf8' : 'var(--status-success)') : 'var(--text-muted)',
+                            fontWeight: hasReceived(evt, 'multi-level') ? 'bold' : 'normal'
+                          }}
+                        >
+                          {hasReceived(evt, 'multi-level') ? (isMultiTokenOnly ? 'Yes (> only)' : 'Yes') : 'No'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

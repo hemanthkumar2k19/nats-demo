@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-01
 
+### Added (NATS Multi-Token Subject Addressing Demonstration)
+- **Multi-Token Event Publishing**: Activated the 3-token subject `jobs.processing.started` (`a.b.c`) when tasks begin execution in both Core NATS and JetStream worker routines in `processor-service/main.go`.
+- **Wildcard Distinction in UI**: Enhanced the **Subject Routing Activity** table in `AddressingPanel.tsx` with dynamic token count badges (`2 tokens` vs `3 tokens`) and highlighted `Yes (> only)` indicators to visibly demonstrate that Single-Level wildcards (`jobs.*`) reject 3-token subjects while Multi-Level wildcards (`jobs.>`) accept them.
+- **Testing Guide Update**: Updated Scenario 10 in `FUNCTIONAL_TESTING_GUIDE.md` with step-by-step observation instructions for multi-token wildcard behavior.
+
 ### Added (Feature: End-to-End Distributed Tracing with OpenTelemetry and Tempo)
 - **Trace Context Propagation over NATS**: Implemented W3C `traceparent` context propagation across NATS message headers (`nats.Msg.Header`) using `telemetry.InjectTraceContext` on publish and `telemetry.ExtractTraceContext` on consumption.
 - **Trace Span Hierarchy**:

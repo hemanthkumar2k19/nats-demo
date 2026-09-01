@@ -262,24 +262,26 @@ NATS CONNECTED (Port 4222)
 #### What NATS Feature Is Demonstrated?
 * **NATS Subject Hierarchies & Pattern Matching**:
   - Exact token match: `jobs.submitted`
-  - Single-level wildcard: `jobs.*`
-  - Multi-level wildcard: `jobs.>`
+  - Single-level wildcard (`*`): `jobs.*` matches subjects with exactly 2 tokens (`a.b`).
+  - Multi-level wildcard (`>`): `jobs.>` matches subjects with any number of tokens >= 2 (`a.b`, `a.b.c`, etc.).
 
 #### Steps:
-1. In the **NATS Subject Addressing** panel (bottom right):
-   - Inspect the **Active Subscriptions** list:
-     - `exact` -> `jobs.submitted`
-     - `single_wildcard` -> `jobs.*`
-     - `multi_wildcard` -> `jobs.>`
-2. In the test form, select a test subject:
-   - Select `jobs.finance.us.submit` (3 segments).
-   - Click **Publish to Test Subject**.
-3. **Observation in Matching Subscriptions**:
-   - Notice that `jobs.>` matches!
-   - Notice that `jobs.*` does NOT match (because `*` only matches exactly 1 segment).
-4. Select `jobs.submit` (2 segments) and publish:
-   - Notice both `jobs.*` and `jobs.>` match!
-   - Demonstrates how NATS filters events based on hierarchical subject tokens.
+1. In the **Submit Job** panel, submit a job (either Core NATS or JetStream).
+2. Scroll to the **NATS Subject Addressing** panel (bottom right) and inspect the **Subject Routing Activity** table.
+3. **What to Observe**:
+   - **`jobs.submitted` (2 tokens `a.b`)**:
+     - Exact: **Yes**
+     - Single-Level (*): **Yes**
+     - Multi-Level (>): **Yes**
+   - **`jobs.processing.started` (3 tokens `a.b.c`)**:
+     - Exact: **No**
+     - Single-Level (*): **No** (single-level wildcard rejects 3-segment subjects)
+     - Multi-Level (>): **Yes (> only)** (multi-level wildcard accepts any number of trailing segments)
+   - **`jobs.completed` (2 tokens `a.b`)**:
+     - Exact: **No**
+     - Single-Level (*): **Yes**
+     - Multi-Level (>): **Yes**
+4. Demonstrates the critical distinction between single-level (`*`) and multi-level (`>`) wildcards: `*` matches strictly one token, while `>` matches arbitrarily deep hierarchies.
 
 ---
 

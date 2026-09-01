@@ -170,6 +170,19 @@ func (a *App) Run() error {
 			),
 		)
 
+		// Publish PROCESSING lifecycle event on 3-token subject jobs.processing.started
+		_ = a.publisher.PublishJobLifecycle(
+			messaging.SubjectJobProcessingStarted,
+			job.JobID,
+			"PROCESSING",
+			attemptCount,
+			"",
+			correlationID,
+			assignedWorkerName,
+			deliveryMode,
+			0,
+		)
+
 		// 2. Simulate processing duration
 		procStart := time.Now()
 		time.Sleep(1 * time.Second)
@@ -815,6 +828,19 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 			attribute.String("worker.id", workerName),
 			attribute.Int64("delivery.count", int64(attemptCount)),
 		),
+	)
+
+	// Publish PROCESSING lifecycle event on 3-token subject jobs.processing.started
+	_ = a.publisher.PublishJobLifecycle(
+		messaging.SubjectJobProcessingStarted,
+		job.JobID,
+		"PROCESSING",
+		attemptCount,
+		"",
+		correlationID,
+		workerName,
+		deliveryMode,
+		sequence,
 	)
 
 	// 2. Simulate processing duration
