@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-01
 
+### Fixed (Processor State Toggle)
+- Fixed processor toggle button becoming disabled when Processing state was OFF: `demoApi.ts` sets service status to `'stopped'` when `processing: false`, which caused `isProcessorActive` (`status === 'active'`) to evaluate to `false` and disable the button. Replaced condition with `isProcessorOnline` (`status !== 'disconnected' && status !== 'unknown'`), ensuring the toggle button remains enabled while the processor process is running.
+
 ### Changed (UI Layout Reorganization)
 - Promoted Platform Status to a full-width horizontal status bar directly beneath the header/alerts, displaying NATS Server, Demo Service, Processor Service, Processing toggle (ON/OFF), JetStream availability, Stream name, Pending count, Workers count, and Consumer status.
 - Reorganized dashboard into two distinct columns:

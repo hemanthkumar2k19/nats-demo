@@ -24,9 +24,9 @@ export const Header: React.FC<HeaderProps> = ({ systemOk = true, natsConnected =
     <header className="app-header">
       <div className="app-title-group">
         <span className="app-badge-logo">NATS</span>
-        <h1 className="app-title">NATS Platform Demo Console</h1>
+        <h1 className="app-title">NATS Inspector</h1>
       </div>
-      
+
       <div className="app-meta-group">
         <div className="mono-cell" style={{ letterSpacing: '0.05em' }}>
           {time}

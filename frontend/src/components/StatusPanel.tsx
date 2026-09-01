@@ -28,11 +28,11 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
 
   const isProcessing = processorService?.processing ?? false;
   const isNatsConnected = natsStatus === 'connected' || natsStatus === 'active';
-  const isProcessorActive = processorStatus === 'active' || processorStatus === 'connected';
+  const isProcessorOnline = processorStatus !== 'disconnected' && processorStatus !== 'unknown';
 
   // Compute worker count and consumer status
-  const workerCount = isProcessorActive ? 1 : 0;
-  const consumerStatus = isProcessorActive
+  const workerCount = isProcessorOnline ? 1 : 0;
+  const consumerStatus = isProcessorOnline
     ? isProcessing
       ? 'Active'
       : 'Paused'
@@ -79,8 +79,8 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
           <div className="status-metric-cell">
             <span className="status-metric-label">Processor Service</span>
             <StatusIndicator
-              status={processorStatus as any}
-              label={processorStatus === 'active' ? 'Active' : 'Disconnected'}
+              status={isProcessorOnline ? 'active' : 'disconnected'}
+              label={isProcessorOnline ? 'Active' : 'Disconnected'}
             />
           </div>
 
@@ -89,8 +89,8 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
             <button
               className={`status-toggle-btn ${isProcessing ? 'toggle-on' : 'toggle-off'}`}
               onClick={() => onToggleProcessor(!isProcessing)}
-              disabled={!isProcessorActive}
-              title={isProcessorActive ? 'Click to toggle processor state' : 'Processor is offline'}
+              disabled={!isProcessorOnline}
+              title={isProcessorOnline ? 'Click to toggle processor state' : 'Processor service is offline'}
             >
               <span className="toggle-dot" />
               <span>{isProcessing ? 'ON' : 'OFF'}</span>
