@@ -16,7 +16,10 @@ type Config struct {
 // Load loads configuration from a local .env file (if present) and the environment.
 func Load() (*Config, error) {
 	// Load environment variables from .env file if it exists.
-	_ = godotenv.Load()
+	err := godotenv.Load()
+	if err != nil {
+		fmt.Printf("No .env file found: %v\n", err)
+	}
 
 	var cfg Config
 	if err := env.Parse(&cfg); err != nil {
