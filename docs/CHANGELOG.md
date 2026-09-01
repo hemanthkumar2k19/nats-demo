@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-01
 
+### Added (NATS Consumer Capabilities Demo)
+- **Consumer Lab**: Added interactive Consumer Lab panel in DEMO ACTIONS to configure Consumer Type (Durable vs Ephemeral), Worker pool size (1 or 2 competing workers), and Ordering (Normal vs Ordered).
+- **Competing Consumers**: Enabled dynamic worker pool (`processor-1`, `processor-2`) sharing the pull consumer, with worker identifiers clearly visible in the Activity Log.
+- **Durable vs Ephemeral Consumers**: Supported durable consumer `job-processor` and dynamic ephemeral consumer lifecycle via NATS JetStream.
+- **Ordering**: Implemented ordered consumer demonstration linking stream sequence to delivery sequence.
+- **At-Least-Once & Redelivery**: Added NATS JetStream redelivery detection (`meta.NumDelivered > 1`), publishing `REDELIVERED` event with delivery count and explicit ACK tracking.
+- **JetStream Message Deduplication**: Handled `ack.Duplicate` on JetStream publish with `Nats-Msg-Id` within 2-minute deduplication window, displaying `DEDUPLICATED` event badges.
+- **HTTP Endpoints**: Added `GET /consumer` (queries configuration and live pending/ack_pending/redelivered metrics) and `PUT /consumer` (reconfigures processor consumer over NATS control subject `consumer.config.set`).
+
+### Fixed (Core NATS Worker Distribution)
+- Fixed Core NATS jobs only displaying `processor-1`: In `processor-service/main.go`, `jobHandler` was hardcoded to `workerName` (`processor-1`). Added atomic round-robin dispatch across active workers (`a.consumerConfig.Workers`) so that jobs submitted in either `CORE` or `JETSTREAM` mode are distributed across `processor-1` and `processor-2`.
+
 ### Fixed (Processor State Toggle)
 - Fixed processor toggle button becoming disabled when Processing state was OFF: `demoApi.ts` sets service status to `'stopped'` when `processing: false`, which caused `isProcessorActive` (`status === 'active'`) to evaluate to `false` and disable the button. Replaced condition with `isProcessorOnline` (`status !== 'disconnected' && status !== 'unknown'`), ensuring the toggle button remains enabled while the processor process is running.
 

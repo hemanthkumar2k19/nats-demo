@@ -90,9 +90,9 @@ func (s *Service) GetJob(jobID string) (*JobDetailResponse, bool) {
 
 func getStatusWeight(status string) int {
 	switch status {
-	case "PUBLISHED", "STORED", "REQUEST_SENT":
+	case "PUBLISHED", "STORED", "REQUEST_SENT", "DEDUPLICATED":
 		return 1
-	case "RECEIVED", "DELIVERED", "REQUEST_RECEIVED":
+	case "RECEIVED", "DELIVERED", "REQUEST_RECEIVED", "REDELIVERED":
 		return 2
 	case "PROCESSING", "REPLY_SENT":
 		return 3
@@ -156,6 +156,8 @@ func (s *Service) ProcessLifecycleEvent(subject string, data []byte, correlation
 		status = "PUBLISHED"
 	case "jobs.stored":
 		status = "STORED"
+	case "jobs.deduplicated":
+		status = "DEDUPLICATED"
 	case "jobs.received":
 		status = "RECEIVED"
 	case "jobs.delivered":

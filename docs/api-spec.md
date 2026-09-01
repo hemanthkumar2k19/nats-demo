@@ -301,6 +301,44 @@ Dynamically toggle whether the processor-service background processing is enable
 
 ---
 
+### 1.11. Get Consumer Status
+Retrieve active JetStream consumer configuration and live metrics (pending, ack_pending, redelivered).
+* **Endpoint**: `GET /consumer`
+* **Response**: `200 OK`
+* **Response Body**:
+  ```json
+  {
+    "name": "job-processor",
+    "type": "durable",
+    "workers": 2,
+    "ordering": "normal",
+    "delivery": "at-least-once",
+    "status": "ACTIVE",
+    "pending": 0,
+    "ack_pending": 0,
+    "redelivered": 0
+  }
+  ```
+
+---
+
+### 1.12. Put Consumer Configuration
+Dynamically configure consumer settings (Durable vs Ephemeral, worker pool size, ordering).
+* **Endpoint**: `PUT /consumer`
+* **Content-Type**: `application/json`
+* **Request Body**:
+  ```json
+  {
+    "type": "durable",
+    "workers": 2,
+    "ordering": "normal"
+  }
+  ```
+* **Response**: `200 OK`
+* **Response Body**: Returns updated `ConsumerStatusResponse`.
+
+---
+
 ## 2. NATS Subjects & Payload Contracts
 
 All NATS message payloads are structured as JSON. Standard metadata is passed via NATS headers to keep the payload clean.
@@ -327,6 +365,9 @@ The following headers must be present in messages:
 | `jobs.processing.failed` | Processor -> Demo | Processing failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |
 | `jobs.completed` | Processor -> Demo | Job successfully finished | `{"job_id": string, "status": "COMPLETED", "delivery_count": int}` |
 | `jobs.failed` | Processor -> Demo | Job execution failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |
+| `jobs.stored` | Demo -> Demo/Observability | JetStream message stored ack | `{"job_id": string, "status": "STORED", "sequence": uint64}` |
+| `jobs.deduplicated` | Demo -> Demo/Observability | JetStream deduplication ack | `{"job_id": string, "status": "DEDUPLICATED", "sequence": uint64}` |
+| `consumer.config.set` | Demo <-> Processor | Dynamic consumer reconfiguration | **Req**: `{"type": string, "workers": int, "ordering": string}`<br>**Rep**: `ConsumerStatusResponse` |
 
 ---
 

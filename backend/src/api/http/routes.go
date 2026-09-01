@@ -19,6 +19,8 @@ func RegisterRoutes(router *gin.Engine, h *Handler) {
 	router.GET("/messaging/subscriptions", h.GetSubscriptions)
 	router.GET("/messaging/activity", h.GetAddressingActivity)
 	router.PUT("/processor/state", h.PutProcessorState)
+	router.GET("/consumer", h.GetConsumerStatus)
+	router.PUT("/consumer", h.PutConsumerConfig)
 }
 
 // CORSMiddleware returns a Gin HandlerFunc that configures CORS headers.

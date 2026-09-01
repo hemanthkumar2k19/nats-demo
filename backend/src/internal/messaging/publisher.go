@@ -47,8 +47,13 @@ func (p *Publisher) PublishJobSubmitted(job jobs.Job, correlationID string) erro
 		if err != nil {
 			return fmt.Errorf("failed to publish to JetStream: %w", err)
 		}
-		// Stored successfully: publish jobs.stored event
-		_ = p.PublishJobLifecycle(SubjectJobStored, job.JobID, "STORED", 1, "", correlationID, "demo-service", job.DeliveryMode, ack.Sequence)
+		if ack.Duplicate {
+			// Duplicate publish recognized by JetStream deduplication window
+			_ = p.PublishJobLifecycle(SubjectJobDeduplicated, job.JobID, "DEDUPLICATED", 1, "Duplicate message recognized by JetStream deduplication window", correlationID, "demo-service", job.DeliveryMode, ack.Sequence)
+		} else {
+			// Stored successfully: publish jobs.stored event
+			_ = p.PublishJobLifecycle(SubjectJobStored, job.JobID, "STORED", 1, "", correlationID, "demo-service", job.DeliveryMode, ack.Sequence)
+		}
 	} else {
 		if err := p.client.Conn.PublishMsg(msg); err != nil {
 			return fmt.Errorf("failed to publish to NATS: %w", err)

@@ -57,17 +57,27 @@ func (h *Handler) GetStatus(c *gin.Context) {
 
 	processorStatus := "OFFLINE"
 	isProcessing := false
+	workers := 1
+	consumerName := "job-processor"
 	if natsStatus == "CONNECTED" {
 		// Ping the processor using Request/Reply
 		reply, err := h.natsClient.Conn.Request("status.processor", nil, 250*time.Millisecond)
 		if err == nil && len(reply.Data) > 0 {
 			processorStatus = "ACTIVE"
 			var statusResp struct {
-				Status     string `json:"status"`
-				Processing bool   `json:"processing"`
+				Status       string `json:"status"`
+				Processing   bool   `json:"processing"`
+				Workers      int    `json:"workers"`
+				ConsumerName string `json:"consumer_name"`
 			}
 			if err := json.Unmarshal(reply.Data, &statusResp); err == nil {
 				isProcessing = statusResp.Processing
+				if statusResp.Workers > 0 {
+					workers = statusResp.Workers
+				}
+				if statusResp.ConsumerName != "" {
+					consumerName = statusResp.ConsumerName
+				}
 			}
 		}
 	}
@@ -77,9 +87,15 @@ func (h *Handler) GetStatus(c *gin.Context) {
 	if natsStatus == "CONNECTED" {
 		js, err := h.natsClient.Conn.JetStream()
 		if err == nil {
-			// First try to bind/query durable consumer stats
-			cinfo, err := js.ConsumerInfo("JOBS", "processor-durable")
-			if err == nil {
+			// Query active consumer stats
+			cinfo, err := js.ConsumerInfo("JOBS", consumerName)
+			if err != nil && consumerName != "job-processor" {
+				cinfo, err = js.ConsumerInfo("JOBS", "job-processor")
+			}
+			if err != nil {
+				cinfo, err = js.ConsumerInfo("JOBS", "processor-durable")
+			}
+			if err == nil && cinfo != nil {
 				jsInfo = gin.H{
 					"stream":  "JOBS",
 					"pending": cinfo.NumPending,
@@ -111,6 +127,7 @@ func (h *Handler) GetStatus(c *gin.Context) {
 				"name":       "processor-service",
 				"status":     processorStatus,
 				"processing": isProcessing,
+				"workers":    workers,
 			},
 		},
 		"jetstream": jsInfo,
@@ -281,6 +298,118 @@ func (h *Handler) PutProcessorState(c *gin.Context) {
 		Enabled bool   `json:"enabled"`
 		Status  string `json:"status"`
 	}
+	if err := json.Unmarshal(reply.Data, &resp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid response from processor service"})
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// GetConsumerStatus returns the current consumer configuration and live metrics.
+func (h *Handler) GetConsumerStatus(c *gin.Context) {
+	consumerName := "job-processor"
+	consumerType := "durable"
+	workers := 1
+	ordering := "normal"
+	status := "ACTIVE"
+
+	// Ping processor service via status.processor to query current configuration
+	reply, err := h.natsClient.Conn.Request("status.processor", nil, 500*time.Millisecond)
+	if err == nil && len(reply.Data) > 0 {
+		var procStatus struct {
+			Status       string `json:"status"`
+			Processing   bool   `json:"processing"`
+			ConsumerType string `json:"consumer_type"`
+			ConsumerName string `json:"consumer_name"`
+			Workers      int    `json:"workers"`
+			Ordering     string `json:"ordering"`
+		}
+		if err := json.Unmarshal(reply.Data, &procStatus); err == nil {
+			if procStatus.ConsumerName != "" {
+				consumerName = procStatus.ConsumerName
+			}
+			if procStatus.ConsumerType != "" {
+				consumerType = procStatus.ConsumerType
+			}
+			if procStatus.Workers > 0 {
+				workers = procStatus.Workers
+			}
+			if procStatus.Ordering != "" {
+				ordering = procStatus.Ordering
+			}
+			if !procStatus.Processing {
+				status = "STOPPED"
+			}
+		}
+	} else {
+		status = "OFFLINE"
+	}
+
+	var pending uint64
+	var ackPending int
+	var redelivered int
+
+	js, err := h.natsClient.Conn.JetStream()
+	if err == nil {
+		cinfo, err := js.ConsumerInfo("JOBS", consumerName)
+		if err != nil && consumerName != "processor-durable" {
+			cinfo, _ = js.ConsumerInfo("JOBS", "processor-durable")
+		}
+		if cinfo != nil {
+			pending = cinfo.NumPending
+			ackPending = cinfo.NumAckPending
+			redelivered = cinfo.NumRedelivered
+		}
+	}
+
+	c.JSON(http.StatusOK, jobs.ConsumerStatusResponse{
+		Name:        consumerName,
+		Type:        consumerType,
+		Workers:     workers,
+		Ordering:    ordering,
+		Delivery:    "at-least-once",
+		Status:      status,
+		Pending:     pending,
+		AckPending:  ackPending,
+		Redelivered: redelivered,
+	})
+}
+
+// PutConsumerConfig reconfigures the consumer settings (durable vs ephemeral, workers, ordering).
+func (h *Handler) PutConsumerConfig(c *gin.Context) {
+	var req jobs.ConsumerConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		return
+	}
+
+	if req.Type == "" {
+		req.Type = "durable"
+	}
+	if req.Workers <= 0 {
+		req.Workers = 1
+	}
+	if req.Ordering == "" {
+		req.Ordering = "normal"
+	}
+	if req.Ordering == "ordered" {
+		req.Workers = 1
+	}
+
+	payload, err := json.Marshal(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal consumer config payload"})
+		return
+	}
+
+	reply, err := h.natsClient.Conn.Request(messaging.SubjectConsumerConfigSet, payload, 2*time.Second)
+	if err != nil {
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "Processor service did not respond to consumer config update. Is it running?"})
+		return
+	}
+
+	var resp jobs.ConsumerStatusResponse
 	if err := json.Unmarshal(reply.Data, &resp); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid response from processor service"})
 		return

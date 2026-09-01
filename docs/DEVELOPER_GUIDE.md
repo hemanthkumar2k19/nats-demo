@@ -61,7 +61,11 @@ nats-demo/
 | **Addressing (Wildcards)** | Demonstrates exact matching (`jobs.submitted`), single-level wildcard (`jobs.*`), and multi-level wildcard (`jobs.>`) routing. |
 | **Transient Pub/Sub (Core NATS)** | Jobs sent via `CORE` delivery mode are not stored and are discarded if the processor is offline. |
 | **Durable Streaming (JetStream)** | Jobs sent via `JETSTREAM` delivery mode are persisted in the `JOBS` stream, allowing offline processing. |
-| **Competing Consumers** | Multiple processor instances can share the durable consumer `processor-durable` to load balance jobs. |
+| **Consumer Groups / Competing Consumers** | Multiple processor workers (`processor-1`, `processor-2`) pull from the same stream to balance workloads. |
+| **Durable vs Ephemeral Consumers** | Supports durable (`job-processor`) and dynamic ephemeral pull consumers configured via Consumer Lab. |
+| **Ordering** | Ordered consumer demonstration ensuring message delivery order follows stream sequence. |
+| **At-Least-Once & Redelivery** | Failure simulation triggers `msg.Nak()`, causing JetStream to redeliver with incremented delivery counts. |
+| **JetStream Deduplication** | Publishes with `Nats-Msg-Id` within the 2-minute deduplication window recognize duplicates (`DEDUPLICATED`). |
 | **Request/Reply** | Sync job validation is processed on the subject `jobs.validate` with a 2-second requester timeout. |
 | **Replay / Rewind** | Replays historical stream events from the `JOBS` stream based on sequence number or time constraints. |
 

@@ -27,6 +27,7 @@ export interface ServiceStatus {
   status: 'active' | 'connected' | 'disconnected' | 'unknown' | 'running' | 'stopped';
   details: string;
   processing?: boolean;
+  workers?: number;
 }
 
 export interface JetStreamInfo {
@@ -289,6 +290,58 @@ export async function updateProcessorState(enabled: boolean): Promise<ProcessorS
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
     throw new Error(`Failed to update processor state: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+
+  return response.json();
+}
+
+export interface ConsumerConfig {
+  type: 'durable' | 'ephemeral';
+  workers: number;
+  ordering: 'normal' | 'ordered';
+}
+
+export interface ConsumerStatus {
+  name: string;
+  type: string;
+  workers: number;
+  ordering: string;
+  delivery: string;
+  status: string;
+  pending: number;
+  ack_pending: number;
+  redelivered: number;
+}
+
+/**
+ * Retrieves the consumer configuration and live status metrics.
+ * Calls GET /consumer.
+ */
+export async function getConsumerStatus(): Promise<ConsumerStatus> {
+  const response = await fetch(`${API_BASE_URL}/consumer`);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to fetch consumer status: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Updates the consumer configuration (durable/ephemeral, workers, ordering).
+ * Calls PUT /consumer.
+ */
+export async function updateConsumerConfig(config: ConsumerConfig): Promise<ConsumerStatus> {
+  const response = await fetch(`${API_BASE_URL}/consumer`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(config),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to update consumer config: ${response.status} ${response.statusText}. ${errorText}`);
   }
 
   return response.json();

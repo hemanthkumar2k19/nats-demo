@@ -17,6 +17,10 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({ activities, onRefr
         return 'badge-submitted';
       case 'STORED':
         return 'badge-stored';
+      case 'DEDUPLICATED':
+        return 'badge-deduplicated';
+      case 'REDELIVERED':
+        return 'badge-redelivered';
       case 'RECEIVED':
       case 'DELIVERED':
       case 'REQUEST_RECEIVED':

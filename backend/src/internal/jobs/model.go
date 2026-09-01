@@ -47,3 +47,23 @@ type JobDetailResponse struct {
 	History       []JobHistoryItem `json:"history"`
 }
 
+// ConsumerConfig represents the consumer configuration parameters for Consumer Lab.
+type ConsumerConfig struct {
+	Type     string `json:"type"`     // "durable" | "ephemeral"
+	Workers  int    `json:"workers"`  // Number of worker instances: 1 or 2
+	Ordering string `json:"ordering"` // "normal" | "ordered"
+}
+
+// ConsumerStatusResponse represents consumer state and metrics for GET /consumer.
+type ConsumerStatusResponse struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Workers     int    `json:"workers"`
+	Ordering    string `json:"ordering"`
+	Delivery    string `json:"delivery"`
+	Status      string `json:"status"`
+	Pending     uint64 `json:"pending"`
+	AckPending  int    `json:"ack_pending"`
+	Redelivered int    `json:"redelivered"`
+}
+

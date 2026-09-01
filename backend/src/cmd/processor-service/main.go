@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -31,9 +32,12 @@ type App struct {
 	valSub            *nats.Subscription
 	statusSub         *nats.Subscription
 	stateSetSub       *nats.Subscription
+	consumerConfigSub *nats.Subscription
 	jsSub             *nats.Subscription
 	processingEnabled bool
-	jsPullCancel      context.CancelFunc
+	consumerConfig    jobs.ConsumerConfig
+	consumerName      string
+	workerCancels     []context.CancelFunc
 }
 
 // Init loads configuration, connects to NATS, and instantiates components.
@@ -60,6 +64,12 @@ func (a *App) Init() error {
 	a.consumer = messaging.NewConsumer(a.natsClient)
 	a.publisher = messaging.NewPublisher(a.natsClient)
 	a.processingEnabled = true
+	a.consumerConfig = jobs.ConsumerConfig{
+		Type:     "durable",
+		Workers:  1,
+		Ordering: "normal",
+	}
+	a.consumerName = "job-processor"
 
 	return nil
 }
@@ -74,6 +84,7 @@ func (a *App) Run() error {
 
 	var attemptsMu sync.Mutex
 	attempts := make(map[string]int)
+	var coreWorkerCounter uint64
 
 	// Core NATS job processing handler
 	jobHandler := func(job jobs.Job, correlationID string) error {
@@ -87,12 +98,22 @@ func (a *App) Run() error {
 			return nil
 		}
 
+		// Distribute across active workers (e.g. processor-1, processor-2)
+		a.mu.RLock()
+		workersCount := a.consumerConfig.Workers
+		a.mu.RUnlock()
+		if workersCount <= 0 {
+			workersCount = 1
+		}
+		currWorkerIdx := (atomic.AddUint64(&coreWorkerCounter, 1) - 1) % uint64(workersCount) + 1
+		assignedWorkerName := fmt.Sprintf("processor-%d", currWorkerIdx)
+
 		attemptsMu.Lock()
 		attempts[job.JobID]++
 		attemptCount := attempts[job.JobID]
 		attemptsMu.Unlock()
 
-		log.Printf("[%s] Received Core NATS job %s | Attempt: %d | Correlation: %s", workerName, job.JobID, attemptCount, correlationID)
+		log.Printf("[%s] Received Core NATS job %s | Attempt: %d | Correlation: %s", assignedWorkerName, job.JobID, attemptCount, correlationID)
 
 		// 1. Publish RECEIVED lifecycle event
 		_ = a.publisher.PublishJobLifecycle(
@@ -102,7 +123,7 @@ func (a *App) Run() error {
 			attemptCount,
 			"",
 			correlationID,
-			workerName,
+			assignedWorkerName,
 			deliveryMode,
 			0,
 		)
@@ -125,7 +146,7 @@ func (a *App) Run() error {
 
 		if simulateFailure && (simulateFailureCount == 0 || attemptCount <= simulateFailureCount) {
 			errMsg := fmt.Sprintf("Simulated failure attempt %d of %d", attemptCount, simulateFailureCount)
-			log.Printf("[%s] Job %s failed: %s", workerName, job.JobID, errMsg)
+			log.Printf("[%s] Job %s failed: %s", assignedWorkerName, job.JobID, errMsg)
 
 			_ = a.publisher.PublishJobLifecycle(
 				messaging.SubjectJobProcessingFailed,
@@ -134,7 +155,7 @@ func (a *App) Run() error {
 				attemptCount,
 				errMsg,
 				correlationID,
-				workerName,
+				assignedWorkerName,
 				deliveryMode,
 				0,
 			)
@@ -146,7 +167,7 @@ func (a *App) Run() error {
 				attemptCount,
 				errMsg,
 				correlationID,
-				workerName,
+				assignedWorkerName,
 				deliveryMode,
 				0,
 			)
@@ -154,7 +175,7 @@ func (a *App) Run() error {
 		}
 
 		// 4. Publish Completed lifecycle event on success
-		log.Printf("[%s] Job %s processed successfully", workerName, job.JobID)
+		log.Printf("[%s] Job %s processed successfully", assignedWorkerName, job.JobID)
 		_ = a.publisher.PublishJobLifecycle(
 			messaging.SubjectJobCompleted,
 			job.JobID,
@@ -162,7 +183,7 @@ func (a *App) Run() error {
 			attemptCount,
 			"",
 			correlationID,
-			workerName,
+			assignedWorkerName,
 			deliveryMode,
 			0,
 		)
@@ -180,10 +201,8 @@ func (a *App) Run() error {
 		log.Printf("[Run] Warning: JetStream Pull subscription failed (JOBS stream may not exist yet): %v", err)
 	}
 
-	// Run JetStream Pull Loop
-	pullCtx, pullCancel := context.WithCancel(context.Background())
-	a.jsPullCancel = pullCancel
-	go a.jsPullLoop(pullCtx, workerName, attempts, &attemptsMu)
+	// Run JetStream Pull Workers (multi-worker competing pool)
+	a.startWorkers(context.Background(), attempts, &attemptsMu)
 
 	// Subscribe to jobs.validate Request/Reply.
 	// subscribeValidation manages the subscription lifecycle when the processor toggles.
@@ -196,9 +215,14 @@ func (a *App) Run() error {
 	statusSub, err := a.natsClient.Conn.Subscribe("status.processor", func(msg *nats.Msg) {
 		a.mu.RLock()
 		enabled := a.processingEnabled
+		cType := a.consumerConfig.Type
+		cName := a.consumerName
+		cWorkers := a.consumerConfig.Workers
+		cOrdering := a.consumerConfig.Ordering
 		a.mu.RUnlock()
 
-		respBytes := []byte(fmt.Sprintf(`{"status":"ACTIVE","processing":%t}`, enabled))
+		respBytes := []byte(fmt.Sprintf(`{"status":"ACTIVE","processing":%t,"consumer_type":"%s","consumer_name":"%s","workers":%d,"ordering":"%s"}`,
+			enabled, cType, cName, cWorkers, cOrdering))
 		if err := msg.Respond(respBytes); err != nil {
 			log.Printf("[Processor] Failed to send status reply: %v", err)
 		}
@@ -208,6 +232,85 @@ func (a *App) Run() error {
 	}
 	a.statusSub = statusSub
 	log.Println("[Run] Subscribed to status responder subject: status.processor")
+
+	// Subscribe to consumer configuration control subject
+	consumerConfigSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectConsumerConfigSet, func(msg *nats.Msg) {
+		var req jobs.ConsumerConfig
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			log.Printf("[Processor] Failed to unmarshal consumer config payload: %v", err)
+			_ = msg.Respond([]byte(`{"error":"Invalid consumer config payload"}`))
+			return
+		}
+
+		if req.Type == "" {
+			req.Type = "durable"
+		}
+		if req.Workers <= 0 {
+			req.Workers = 1
+		}
+		if req.Ordering == "" {
+			req.Ordering = "normal"
+		}
+		if req.Ordering == "ordered" {
+			req.Workers = 1
+		}
+
+		a.mu.Lock()
+		a.consumerConfig = req
+		if req.Type == "ephemeral" {
+			a.consumerName = fmt.Sprintf("ephemeral-%d", time.Now().UnixNano()%100000)
+		} else {
+			a.consumerName = "job-processor"
+		}
+		a.mu.Unlock()
+
+		// Re-subscribe JetStream with new consumer configuration
+		a.unsubscribeJetStream()
+		if err := a.subscribeJetStream(); err != nil {
+			log.Printf("[Processor] Re-subscribing JetStream consumer failed: %v", err)
+		}
+
+		// Restart workers matching the new worker count
+		a.startWorkers(context.Background(), attempts, &attemptsMu)
+
+		var pending uint64
+		var ackPending, redelivered int
+		js, err := a.natsClient.Conn.JetStream()
+		if err == nil {
+			cinfo, err := js.ConsumerInfo("JOBS", a.consumerName)
+			if err == nil && cinfo != nil {
+				pending = cinfo.NumPending
+				ackPending = cinfo.NumAckPending
+				redelivered = cinfo.NumRedelivered
+			}
+		}
+
+		statusVal := "ACTIVE"
+		if !a.processingEnabled {
+			statusVal = "STOPPED"
+		}
+
+		resp := jobs.ConsumerStatusResponse{
+			Name:        a.consumerName,
+			Type:        req.Type,
+			Workers:     req.Workers,
+			Ordering:    req.Ordering,
+			Delivery:    "at-least-once",
+			Status:      statusVal,
+			Pending:     pending,
+			AckPending:  ackPending,
+			Redelivered: redelivered,
+		}
+		respBytes, _ := json.Marshal(resp)
+		_ = msg.Respond(respBytes)
+		log.Printf("[Processor] Consumer reconfigured: Type=%s, Name=%s, Workers=%d, Ordering=%s",
+			req.Type, a.consumerName, req.Workers, req.Ordering)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to consumer config subject: %w", err)
+	}
+	a.consumerConfigSub = consumerConfigSub
+	log.Printf("[Run] Subscribed to consumer config responder subject: %s", messaging.SubjectConsumerConfigSet)
 
 	// Subscribe to processor state control subject
 	stateSetSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectProcessorStateSet, func(msg *nats.Msg) {
@@ -234,14 +337,9 @@ func (a *App) Run() error {
 			if err := a.subscribeJetStream(); err != nil {
 				log.Printf("[Processor] JetStream subscription failed on toggle: %v", err)
 			}
-			// Note: the validation subscription is NOT toggled here.
-			// The jobs.validate subscriber stays active; the handler checks
-			// processingEnabled and declines to respond when the processor is OFF.
+			a.startWorkers(context.Background(), attempts, &attemptsMu)
 		} else {
 			a.unsubscribeCore()
-			// Note: validation subscription stays active - the handler gates
-			// on processingEnabled so it stops responding without a racy
-			// unsubscribe/re-subscribe cycle.
 		}
 
 		log.Printf("[Processor] Processing toggled to enabled=%t (status: %s)", req.Enabled, statusVal)
@@ -389,7 +487,7 @@ func (a *App) unsubscribeValidation() {
 	}
 }
 
-// subscribeJetStream registers JetStream pull subscriber if missing
+// subscribeJetStream registers JetStream pull subscriber based on a.consumerConfig
 func (a *App) subscribeJetStream() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -403,13 +501,54 @@ func (a *App) subscribeJetStream() error {
 		return err
 	}
 
-	// Create pull durable subscription on stream JOBS, binding to explicitly created consumer
-	sub, err := js.PullSubscribe(messaging.SubjectJobSubmitted, "processor-durable", nats.Bind("JOBS", "processor-durable"))
+	cType := a.consumerConfig.Type
+	if cType == "" {
+		cType = "durable"
+	}
+
+	if cType == "ephemeral" {
+		if a.consumerName == "" || a.consumerName == "job-processor" || a.consumerName == "processor-durable" {
+			a.consumerName = fmt.Sprintf("ephemeral-%d", time.Now().UnixNano()%100000)
+		}
+		cinfo, err := js.AddConsumer("JOBS", &nats.ConsumerConfig{
+			Name:          a.consumerName,
+			DeliverPolicy: nats.DeliverAllPolicy,
+			AckPolicy:     nats.AckExplicitPolicy,
+			FilterSubject: messaging.SubjectJobSubmitted,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to add ephemeral consumer: %w", err)
+		}
+		sub, err := js.PullSubscribe(messaging.SubjectJobSubmitted, cinfo.Name, nats.Bind("JOBS", cinfo.Name))
+		if err != nil {
+			return fmt.Errorf("failed to bind ephemeral consumer %s: %w", cinfo.Name, err)
+		}
+		a.jsSub = sub
+		log.Printf("[Processor] Bound to ephemeral consumer: %s", a.consumerName)
+		return nil
+	}
+
+	// Durable consumer
+	a.consumerName = "job-processor"
+	_, err = js.ConsumerInfo("JOBS", a.consumerName)
 	if err != nil {
-		return err
+		_, err = js.AddConsumer("JOBS", &nats.ConsumerConfig{
+			Durable:       a.consumerName,
+			DeliverPolicy: nats.DeliverAllPolicy,
+			AckPolicy:     nats.AckExplicitPolicy,
+			FilterSubject: messaging.SubjectJobSubmitted,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create durable consumer %s: %w", a.consumerName, err)
+		}
+	}
+
+	sub, err := js.PullSubscribe(messaging.SubjectJobSubmitted, a.consumerName, nats.Bind("JOBS", a.consumerName))
+	if err != nil {
+		return fmt.Errorf("failed to bind durable consumer %s: %w", a.consumerName, err)
 	}
 	a.jsSub = sub
-	log.Println("[Processor] JetStream consumer bound to processor-durable Pull subscriber")
+	log.Printf("[Processor] JetStream consumer bound to %s Pull subscriber", a.consumerName)
 	return nil
 }
 
@@ -423,6 +562,35 @@ func (a *App) unsubscribeJetStream() {
 		a.jsSub = nil
 		log.Println("[Processor] JetStream pull subscriber deactivated")
 	}
+}
+
+// startWorkers spawns the configured number of JetStream pull workers (e.g. processor-1, processor-2)
+func (a *App) startWorkers(ctx context.Context, attempts map[string]int, attemptsMu *sync.Mutex) {
+	a.mu.Lock()
+	for _, cancel := range a.workerCancels {
+		cancel()
+	}
+	a.workerCancels = nil
+
+	workersCount := a.consumerConfig.Workers
+	if workersCount <= 0 {
+		workersCount = 1
+	}
+	if a.consumerConfig.Ordering == "ordered" {
+		workersCount = 1
+	}
+
+	cancels := make([]context.CancelFunc, 0, workersCount)
+	for i := 1; i <= workersCount; i++ {
+		workerName := fmt.Sprintf("processor-%d", i)
+		wCtx, cancel := context.WithCancel(ctx)
+		cancels = append(cancels, cancel)
+		go a.jsPullLoop(wCtx, workerName, attempts, attemptsMu)
+	}
+	a.workerCancels = cancels
+	a.mu.Unlock()
+
+	log.Printf("[Processor] Started %d JetStream pull worker(s)", workersCount)
 }
 
 // jsPullLoop performs pull operations from JetStream stream when enabled
@@ -448,7 +616,7 @@ func (a *App) jsPullLoop(ctx context.Context, workerName string, attempts map[st
 				if errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
 					continue
 				}
-				log.Printf("[Processor JS] Fetch error: %v", err)
+				log.Printf("[%s JS] Fetch error: %v", workerName, err)
 				time.Sleep(1 * time.Second)
 				continue
 			}
@@ -470,7 +638,7 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 
 	var job jobs.Job
 	if err := json.Unmarshal(msg.Data, &job); err != nil {
-		log.Printf("[Processor JS] Failed to unmarshal message: %v", err)
+		log.Printf("[%s JS] Failed to unmarshal message: %v", workerName, err)
 		_ = msg.Ack()
 		return
 	}
@@ -478,36 +646,55 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 	// Crucial rule: if this is a CORE message, we immediately ACK and skip.
 	// This ensures that transient messages published when processor was OFF are discarded from the stream.
 	if deliveryMode == "CORE" || job.DeliveryMode == "CORE" {
-		log.Printf("[Processor JS] Core NATS message %s fetched. Discarding from JetStream.", job.JobID)
+		log.Printf("[%s JS] Core NATS message %s fetched. Discarding from JetStream.", workerName, job.JobID)
 		_ = msg.Ack()
 		return
 	}
 
-	attemptsMu.Lock()
-	attempts[job.JobID]++
-	attemptCount := attempts[job.JobID]
-	attemptsMu.Unlock()
-
-	log.Printf("[%s] Received JetStream job %s | Attempt: %d | Correlation: %s", workerName, job.JobID, attemptCount, correlationID)
-
 	meta, err := msg.Metadata()
 	var sequence uint64
-	if err == nil {
+	var numDelivered uint64 = 1
+	if err == nil && meta != nil {
 		sequence = meta.Sequence.Stream
+		numDelivered = meta.NumDelivered
 	}
 
-	// 1. Publish DELIVERED lifecycle event
-	_ = a.publisher.PublishJobLifecycle(
-		messaging.SubjectJobDelivered,
-		job.JobID,
-		"DELIVERED",
-		attemptCount,
-		"",
-		correlationID,
-		workerName,
-		deliveryMode,
-		sequence,
-	)
+	attemptCount := int(numDelivered)
+	if attemptCount <= 0 {
+		attemptsMu.Lock()
+		attempts[job.JobID]++
+		attemptCount = attempts[job.JobID]
+		attemptsMu.Unlock()
+	}
+
+	// 1. Publish DELIVERED or REDELIVERED lifecycle event
+	if numDelivered > 1 {
+		log.Printf("[%s] JetStream job %s REDELIVERED (delivery #%d) | Correlation: %s", workerName, job.JobID, attemptCount, correlationID)
+		_ = a.publisher.PublishJobLifecycle(
+			messaging.SubjectJobDelivered,
+			job.JobID,
+			"REDELIVERED",
+			attemptCount,
+			fmt.Sprintf("Message redelivered by JetStream (delivery #%d)", attemptCount),
+			correlationID,
+			workerName,
+			deliveryMode,
+			sequence,
+		)
+	} else {
+		log.Printf("[%s] Received JetStream job %s | Attempt: %d | Correlation: %s", workerName, job.JobID, attemptCount, correlationID)
+		_ = a.publisher.PublishJobLifecycle(
+			messaging.SubjectJobDelivered,
+			job.JobID,
+			"DELIVERED",
+			attemptCount,
+			"",
+			correlationID,
+			workerName,
+			deliveryMode,
+			sequence,
+		)
+	}
 
 	// 2. Simulate processing duration
 	time.Sleep(1 * time.Second)
@@ -579,10 +766,13 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 
 // Stop deactivates subscriptions and closes NATS connection.
 func (a *App) Stop() {
-	log.Println("[Stop] Cancelling JetStream pull loop...")
-	if a.jsPullCancel != nil {
-		a.jsPullCancel()
+	log.Println("[Stop] Cancelling JetStream pull workers...")
+	a.mu.Lock()
+	for _, cancel := range a.workerCancels {
+		cancel()
 	}
+	a.workerCancels = nil
+	a.mu.Unlock()
 
 	a.unsubscribeCore()
 	a.unsubscribeJetStream()
@@ -596,6 +786,15 @@ func (a *App) Stop() {
 			log.Printf("[Stop] Status responder unsubscribe failed: %v", err)
 		} else {
 			log.Println("[Stop] Status responder unsubscribed successfully")
+		}
+	}
+
+	log.Println("[Stop] Unsubscribing consumer config responder...")
+	if a.consumerConfigSub != nil {
+		if err := a.consumerConfigSub.Unsubscribe(); err != nil {
+			log.Printf("[Stop] Consumer config responder unsubscribe failed: %v", err)
+		} else {
+			log.Println("[Stop] Consumer config responder unsubscribed successfully")
 		}
 	}
 

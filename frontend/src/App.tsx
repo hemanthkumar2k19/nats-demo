@@ -7,6 +7,7 @@ import { ReplayPanel } from './components/ReplayPanel';
 import { JobInspectorPanel } from './components/JobInspectorPanel';
 import { AddressingPanel } from './components/AddressingPanel';
 import { RequestReplyPanel } from './components/RequestReplyPanel';
+import { ConsumerLabPanel } from './components/ConsumerLabPanel';
 import { 
   Job, 
   Activity, 
@@ -273,6 +274,18 @@ export const App: React.FC = () => {
             onValidateJob={handleJobValidate} 
             isSubmitting={isSubmitting}
             isValidating={isValidating}
+          />
+
+          <ConsumerLabPanel
+            onAlert={(type, msg) => {
+              if (type === 'success') {
+                setSuccess(msg);
+                refreshStatus(true);
+                refreshActivity(true);
+              } else if (type === 'error') {
+                setError(msg);
+              }
+            }}
           />
 
           <RequestReplyPanel

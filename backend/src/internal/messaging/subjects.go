@@ -20,4 +20,8 @@ const (
 	// can record them in the activity log and make the flow visible in the UI.
 	SubjectJobRequestReceived = "jobs.request.received"
 	SubjectJobReplySent       = "jobs.reply.sent"
+
+	// Consumer management and deduplication subjects
+	SubjectConsumerConfigSet = "consumer.config.set"
+	SubjectJobDeduplicated   = "jobs.deduplicated"
 )

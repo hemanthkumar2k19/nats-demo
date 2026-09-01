@@ -2,6 +2,7 @@ package natsclient
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
@@ -27,7 +28,7 @@ func (c *Client) Close() {
 	}
 }
 
-// EnsureJobsStream guarantees that the JOBS stream (subjects: jobs.>) exists in NATS.
+// EnsureJobsStream guarantees that the JOBS stream (subjects: jobs.submitted) exists in NATS.
 func (c *Client) EnsureJobsStream() error {
 	js, err := c.Conn.JetStream()
 	if err != nil {
@@ -37,34 +38,47 @@ func (c *Client) EnsureJobsStream() error {
 	_, err = js.StreamInfo("JOBS")
 	if err != nil {
 		// If stream does not exist, create it.
-		// Only capture jobs.submitted - the subject that should be durably persisted.
-		// Using jobs.> would cause JetStream to intercept jobs.validate RequestMsg
-		// messages and immediately return a PubAck to the request's reply inbox,
-		// which the NATS RequestMsg call would mistake for a validation reply.
+		// Set a 2-minute deduplication window for JetStream message deduplication.
 		_, err = js.AddStream(&nats.StreamConfig{
-			Name:     "JOBS",
-			Subjects: []string{"jobs.submitted"},
+			Name:       "JOBS",
+			Subjects:   []string{"jobs.submitted"},
+			Duplicates: 2 * time.Minute,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to add JOBS stream: %w", err)
 		}
+	} else {
+		// Update stream config to ensure deduplication window is set
+		_, _ = js.UpdateStream(&nats.StreamConfig{
+			Name:       "JOBS",
+			Subjects:   []string{"jobs.submitted"},
+			Duplicates: 2 * time.Minute,
+		})
 	}
 
-	// Explicitly create the durable consumer "processor-durable" on the JOBS stream
-	// so that it persists across application restarts and doesn't get automatically
-	// deleted on unsubscribe.
-	_, err = js.ConsumerInfo("JOBS", "processor-durable")
+	// Explicitly create durable consumer "job-processor" on the JOBS stream
+	_, err = js.ConsumerInfo("JOBS", "job-processor")
 	if err != nil {
-		// Consumer doesn't exist, create it
 		_, err = js.AddConsumer("JOBS", &nats.ConsumerConfig{
-			Durable:       "processor-durable",
+			Durable:       "job-processor",
 			DeliverPolicy: nats.DeliverAllPolicy,
 			AckPolicy:     nats.AckExplicitPolicy,
 			FilterSubject: "jobs.submitted",
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create durable consumer: %w", err)
+			return fmt.Errorf("failed to create durable consumer job-processor: %w", err)
 		}
+	}
+
+	// Also ensure processor-durable for backward compatibility
+	_, err = js.ConsumerInfo("JOBS", "processor-durable")
+	if err != nil {
+		_, _ = js.AddConsumer("JOBS", &nats.ConsumerConfig{
+			Durable:       "processor-durable",
+			DeliverPolicy: nats.DeliverAllPolicy,
+			AckPolicy:     nats.AckExplicitPolicy,
+			FilterSubject: "jobs.submitted",
+		})
 	}
 
 	return nil

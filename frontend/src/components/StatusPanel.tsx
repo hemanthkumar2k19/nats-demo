@@ -31,7 +31,7 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
   const isProcessorOnline = processorStatus !== 'disconnected' && processorStatus !== 'unknown';
 
   // Compute worker count and consumer status
-  const workerCount = isProcessorOnline ? 1 : 0;
+  const workerCount = isProcessorOnline ? (processorService?.workers ?? 1) : 0;
   const consumerStatus = isProcessorOnline
     ? isProcessing
       ? 'Active'
