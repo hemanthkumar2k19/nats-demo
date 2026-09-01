@@ -7,6 +7,7 @@ interface JobInspectorPanelProps {
   isLoading: boolean;
   error: string | null;
   onClose: () => void;
+  onShowInfo?: (key: string) => void;
 }
 
 export const JobInspectorPanel: React.FC<JobInspectorPanelProps> = ({
@@ -14,6 +15,7 @@ export const JobInspectorPanel: React.FC<JobInspectorPanelProps> = ({
   isLoading,
   error,
   onClose,
+  onShowInfo,
 }) => {
   const getBadgeClass = (status: string) => {
     switch (status.toUpperCase()) {
@@ -42,13 +44,25 @@ export const JobInspectorPanel: React.FC<JobInspectorPanelProps> = ({
   return (
     <div className="panel" style={{ marginTop: '0.5rem' }}>
       <div className="panel-header">
-        <h2 className="panel-title">
-          <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-          </svg>
-          Job Details Inspector
-        </h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h2 className="panel-title">
+            <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            Job Details Inspector
+          </h2>
+          {onShowInfo && (
+            <button
+              type="button"
+              className="node-info-btn"
+              onClick={() => onShowInfo('job-details')}
+              title="Learn about Job Details"
+            >
+              (i)
+            </button>
+          )}
+        </div>
         <button 
           className="btn btn-secondary" 
           onClick={onClose}

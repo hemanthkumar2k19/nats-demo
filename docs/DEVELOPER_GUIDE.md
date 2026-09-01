@@ -15,9 +15,10 @@ nats-demo/
 +-- AGENTS.md               # Coding rules and agent guidelines
 +-- README.md               # High-level overview and run instructions
 +-- docs/                   # Specifications and guides
-|   +-- DEVELOPER_GUIDE.md  # This developer guide
-|   +-- DEPLOYMENT_GUIDE.md # Run and deploy guide
-|   +-- CHANGELOG.md        # Log of repository changes
+|   +-- DEVELOPER_GUIDE.md          # This developer guide
+|   +-- DEPLOYMENT_GUIDE.md         # Run and deploy guide
+|   +-- FUNCTIONAL_TESTING_GUIDE.md # Hands-on testing & evaluation scenarios
+|   +-- CHANGELOG.md                # Log of repository changes
 |   +-- *.md                # API and component specs
 +-- deploy/                 # Docker Compose and NATS configuration files
 +-- backend/                # Go Backend Service Workspace
@@ -47,9 +48,12 @@ nats-demo/
 
 ### Frontend
 - **React SPA Dashboard (`frontend`)**:
-   - Provides controls to submit jobs in Core NATS or JetStream mode.
+   - Displays interactive **Current Demo Setup** pairing runtime topology on the left with embedded **Consumer Lab** controls and live metrics on the right.
+   - Provides contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
+   - Provides controls to submit jobs in Core NATS or JetStream mode (`JobPanel`).
+   - Configures JetStream consumers (Durable vs Ephemeral, 1 or 2 Workers, Normal vs Ordered) directly within Demo Setup.
    - Provides a dedicated Request/Reply panel to send validation requests and observe responses.
-   - Toggles the processor ON/OFF.
+   - Toggles the processor ON/OFF directly from the global status bar.
    - Inspects job histories, wildcard events, and subject addressing logs.
 
 ---

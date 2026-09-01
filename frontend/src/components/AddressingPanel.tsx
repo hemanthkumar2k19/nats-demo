@@ -6,6 +6,7 @@ interface AddressingPanelProps {
   events: AddressingEvent[];
   onRefresh: () => void;
   isLoading: boolean;
+  onShowInfo?: (key: string) => void;
 }
 
 export const AddressingPanel: React.FC<AddressingPanelProps> = ({
@@ -13,6 +14,7 @@ export const AddressingPanel: React.FC<AddressingPanelProps> = ({
   events,
   onRefresh,
   isLoading,
+  onShowInfo,
 }) => {
   // Helper to check if a subscription received a subject
   const hasReceived = (event: AddressingEvent, subName: string): boolean => {
@@ -34,12 +36,24 @@ export const AddressingPanel: React.FC<AddressingPanelProps> = ({
       {/* 1. Active Subscriptions Section */}
       <div>
         <div className="panel-header" style={{ marginBottom: '0.75rem' }}>
-          <h2 className="panel-title">
-            <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            NATS Active Subscriptions
-          </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <h2 className="panel-title">
+              <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              NATS Subject Addressing
+            </h2>
+            {onShowInfo && (
+              <button
+                type="button"
+                className="node-info-btn"
+                onClick={() => onShowInfo('subject-addressing')}
+                title="Learn about NATS Subject Addressing"
+              >
+                (i)
+              </button>
+            )}
+          </div>
         </div>
         <div className="activity-table-wrapper">
           <table className="activity-table">

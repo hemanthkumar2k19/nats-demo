@@ -3,9 +3,19 @@ import { getConsumerStatus, updateConsumerConfig, ConsumerStatus } from '../api/
 
 interface ConsumerLabPanelProps {
   onAlert?: (type: 'success' | 'error' | 'warning', message: string) => void;
+  onConfigChanged?: (status: ConsumerStatus) => void;
+  onShowInfo?: (key: string) => void;
+  isEmbedded?: boolean;
+  isProcessing?: boolean;
 }
 
-export const ConsumerLabPanel: React.FC<ConsumerLabPanelProps> = ({ onAlert }) => {
+export const ConsumerLabPanel: React.FC<ConsumerLabPanelProps> = ({
+  onAlert,
+  onConfigChanged,
+  onShowInfo,
+  isEmbedded = false,
+  isProcessing,
+}) => {
   const [consumerType, setConsumerType] = useState<'durable' | 'ephemeral'>('durable');
   const [workers, setWorkers] = useState<number>(1);
   const [ordering, setOrdering] = useState<'normal' | 'ordered'>('normal');
@@ -55,6 +65,7 @@ export const ConsumerLabPanel: React.FC<ConsumerLabPanelProps> = ({ onAlert }) =
         ordering,
       });
       setStatus(updated);
+      onConfigChanged?.(updated);
       onAlert?.('success', `Consumer reconfigured: ${updated.type.toUpperCase()} (${updated.name}) with ${updated.workers} worker(s) [${updated.ordering}]`);
     } catch (err: any) {
       onAlert?.('error', `Failed to update consumer: ${err.message || 'Unknown error'}`);
@@ -71,87 +82,107 @@ export const ConsumerLabPanel: React.FC<ConsumerLabPanelProps> = ({ onAlert }) =
   };
 
   return (
-    <div className="panel consumer-lab-panel">
-      <div className="panel-header">
-        <h2>CONSUMER LAB</h2>
+    <div className={isEmbedded ? "consumer-lab-embedded" : "panel consumer-lab-panel"}>
+      <div className={isEmbedded ? "summary-header" : "panel-header"}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h2 style={isEmbedded ? { fontSize: '0.8125rem', fontWeight: 700, margin: 0 } : undefined}>
+            CONSUMER LAB
+          </h2>
+          {onShowInfo && (
+            <button
+              type="button"
+              className="node-info-btn"
+              onClick={() => onShowInfo('consumer-lab')}
+              title="Learn about Consumer Lab"
+            >
+              (i)
+            </button>
+          )}
+        </div>
         <span className="badge badge-nats">JetStream Consumer</span>
       </div>
 
       <form onSubmit={handleApply} className="consumer-lab-form">
-        <div className="form-group">
-          <label className="form-label">Consumer Type</label>
-          <div className="radio-group-horizontal">
-            <label className="radio-label">
-              <input
-                type="radio"
-                name="consumerType"
-                value="durable"
-                checked={consumerType === 'durable'}
-                onChange={() => setConsumerType('durable')}
-              />
-              <span>Durable (Persistent State)</span>
-            </label>
-            <label className="radio-label">
-              <input
-                type="radio"
-                name="consumerType"
-                value="ephemeral"
-                checked={consumerType === 'ephemeral'}
-                onChange={() => setConsumerType('ephemeral')}
-              />
-              <span>Ephemeral (Temporary)</span>
-            </label>
+        {/* Row 1: Consumer Type and Ordering horizontally sequential */}
+        <div className="form-row-2col">
+          <div className="form-group">
+            <label className="form-label">Consumer Type</label>
+            <div className="radio-group-horizontal">
+              <label className="radio-label">
+                <input
+                  type="radio"
+                  name="consumerType"
+                  value="durable"
+                  checked={consumerType === 'durable'}
+                  onChange={() => setConsumerType('durable')}
+                />
+                <span>Durable</span>
+              </label>
+              <label className="radio-label">
+                <input
+                  type="radio"
+                  name="consumerType"
+                  value="ephemeral"
+                  checked={consumerType === 'ephemeral'}
+                  onChange={() => setConsumerType('ephemeral')}
+                />
+                <span>Ephemeral</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Ordering</label>
+            <div className="radio-group-horizontal">
+              <label className="radio-label">
+                <input
+                  type="radio"
+                  name="ordering"
+                  value="normal"
+                  checked={ordering === 'normal'}
+                  onChange={() => handleOrderingChange('normal')}
+                />
+                <span>Normal</span>
+              </label>
+              <label className="radio-label">
+                <input
+                  type="radio"
+                  name="ordering"
+                  value="ordered"
+                  checked={ordering === 'ordered'}
+                  onChange={() => handleOrderingChange('ordered')}
+                />
+                <span>Ordered</span>
+              </label>
+            </div>
           </div>
         </div>
 
-        <div className="form-group">
-          <label className="form-label">Workers (Competing Consumers)</label>
-          <div className="select-container">
-            <select
-              value={workers}
-              disabled={ordering === 'ordered'}
-              onChange={(e) => setWorkers(parseInt(e.target.value, 10))}
-              className="form-select"
-            >
-              <option value={1}>1 Worker (processor-1)</option>
-              <option value={2}>2 Workers (processor-1, processor-2)</option>
-            </select>
+        {/* Row 2: Workers and Delivery Semantics horizontally sequential */}
+        <div className="form-row-2col">
+          <div className="form-group">
+            <label className="form-label">Workers</label>
+            <div className="select-container">
+              <select
+                value={workers}
+                disabled={ordering === 'ordered'}
+                onChange={(e) => setWorkers(parseInt(e.target.value, 10))}
+                className="form-select"
+              >
+                <option value={1}>1 Worker</option>
+                <option value={2}>2 Workers (Competing)</option>
+              </select>
+            </div>
+            {ordering === 'ordered' && (
+              <span className="field-hint">* Locked to 1 for ordered</span>
+            )}
           </div>
-          {ordering === 'ordered' && (
-            <span className="field-hint">* Ordered consumer requires single worker (locked to 1)</span>
-          )}
-        </div>
 
-        <div className="form-group">
-          <label className="form-label">Ordering</label>
-          <div className="radio-group-horizontal">
-            <label className="radio-label">
-              <input
-                type="radio"
-                name="ordering"
-                value="normal"
-                checked={ordering === 'normal'}
-                onChange={() => handleOrderingChange('normal')}
-              />
-              <span>Normal (Competing)</span>
-            </label>
-            <label className="radio-label">
-              <input
-                type="radio"
-                name="ordering"
-                value="ordered"
-                checked={ordering === 'ordered'}
-                onChange={() => handleOrderingChange('ordered')}
-              />
-              <span>Ordered (Strict Sequence)</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">Delivery Semantics</label>
-          <div className="readonly-box">
-            <span>At Least Once (Explicit ACK + Redelivery)</span>
+          <div className="form-group">
+            <label className="form-label">Delivery Semantics</label>
+            <div className="readonly-box">
+              <span>At Least Once (Explicit ACK)</span>
+            </div>
           </div>
         </div>
 
@@ -210,6 +241,14 @@ export const ConsumerLabPanel: React.FC<ConsumerLabPanelProps> = ({ onAlert }) =
                 {status.redelivered}
               </span>
             </div>
+            {isProcessing !== undefined && (
+              <div className="consumer-metric-row">
+                <span className="metric-label">Processor State:</span>
+                <span className={`metric-value font-bold ${isProcessing ? 'text-success' : 'text-danger'}`}>
+                  {isProcessing ? 'ON' : 'OFF'}
+                </span>
+              </div>
+            )}
           </div>
         ) : (
           <div className="card-empty">No consumer information available</div>

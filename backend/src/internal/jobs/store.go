@@ -15,6 +15,9 @@ type Activity struct {
 	DeliveryCount int    `json:"delivery_count"`
 	DeliveryMode  string `json:"delivery_mode,omitempty"`
 	Sequence      uint64 `json:"sequence,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"`
+	MsgID         string `json:"msg_id,omitempty"`
+	JobType       string `json:"job_type,omitempty"`
 }
 
 // JobStore tracks job details and a capped list of activities.
@@ -33,7 +36,7 @@ func NewJobStore() *JobStore {
 }
 
 // AddEvent records a lifecycle event and updates the corresponding job detail.
-func (s *JobStore) AddEvent(jobID string, status string, deliveryCount int, correlationID string, subject string, worker string, deliveryMode string, sequence uint64) {
+func (s *JobStore) AddEvent(jobID string, status string, deliveryCount int, correlationID string, subject string, worker string, deliveryMode string, sequence uint64, msgID string, jobType string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -42,6 +45,7 @@ func (s *JobStore) AddEvent(jobID string, status string, deliveryCount int, corr
 	if !exists {
 		job = &JobDetailResponse{
 			JobID:         jobID,
+			Type:          jobType,
 			CorrelationID: correlationID,
 			History:       make([]JobHistoryItem, 0),
 		}
@@ -54,6 +58,17 @@ func (s *JobStore) AddEvent(jobID string, status string, deliveryCount int, corr
 	}
 	if correlationID != "" {
 		job.CorrelationID = correlationID
+	}
+	if jobType != "" {
+		job.Type = jobType
+	} else if job.Type != "" {
+		jobType = job.Type
+	}
+	if correlationID == "" && job.CorrelationID != "" {
+		correlationID = job.CorrelationID
+	}
+	if msgID == "" {
+		msgID = jobID
 	}
 
 	// Append to history
@@ -73,6 +88,9 @@ func (s *JobStore) AddEvent(jobID string, status string, deliveryCount int, corr
 		DeliveryCount: deliveryCount,
 		DeliveryMode:  deliveryMode,
 		Sequence:      sequence,
+		CorrelationID: correlationID,
+		MsgID:         msgID,
+		JobType:       jobType,
 	}}, s.activities...)
 
 	// Cap activities at 200 to prevent unbounded memory growth

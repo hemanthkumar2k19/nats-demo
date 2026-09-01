@@ -7,7 +7,9 @@ import { ReplayPanel } from './components/ReplayPanel';
 import { JobInspectorPanel } from './components/JobInspectorPanel';
 import { AddressingPanel } from './components/AddressingPanel';
 import { RequestReplyPanel } from './components/RequestReplyPanel';
-import { ConsumerLabPanel } from './components/ConsumerLabPanel';
+import { DemoSetupPanel } from './components/DemoSetup/DemoSetupPanel';
+import { InfoPopover } from './components/DemoSetup/InfoPopover';
+import { NATS_COMPONENTS_INFO } from './data/natsInfoData';
 import { 
   Job, 
   Activity, 
@@ -26,7 +28,9 @@ import {
   getAddressingSubscriptions,
   getAddressingActivity,
   JetStreamInfo,
-  updateProcessorState
+  updateProcessorState,
+  ConsumerStatus,
+  getConsumerStatus
 } from './api/demoApi';
 
 const DEFAULT_SERVICES: ServiceStatus[] = [
@@ -38,6 +42,7 @@ const DEFAULT_SERVICES: ServiceStatus[] = [
 export const App: React.FC = () => {
   const [services, setServices] = useState<ServiceStatus[]>(DEFAULT_SERVICES);
   const [jetstreamInfo, setJetstreamInfo] = useState<JetStreamInfo | null>(null);
+  const [consumerStatus, setConsumerStatus] = useState<ConsumerStatus | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -57,6 +62,9 @@ export const App: React.FC = () => {
   const [subscriptions, setSubscriptions] = useState<AddressingSubscription[]>([]);
   const [addressingEvents, setAddressingEvents] = useState<AddressingEvent[]>([]);
   const [isRefreshingAddressing, setIsRefreshingAddressing] = useState<boolean>(false);
+
+  // Global Contextual NATS Info modal state
+  const [activeInfoKey, setActiveInfoKey] = useState<string | null>(null);
 
   // Load initial state and set up status polling
   useEffect(() => {
@@ -80,6 +88,13 @@ export const App: React.FC = () => {
       const res = await getServiceStatus();
       setServices(res.services);
       setJetstreamInfo(res.jetstream || null);
+
+      try {
+        const cStatus = await getConsumerStatus();
+        setConsumerStatus(cStatus);
+      } catch {
+        // Consumer API may be quiet if processor is offline
+      }
     } catch (err: any) {
       if (!silent) {
         setError(err.message || 'Failed to refresh service status');
@@ -260,6 +275,25 @@ export const App: React.FC = () => {
         onRefresh={() => refreshStatus(false)} 
         onToggleProcessor={handleToggleProcessor}
         isLoading={isRefreshingStatus}
+        onShowInfo={setActiveInfoKey}
+      />
+
+      {/* Current Demo Setup & NATS Information Topology & Consumer Lab */}
+      <DemoSetupPanel
+        services={services}
+        jetstreamInfo={jetstreamInfo}
+        consumerStatus={consumerStatus}
+        onShowInfo={setActiveInfoKey}
+        onAlert={(type, msg) => {
+          if (type === 'success') {
+            setSuccess(msg);
+            refreshStatus(true);
+            refreshActivity(true);
+          } else if (type === 'error') {
+            setError(msg);
+          }
+        }}
+        onConfigChanged={setConsumerStatus}
       />
 
       <main className="dashboard-grid">
@@ -274,27 +308,18 @@ export const App: React.FC = () => {
             onValidateJob={handleJobValidate} 
             isSubmitting={isSubmitting}
             isValidating={isValidating}
-          />
-
-          <ConsumerLabPanel
-            onAlert={(type, msg) => {
-              if (type === 'success') {
-                setSuccess(msg);
-                refreshStatus(true);
-                refreshActivity(true);
-              } else if (type === 'error') {
-                setError(msg);
-              }
-            }}
+            onShowInfo={setActiveInfoKey}
           />
 
           <RequestReplyPanel
             activities={activities}
             onValidated={() => refreshActivity(true)}
+            onShowInfo={setActiveInfoKey}
           />
           
           <ReplayPanel 
             onTriggerReplay={handleTriggerReplay}
+            onShowInfo={setActiveInfoKey}
           />
         </div>
 
@@ -309,6 +334,7 @@ export const App: React.FC = () => {
             onRefresh={() => refreshActivity(false)} 
             isLoading={isRefreshingActivity}
             onSelectJob={handleSelectJob}
+            onShowInfo={setActiveInfoKey}
           />
 
           {(selectedJobId || isLoadingInspector || inspectorError) && (
@@ -317,6 +343,7 @@ export const App: React.FC = () => {
               isLoading={isLoadingInspector}
               error={inspectorError}
               onClose={() => setSelectedJobId(null)}
+              onShowInfo={setActiveInfoKey}
             />
           )}
 
@@ -325,9 +352,16 @@ export const App: React.FC = () => {
             events={addressingEvents}
             onRefresh={() => refreshAddressing(false)}
             isLoading={isRefreshingAddressing}
+            onShowInfo={setActiveInfoKey}
           />
         </div>
       </main>
+
+      {/* Global Contextual NATS Information Modal */}
+      <InfoPopover
+        info={activeInfoKey ? NATS_COMPONENTS_INFO[activeInfoKey] : null}
+        onClose={() => setActiveInfoKey(null)}
+      />
     </div>
   );
 };

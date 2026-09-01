@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-01
 
+### Documentation
+- **Functional Testing Guide**: Created [docs/FUNCTIONAL_TESTING_GUIDE.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/nats-demo/docs/FUNCTIONAL_TESTING_GUIDE.md) providing an end-to-end evaluation guide with 11 hands-on testing scenarios covering Core NATS transient messaging, JetStream persistent delivery, offline message accumulation, message deduplication (`Nats-Msg-Id`), competing consumers, durable vs ephemeral lifecycles, ordered sequence consumption, stream replays, synchronous Request/Reply with timeouts, hierarchical subject wildcard addressing, and Activity Log search/filtering.
+
+### Added (Activity Log ID Columns & Real-time Search and Filter Bar)
+- **Activity Log IDs**: Added NATS Message ID (`msg_id` / `Nats-Msg-Id`), Job Type / Category (`job_type`), and Correlation ID (`correlation_id`) across backend store and HTTP activity stream.
+- **Hover Legend Tooltips**: Truncated long Correlation IDs and NATS Message IDs in table cells into compact badges with a floating hover legend popover revealing the complete full-length identifier on mouse hover.
+- **Layout Bounds & Widescreen Optimization**: Enforced `min-width: 0` on dashboard grid tracks and columns to prevent table overflow from pushing sections off-screen. Expanded overall application `max-width` to `1600px` for comfortable widescreen viewing without disrupting element positioning.
+- **Activity Table Columns**: Enhanced Activity Log table with dedicated columns: `Corr ID`, `NATS Msg ID`, and `Type` badge.
+- **Search & Filter Toolbar**: Added interactive search and filter bar supporting live full-text search across all identifiers, dynamic Event dropdown filter, Delivery Mode filter (`CORE` vs `JETSTREAM`), Worker filter (`processor-1` vs `processor-2` vs `demo-service`), live result counter, and quick Clear button.
+
+### Changed (Demo Setup Alignment & Universal Info Buttons)
+- **Consumer Lab Horizontal Expansion**: Sized Demo Topology container cleanly to fit its nodes (ending right after `processor-2`) and allocated the remaining available space (`minmax(0, 1fr)`) to Consumer Lab, eliminating the empty gap and making Consumer Lab controls and metrics spacious.
+- **Horizontal Form Layout**: Grouped Consumer Type and Ordering into a 2-column horizontal row in Consumer Lab, along with Workers and Delivery Semantics, to optimize horizontal width utilization and streamline panel height.
+- **Consumer Lab Relocation**: Relocated Consumer Lab into the right side of the `CURRENT DEMO SETUP` container, pairing the interactive consumer controller and live metrics directly alongside the runtime topology visualization. Cleaned up `DEMO ACTIONS` column to focus strictly on demo operations.
+- **Direct Stream-to-Consumer Pipeline**: Reorganized Demo Topology into an aligned 3-column architecture where `JOBS Stream`, `Consumer`, and `Processor` reside in a unified vertical column with continuous connectors, eliminating any horizontal offset or visual gap.
+- **Visual Competing Workers Branching**: When Workers count is set to 2 in Consumer Lab, Demo Topology dynamically branches the single shared Consumer into two distinct competing worker cards (`processor-1` and `processor-2`) side-by-side with a `COMPETING` branch indicator.
+- **Immediate Consumer Lab Synchronization**: Added `onConfigChanged` callback to `ConsumerLabPanel` so that changes to Consumer Type (Durable/Ephemeral), Worker count (1 or 2), and Ordering immediately update the `DemoTopology` and `DemoSummary` cards without waiting for polling intervals.
+- **Universal Contextual Info Buttons `(i)`**: Added `(i)` information buttons across all dashboard panels (`Platform Status`, `Submit Job`, `Consumer Lab`, `Request / Reply`, `JetStream Replay`, `Activity Log`, `Job Details`, `Subject Addressing`) opening contextual explanations of relevant NATS concepts and trivia.
+
+### Added (Demo Setup and NATS Information)
+- **Current Demo Setup Topology**: Added interactive visual topology diagram beneath Platform Status displaying connected nodes: Demo Service, NATS Server, JOBS Stream, Consumer, and Processor.
+- **Dynamic Topology State**: Connector between Consumer and Processor dynamically indicates active vs paused state when Processing is toggled ON/OFF. Component badges reflect live runtime status.
+- **Contextual NATS Information**: Each component provides an `(i)` button opening a modal with Role, Core NATS Concepts, Demo Usage, and Architecture Trivia.
+- **Current Demo Summary**: Added compact summary card displaying active delivery mode, consumer type, worker pool count, ordering, and processor state.
+
 ### Added (NATS Consumer Capabilities Demo)
 - **Consumer Lab**: Added interactive Consumer Lab panel in DEMO ACTIONS to configure Consumer Type (Durable vs Ephemeral), Worker pool size (1 or 2 competing workers), and Ordering (Normal vs Ordered).
 - **Competing Consumers**: Enabled dynamic worker pool (`processor-1`, `processor-2`) sharing the pull consumer, with worker identifiers clearly visible in the Activity Log.
@@ -43,9 +68,9 @@ All notable changes to this project will be documented in this file.
   immediately published a PubAck (e.g. `{"stream":"JOBS","seq":5}`) back to the request's
   `msg.Reply` inbox. The `RequestMsg` received that PubAck as the "reply" before the
   2-second timeout could fire. Unmarshalling a PubAck into `JobValidationResponse`
-  produced `{valid: false, message: ""}` — a zero-value struct with no error, causing
+  produced `{valid: false, message: ""}` -- a zero-value struct with no error, causing
   `ValidateJob` to record `REPLY_RECEIVED` and return HTTP 200 instead of 504.
-  Fixed by changing the stream `Subjects` from `["jobs.>"]` to `["jobs.submitted"]` —
+  Fixed by changing the stream `Subjects` from `["jobs.>"]` to `["jobs.submitted"]` --
   the only subject that should be durably persisted.
 - **Request/Reply panel Job ID not auto-incrementing**: Added auto-increment in the
   `finally` block of `handleSend` in `RequestReplyPanel.tsx`.

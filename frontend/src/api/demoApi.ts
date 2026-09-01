@@ -20,6 +20,9 @@ export interface Activity {
   delivery_count: number;
   delivery_mode?: string;
   sequence?: number;
+  correlation_id?: string;
+  msg_id?: string;
+  job_type?: string;
 }
 
 export interface ServiceStatus {

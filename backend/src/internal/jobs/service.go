@@ -53,17 +53,17 @@ func (s *Service) SubmitJob(job Job, correlationID string) (*JobStatusResponse, 
 // be traced in the activity log.
 func (s *Service) ValidateJob(job Job, correlationID string) (*JobValidationResponse, error) {
 	// Record that demo-service is about to send the request.
-	s.store.AddEvent(job.JobID, "REQUEST_SENT", 1, correlationID, "jobs.validate", "demo-service", "", 0)
+	s.store.AddEvent(job.JobID, "REQUEST_SENT", 1, correlationID, "jobs.validate", "demo-service", "", 0, job.JobID, job.Type)
 
 	resp, err := s.publisher.RequestJobValidation(job, correlationID)
 	if err != nil {
 		// Record timeout so it appears in the activity log.
-		s.store.AddEvent(job.JobID, "REQUEST_TIMEOUT", 1, correlationID, "jobs.validate", "demo-service", "", 0)
+		s.store.AddEvent(job.JobID, "REQUEST_TIMEOUT", 1, correlationID, "jobs.validate", "demo-service", "", 0, job.JobID, job.Type)
 		return nil, err
 	}
 
 	// Record that demo-service received the reply.
-	s.store.AddEvent(job.JobID, "REPLY_RECEIVED", 1, correlationID, "jobs.validate", "demo-service", "", 0)
+	s.store.AddEvent(job.JobID, "REPLY_RECEIVED", 1, correlationID, "jobs.validate", "demo-service", "", 0, job.JobID, job.Type)
 	return resp, nil
 }
 
@@ -128,14 +128,17 @@ func (s *Service) GetActivities() []Activity {
 }
 
 // ProcessLifecycleEvent processes an incoming NATS lifecycle message and updates the store.
-func (s *Service) ProcessLifecycleEvent(subject string, data []byte, correlationID string, source string) error {
+func (s *Service) ProcessLifecycleEvent(subject string, data []byte, correlationID string, source string, msgID string) error {
 	var payload struct {
 		JobID         string `json:"job_id"`
+		Type          string `json:"type,omitempty"`
 		Status        string `json:"status"`
 		DeliveryCount int    `json:"delivery_count"`
 		Error         string `json:"error,omitempty"`
 		DeliveryMode  string `json:"delivery_mode,omitempty"`
 		Sequence      uint64 `json:"sequence,omitempty"`
+		CorrelationID string `json:"correlation_id,omitempty"`
+		MsgID         string `json:"msg_id,omitempty"`
 	}
 	if err := json.Unmarshal(data, &payload); err != nil {
 		return fmt.Errorf("failed to unmarshal lifecycle event payload: %w", err)
@@ -143,6 +146,16 @@ func (s *Service) ProcessLifecycleEvent(subject string, data []byte, correlation
 
 	if payload.JobID == "" {
 		return fmt.Errorf("lifecycle event payload missing job_id")
+	}
+
+	if correlationID == "" && payload.CorrelationID != "" {
+		correlationID = payload.CorrelationID
+	}
+	if msgID == "" && payload.MsgID != "" {
+		msgID = payload.MsgID
+	}
+	if msgID == "" {
+		msgID = payload.JobID
 	}
 
 	var status string
@@ -184,7 +197,7 @@ func (s *Service) ProcessLifecycleEvent(subject string, data []byte, correlation
 		payload.DeliveryCount = 1
 	}
 
-	s.store.AddEvent(payload.JobID, status, payload.DeliveryCount, correlationID, subject, source, payload.DeliveryMode, payload.Sequence)
+	s.store.AddEvent(payload.JobID, status, payload.DeliveryCount, correlationID, subject, source, payload.DeliveryMode, payload.Sequence, msgID, payload.Type)
 	return nil
 }
 

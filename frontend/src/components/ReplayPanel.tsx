@@ -3,9 +3,10 @@ import { ReplayRequest, ReplayResponse } from '../api/demoApi';
 
 interface ReplayPanelProps {
   onTriggerReplay: (req: ReplayRequest) => Promise<ReplayResponse>;
+  onShowInfo?: (key: string) => void;
 }
 
-export const ReplayPanel: React.FC<ReplayPanelProps> = ({ onTriggerReplay }) => {
+export const ReplayPanel: React.FC<ReplayPanelProps> = ({ onTriggerReplay, onShowInfo }) => {
   const [fromSeq, setFromSeq] = useState<string>('100');
   const [toSeq, setToSeq] = useState<string>('120');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -43,12 +44,24 @@ export const ReplayPanel: React.FC<ReplayPanelProps> = ({ onTriggerReplay }) => 
   return (
     <div className="panel">
       <div className="panel-header">
-        <h2 className="panel-title">
-          <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" />
-          </svg>
-          JetStream Replay
-        </h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h2 className="panel-title">
+            <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89H18" />
+            </svg>
+            JetStream Replay
+          </h2>
+          {onShowInfo && (
+            <button
+              type="button"
+              className="node-info-btn"
+              onClick={() => onShowInfo('jetstream-replay')}
+              title="Learn about JetStream Replay"
+            >
+              (i)
+            </button>
+          )}
+        </div>
       </div>
 
       <form onSubmit={handleSubmit}>

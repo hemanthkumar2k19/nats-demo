@@ -5,6 +5,7 @@ import { JsonViewer } from './JsonViewer';
 interface RequestReplyPanelProps {
   activities: Activity[];
   onValidated: () => void;
+  onShowInfo?: (key: string) => void;
 }
 
 // Events that belong to the Request/Reply interaction timeline.
@@ -16,7 +17,7 @@ const RR_EVENTS = new Set([
   'REQUEST_TIMEOUT',
 ]);
 
-export const RequestReplyPanel: React.FC<RequestReplyPanelProps> = ({ activities, onValidated }) => {
+export const RequestReplyPanel: React.FC<RequestReplyPanelProps> = ({ activities, onValidated, onShowInfo }) => {
   const [jobId, setJobId] = useState<string>(`job-val-${Math.floor(100 + Math.random() * 900)}`);
   const [jobType, setJobType] = useState<string>('image-processing');
   const [payloadStr, setPayloadStr] = useState<string>(
@@ -85,12 +86,24 @@ export const RequestReplyPanel: React.FC<RequestReplyPanelProps> = ({ activities
   return (
     <div className="panel">
       <div className="panel-header">
-        <h2 className="panel-title">
-          <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-          </svg>
-          Request / Reply
-        </h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h2 className="panel-title">
+            <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            Request / Reply
+          </h2>
+          {onShowInfo && (
+            <button
+              type="button"
+              className="node-info-btn"
+              onClick={() => onShowInfo('request-reply')}
+              title="Learn about Request / Reply"
+            >
+              (i)
+            </button>
+          )}
+        </div>
       </div>
 
       <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>

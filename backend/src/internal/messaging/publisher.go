@@ -131,6 +131,7 @@ func (p *Publisher) PublishJobLifecycle(subject string, jobID string, status str
 
 	msg := nats.NewMsg(subject)
 	msg.Header.Set("Content-Type", "application/json")
+	msg.Header.Set("Nats-Msg-Id", jobID)
 	msg.Header.Set("X-Message-Id", fmt.Sprintf("msg-lf-%s-%s-%d", jobID, status, time.Now().UnixNano()))
 	if correlationID != "" {
 		msg.Header.Set("X-Correlation-Id", correlationID)

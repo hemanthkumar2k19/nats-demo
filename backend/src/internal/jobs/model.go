@@ -41,6 +41,7 @@ type JobHistoryItem struct {
 // JobDetailResponse contains comprehensive details about a job.
 type JobDetailResponse struct {
 	JobID         string           `json:"job_id"`
+	Type          string           `json:"type,omitempty"`
 	Status        string           `json:"status"`
 	DeliveryCount int              `json:"delivery_count"`
 	CorrelationID string           `json:"correlation_id"`

@@ -89,9 +89,13 @@ func (a *App) Run() error {
 		}
 		correlationID := msg.Header.Get("X-Correlation-Id")
 		source := msg.Header.Get("X-Source")
-		log.Printf("[App] Received event on subject %s (correlation: %s, source: %s)", msg.Subject, correlationID, source)
+		msgID := msg.Header.Get("Nats-Msg-Id")
+		if msgID == "" {
+			msgID = msg.Header.Get("X-Message-Id")
+		}
+		log.Printf("[App] Received event on subject %s (correlation: %s, source: %s, msgID: %s)", msg.Subject, correlationID, source, msgID)
 
-		if err := a.jobService.ProcessLifecycleEvent(msg.Subject, msg.Data, correlationID, source); err != nil {
+		if err := a.jobService.ProcessLifecycleEvent(msg.Subject, msg.Data, correlationID, source, msgID); err != nil {
 			log.Printf("[App] Failed to process lifecycle event: %v", err)
 		}
 	})
