@@ -29,69 +29,72 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
   'nats-server': {
     id: 'nats-server',
     title: 'NATS Server',
-    role: 'High-Performance Messaging Backbone and JetStream Engine',
+    role: 'Deployed Runtime Server Boundary & Messaging Engine',
     concepts: [
-      'Subject-based addressing',
-      'In-memory messaging (sub-microsecond latency)',
-      'Request / Reply with dynamic inbox subjects (_INBOX.>)',
-      'JetStream persistence engine',
-      'Publish deduplication window',
+      'Deployed Runtime Component (Port 4222)',
+      'Server Capabilities: Core NATS & JetStream',
+      'Subject-based Addressing & Wildcards',
+      'In-Memory Transient Pub/Sub & Request/Reply',
+      'Host for Logical Resources (Streams & Consumers)',
     ],
     demoUsage:
-      'Acts as the central communication hub connecting the Demo Service and Processor instances, managing transient Core NATS topics as well as durable JetStream streams.',
+      'The single deployed server boundary hosting both Core NATS pub/sub capabilities and the JetStream engine. It manages logical resources such as the JOBS stream and pull consumers.',
     trivia:
-      'NATS was built from the ground up to be lightweight and simple: a single Go binary with no external dependencies that can process tens of millions of messages per second.',
+      'NATS Server is the deployed runtime component. Core NATS and JetStream are capabilities provided by the server. Streams and Consumers are not separate processes or containers, but logical resources managed within the NATS Server boundary.',
   },
 
   'jobs-stream': {
     id: 'jobs-stream',
     title: 'JOBS Stream',
-    role: 'JetStream Persistent Message Store',
+    role: 'Logical JetStream Resource (Persistent Message Store)',
     concepts: [
-      'Stream storage (File / Memory)',
-      'Subject filtering (jobs.submitted)',
-      'Global stream sequence numbering (Seq: 1, 2, 3...)',
-      'Message deduplication (Nats-Msg-Id)',
-      'Configurable retention and deduplication windows',
+      'Logical JetStream Resource (not a deployable service)',
+      'Persisted inside NATS Server storage engine',
+      'Subject capture filter (jobs.submitted)',
+      'Global sequence numbering (Seq: 1, 2, 3...)',
+      'Message deduplication window (Nats-Msg-Id)',
     ],
     demoUsage:
-      'Durably captures all job submissions on subject jobs.submitted. Messages are assigned monotonically increasing stream sequences and retained even if all processors are offline.',
+      'Durably stores job submissions on subject jobs.submitted inside the NATS Server. Retains messages monotonically so they survive restarts and processor outages.',
     trivia:
-      'In this demo, the stream specifically captures jobs.submitted rather than jobs.> to prevent transient Request/Reply validation messages from being persisted.',
+      'A Stream is a logical JetStream resource managed inside NATS Server, not an external service or separate container. In this demo, the JOBS stream persists jobs.submitted messages for pull consumers.',
   },
 
   'consumer': {
     id: 'consumer',
     title: 'JetStream Consumer',
-    role: 'Message Delivery and Consumption Manager',
+    role: 'Logical Delivery & Consumption Manager',
     concepts: [
-      'Durable vs Ephemeral consumers',
+      'Logical JetStream Resource (not a worker or process)',
+      'Defines and tracks message delivery from Stream to Workers',
+      'Durable vs Ephemeral consumer lifecycles',
       'Pull-based consumption (Fetch / NextMsg)',
-      'At-Least-Once delivery semantics',
-      'Explicit Acknowledgement (ACK, NAK)',
-      'Ordered Consumer delivery',
+      'At-Least-Once delivery semantics with explicit ACK / NAK',
+      'Ordering (Normal vs Ordered)',
+      'Pending & Ack Pending tracking',
     ],
     demoUsage:
-      'Controls how stream messages are delivered to workers. It tracks pending message counts, handles unacknowledged message redeliveries, and dispatches to competing workers.',
+      'Manages message delivery from the JOBS Stream to Processor Service workers. Tracks delivery state, cursor progress, redeliveries, and unacknowledged messages.',
     trivia:
-      'A Durable consumer retains its cursor position even if the processor service restarts or is toggled OFF, whereas an Ephemeral consumer is discarded when its subscription ends.',
+      'A Consumer is NOT a worker, service, process, or container. It is a logical JetStream resource managed inside NATS Server that maintains the read cursor, delivery state, and ack tracking for client workers that pull from it.',
   },
 
   'processor-service': {
     id: 'processor-service',
     title: 'Processor Service',
-    role: 'Background Task Worker Pool',
+    role: 'Deployed Application Service & Worker Pool',
     concepts: [
-      'Competing Consumers pattern (Worker groups)',
-      'Simulated task execution duration',
-      'Failure simulation and NAK redelivery',
-      'Dynamic processing state toggle (ON / OFF)',
-      'Synchronous validation responder (jobs.validate)',
+      'Deployed Application Service (outside NATS boundary)',
+      'Worker Routines (processor-1, processor-2)',
+      'Competing Consumers Pattern (workers pull from single consumer)',
+      'Dynamic Processing State Toggle (ON / OFF)',
+      'Simulated Task Execution & Redelivery NAKs',
+      'Synchronous Validation RPC Responder (jobs.validate)',
     ],
     demoUsage:
-      'Runs concurrent worker routines (processor-1, processor-2) that pull jobs from the JetStream consumer, process them, and emit lifecycle tracking events back to NATS.',
+      'The deployed application service that executes background tasks. Its workers pull messages from the JetStream consumer, process them, and emit lifecycle tracking events back to NATS.',
     trivia:
-      'Multiple worker routines compete for messages from the same JetStream pull consumer, allowing workloads to be shared naturally across workers without manual scheduling.',
+      'Workers like processor-1 and processor-2 belong to the Processor Service, not NATS. When worker count is 2, both workers pull from the same single JetStream consumer in a competing consumer pattern.',
   },
 
   // Dashboard Sections
@@ -113,7 +116,7 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
 
   'submit-job': {
     id: 'submit-job',
-    title: 'Submit Job',
+    title: 'Pub Sub',
     role: 'Message Publisher & Deduplication Testing',
     concepts: [
       'Core NATS (Transient) vs JetStream (Durable) Delivery Modes',

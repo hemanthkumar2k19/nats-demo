@@ -49,8 +49,9 @@ nats-demo/
 ### Frontend
 - **React SPA Dashboard (`frontend`)**:
    - Displays interactive **Current Demo Setup** pairing runtime topology on the left with embedded **Consumer Lab** controls and live metrics on the right.
+   - Accurately distinguishes **Deployed Runtime Components** (`Demo Service`, `NATS Server`, `Processor Service`) from **Internal NATS/JetStream Resources** (`JOBS Stream`, `job-processor Consumer`) and worker pool routines (`processor-1`, `processor-2`).
    - Provides contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
-   - Provides controls to submit jobs in Core NATS or JetStream mode (`JobPanel`).
+   - Provides controls to publish jobs in Core NATS or JetStream mode (`JobPanel` - Pub Sub).
    - Configures JetStream consumers (Durable vs Ephemeral, 1 or 2 Workers, Normal vs Ordered) directly within Demo Setup.
    - Provides a dedicated Request/Reply panel to send validation requests and observe responses.
    - Toggles the processor ON/OFF directly from the global status bar.

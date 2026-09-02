@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-09-02
+
+### Changed (Correct CURRENT DEMO SETUP Architecture Representation)
+- **Deployed Runtime Boundaries vs. Logical Resources**: Redesigned the `DemoTopology` visualizer in `DemoSetupPanel.tsx` to clearly differentiate the 3 deployed runtime components (`Demo Service`, `NATS Server`, `Processor Service`) from internal logical NATS/JetStream resources and worker routines.
+- **NATS Server Containment Model**: Nested `Core NATS` (Pub/Sub & Req/Reply) and `JetStream` (Persistence & Streaming) capabilities inside the `NATS Server` boundary card. Contained `JOBS Stream` and `job-processor` Consumer within a dedicated JetStream managed resources sub-container, preventing them from being misinterpreted as separate deployable services.
+- **Processor Service Worker Pool**: Grouped application workers (`processor-1`, and `processor-2` when configured) inside the `Processor Service` card, showing single-worker execution and dynamic `COMPETING WORKERS` branching pulling from the shared JetStream consumer.
+- **Delivery Flow & State Indication**: Connected message delivery directly from the internal Consumer to Processor Service workers. Toggling processing OFF severs the delivery connection with a `[ PAUSED ]` indicator while preserving the Consumer's active state and message buffering inside NATS Server.
+- **Contextual Educational Info**: Updated `(i)` popover explanations in `natsInfo.ts` for `nats-server`, `jobs-stream`, `consumer`, and `processor-service` to reinforce the mental model that Streams and Consumers are logical JetStream resources managed inside NATS, not services or containers.
+- **Panel Title Renaming**: Renamed the `Submit Job` panel to `Pub Sub` in `JobPanel.tsx` and `natsInfo.ts` for clearer logical parity with other messaging patterns (`Request / Reply`, `JetStream Replay`).
+
+### Reason
+- The previous visualization rendered `Demo Service -> NATS Server -> JOBS Stream -> Consumer -> Processor` as peer deployment boxes, misleadingly suggesting that Streams and Consumers are standalone deployable services.
+
+### Affected Area
+- Frontend topology visualizer (`DemoTopology.tsx`), stylesheet (`index.css`), educational content (`natsInfo.ts`), developer documentation (`DEVELOPER_GUIDE.md`).
+
 ## 2026-09-01
 
 ### Added (NATS Multi-Token Subject Addressing Demonstration)
