@@ -4,6 +4,72 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-02
 
+### Changed (Restructure Current Demo Setup Topology in React UI)
+- **Frontend Topology Restructuring (`frontend/src/components/DemoSetup/DemoTopology.tsx`)**:
+  - Restructured the runtime visualizer into a two-tier layout: Tier 1 displays `React UI (:5173)` pointing (`->`) to `Demo Control Service (:8080)` via horizontal connector, with inter-tier vertical bridge connectors linking down to Tier 2 (`Job Service (:8081) -> NATS Server (:4222) -> Processor Service`).
+  - Removed the bottom dashed box titled `OBSERVABILITY & UI CONTROL HARNESS (DECOUPLED FROM BUSINESS LOGIC)` and removed redundant observability phrasing from the top section, keeping observability dedicated to the bottom metrics and distributed tracing panel.
+- **Frontend Styling & Educational Content (`index.css`, `natsInfo.ts`)**:
+  - Added CSS classes `.topology-tier-header`, `.topology-tier-tag`, `.topology-tier-control`, `.topology-tier-row`, and `.topology-vertical-bridge` for clean two-tier layout alignment.
+  - Added educational popover entry for `react-ui` with role, concepts, demo usage, and trivia.
+  - Aligned `demo-control-service` role description to "Dedicated UI gateway and demo controller".
+- **Reason**:
+  - Provide a clear top-to-bottom developer entry point in the architecture visualizer while eliminating confusing and redundant observability labeling in the top section.
+- **Affected Area**:
+  - Frontend (`DemoTopology.tsx`, `index.css`, `natsInfo.ts`), Documentation (`CHANGELOG.md`, `DEVELOPER_GUIDE.md`).
+
+### Changed (Cross-Stack Synchronization: Code, UI, Docker & Documentation)
+- **Documentation & Docker Compose Alignment (`README.md`, `DEPLOYMENT_GUIDE.md`)**:
+  - Clarified port `3000` is Grafana (OTEL-LGTM stack with Tempo distributed traces) rather than NATS UI, matching `deploy/docker-compose.yaml` and UI deep links.
+  - Aligned verification check to validate Grafana at `http://localhost:3000` (`admin`/`admin`).
+- **Testing & Run Guide (`FUNCTIONAL_TESTING_GUIDE.md`)**:
+  - Added Terminal 1 instructions to launch `demo-control-service` on `:8080`, required for the React UI to connect and operate.
+  - Corrected execution working directory to `cd backend/src` to align with the Go module root.
+- **API Specification Alignment (`docs/api-spec.md`)**:
+  - Renumbered duplicate Section 2 to Section 3 (`NATS Subjects & Payload Contracts`), Flowchart to Section 4, and Phased Approach to Section 5.
+  - Renumbered Demo Control endpoints from `1.6`-`1.12` to `2.2`-`2.8`.
+  - Added missing NATS contract rows: `jobs.replayed`, `jobs.received`, `jobs.request.sent`, `jobs.request.timeout`, and `processor.state.set`.
+- **Configuration Template (`backend/src/.env.example`)**:
+  - Documented `JOB_SERVICE_PORT=8081`, `JOB_SERVICE_URL=http://localhost:8081`, and OpenTelemetry OTLP endpoint variables.
+- **Developer Guide (`docs/DEVELOPER_GUIDE.md`)**:
+  - Included `demo-control-service` in the repository structure directory tree.
+
+### Fixed (Undefined telemetry.RecordJobSubmission Reference)
+- **Backend (`internal/telemetry/telemetry.go`, `api/http/job_handler.go`)**:
+  - Added `RecordJobSubmission` in `internal/telemetry/telemetry.go` with `delivery_mode`, `status`, and `duration` attributes matching the invocation in `api/http/job_handler.go`.
+  - Preserved `RecordJobSubmitted` as an alias to `RecordJobSubmission` for backward compatibility.
+- **Reason**:
+  - Resolve compiler error `undefined: telemetry.RecordJobSubmission` when building the job service.
+- **Affected Area**:
+  - Backend (`internal/telemetry/telemetry.go`, `api/http/job_handler.go`).
+
+### Fixed (Undefined SubjectProcessorState Reference)
+- **Backend (`api/http/control_handler.go`, `internal/messaging/subjects.go`)**:
+  - Fixed compilation error in `PutProcessorState` where `messaging.SubjectProcessorState` was referenced instead of `messaging.SubjectProcessorStateSet`.
+  - Added `SubjectProcessorState` as a constant alias to `SubjectProcessorStateSet` in `internal/messaging/subjects.go` for consistency and backward compatibility.
+
+### Added (Layer 2 Architectural Decoupling: Demo Control Service vs Pure Business Services)
+- **New Service (`cmd/demo-control-service`)**:
+  - Created a dedicated UI gateway and observability harness running on port `:8080`.
+  - Passively taps NATS events (`jobs.>`) via `activity.Tracker` to feed the live activity stream.
+  - Houses the subject addressing demo `Observer` and observer subscriptions.
+  - Houses the ephemeral JetStream replay consumer engine (`POST /jobs/replay`).
+  - Houses status aggregation and remote processor/consumer control APIs (`/status`, `/processor/state`, `/consumer`).
+- **Pure Business Refactoring (`cmd/job-service`)**:
+  - Stripped all demo harness code, observer subscriptions, and in-memory activity ring buffers.
+  - Dedicated to pure domain logic on port `:8081` (`POST /jobs`, `POST /jobs/validate`, `GET /jobs`, `GET /health`).
+  - Implements clean domain `JobStore` storing only business job records and status history.
+- **Frontend Architecture & Topology Visualization (`demoApi.ts`, `DemoTopology.tsx`, `StatusPanel.tsx`)**:
+  - Routed business operations (`submitJob`, `validateJob`, `getJobDetail`) to `http://localhost:8081`.
+  - Routed demo inspection and control (`getServiceStatus`, `getActivity`, `replayJobs`, `updateProcessorState`, `getConsumerStatus`) to `http://localhost:8080`.
+  - Updated `DemoTopology.tsx` to visualize the 4-tier deployed runtime architecture, featuring an isolated "Observability & UI Control Harness" tier connected to NATS and the React UI.
+  - Updated `StatusPanel.tsx` and `natsInfo.ts` to include `Demo Control (:8080)` and `Job Service (:8081)`.
+
+### Reason
+- Separate demo-specific instrumentation, in-memory taps, and dashboard endpoints from production-grade business services, providing developers with a clean reference implementation of pure domain services on NATS.
+
+### Affected Area
+- Backend (`cmd/demo-control-service`, `cmd/job-service`, `internal/activity`, `internal/jobs`, `api/http`), Frontend (`demoApi.ts`, `DemoTopology.tsx`, `StatusPanel.tsx`, `App.tsx`, `natsInfo.ts`), Documentation (`README.md`, `DEVELOPER_GUIDE.md`, `DEPLOYMENT_GUIDE.md`, `api-spec.md`, `CHANGELOG.md`).
+
 ### Fixed (JetStream Stream Metrics Stripping in getServiceStatus)
 - **Frontend (`api/demoApi.ts`)**: Fixed `getServiceStatus()` discarding `messages`, `bytes`, `first_seq`, and `last_seq` returned by backend `GET /status`, restoring live stored message counts and sequence ranges in the UI.
 

@@ -21,10 +21,12 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
 }) => {
   // Extract individual service statuses
   const natsService = services.find((s) => s.name.toLowerCase().includes('nats'));
-  const jobService = services.find((s) => s.name.toLowerCase().includes('job') || s.name.toLowerCase().includes('demo'));
+  const demoControlService = services.find((s) => s.name.toLowerCase().includes('control') || s.name.toLowerCase().includes('demo'));
+  const jobService = services.find((s) => s.name.toLowerCase().includes('job'));
   const processorService = services.find((s) => s.name.toLowerCase().includes('processor'));
 
   const natsStatus = natsService?.status || 'unknown';
+  const demoControlStatus = demoControlService?.status || 'unknown';
   const jobStatus = jobService?.status || 'unknown';
   const processorStatus = processorService?.status || 'unknown';
 
@@ -83,10 +85,18 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
           </div>
 
           <div className="status-metric-cell">
+            <span className="status-metric-label">Demo Control</span>
+            <StatusIndicator
+              status={demoControlStatus as any}
+              label={demoControlStatus === 'active' ? 'Active (:8080)' : 'Disconnected'}
+            />
+          </div>
+
+          <div className="status-metric-cell">
             <span className="status-metric-label">Job Service</span>
             <StatusIndicator
               status={jobStatus as any}
-              label={jobStatus === 'active' ? 'Active' : 'Disconnected'}
+              label={jobStatus === 'active' ? 'Active (:8081)' : 'Disconnected'}
             />
           </div>
 

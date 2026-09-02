@@ -37,8 +37,9 @@ import {
 
 const DEFAULT_SERVICES: ServiceStatus[] = [
   { name: 'NATS Server (4222)', status: 'unknown', details: 'Status API not implemented' },
-  { name: 'Job Service (8080)', status: 'unknown', details: 'Status API not implemented' },
-  { name: 'Processor Service', status: 'unknown', details: 'Status API not implemented' },
+  { name: 'Demo Control (8080)', status: 'unknown', details: 'Status API not implemented' },
+  { name: 'Job Service (8081)', status: 'unknown', details: 'Status API not implemented' },
+  { name: 'processor-service', status: 'unknown', details: 'Status API not implemented' },
 ];
 
 export const App: React.FC = () => {

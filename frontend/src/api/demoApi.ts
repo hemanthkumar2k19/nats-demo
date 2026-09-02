@@ -50,14 +50,15 @@ export interface SystemStatusResponse {
   jetstream?: JetStreamInfo;
 }
 
-const API_BASE_URL = 'http://localhost:8080';
+const DEMO_CONTROL_URL = 'http://localhost:8080';
+const JOB_SERVICE_URL = 'http://localhost:8081';
 
 /**
- * Submits a job to the backend API.
- * Calls real POST /jobs.
+ * Submits a job to the pure business job-service API.
+ * Calls real POST /jobs on :8081.
  */
 export async function submitJob(job: Job): Promise<JobStatusResponse> {
-  const response = await fetch(`${API_BASE_URL}/jobs`, {
+  const response = await fetch(`${JOB_SERVICE_URL}/jobs`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -83,13 +84,14 @@ export interface ValidationResult {
 }
 
 /**
- * Validates a job using Request/Reply.
+ * Validates a job using Request/Reply on the pure business job-service API.
+ * Calls real POST /jobs/validate on :8081.
  * Returns a ValidationResult. On processor timeout (HTTP 504), timedOut is set to true
  * rather than throwing so the UI can display the timeout scenario cleanly.
  */
 export async function validateJob(job: Job): Promise<ValidationResult> {
   const correlationId = `corr-val-${job.job_id}-${Date.now().toString(36)}`;
-  const response = await fetch(`${API_BASE_URL}/jobs/validate`, {
+  const response = await fetch(`${JOB_SERVICE_URL}/jobs/validate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -114,11 +116,11 @@ export async function validateJob(job: Job): Promise<ValidationResult> {
 }
 
 /**
- * Retrieves the status/list of services.
- * Calls real GET /status from the Go backend.
+ * Retrieves the status/list of services from demo-control-service.
+ * Calls real GET /status from demo-control-service on :8080.
  */
 export async function getServiceStatus(): Promise<SystemStatusResponse> {
-  const response = await fetch(`${API_BASE_URL}/status`);
+  const response = await fetch(`${DEMO_CONTROL_URL}/status`);
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
     throw new Error(`Failed to fetch service status: ${response.status} ${response.statusText}. ${errorText}`);
@@ -130,7 +132,7 @@ export async function getServiceStatus(): Promise<SystemStatusResponse> {
   // 1. Map NATS Server status
   const natsConnected = data.nats?.status === 'CONNECTED';
   services.push({
-    name: 'NATS Server',
+    name: 'NATS Server (4222)',
     status: natsConnected ? 'connected' : 'disconnected',
     details: natsConnected ? 'Connected to NATS broker' : 'Disconnected from NATS broker',
   });
@@ -142,12 +144,25 @@ export async function getServiceStatus(): Promise<SystemStatusResponse> {
       if (svc.name === 'processor-service') {
         const isProcessing = svc.processing === true;
         services.push({
-          name: svc.name,
+          name: 'processor-service',
           status: isActive ? (isProcessing ? 'active' : 'stopped') : 'disconnected',
           details: isActive 
             ? (isProcessing ? 'Processor is active and processing messages' : 'Processor is paused')
             : 'Service is offline',
           processing: isProcessing,
+          workers: svc.workers,
+        });
+      } else if (svc.name === 'demo-control-service') {
+        services.push({
+          name: 'Demo Control (8080)',
+          status: isActive ? 'active' : 'disconnected',
+          details: isActive ? 'UI control gateway operational' : 'Demo control service is offline',
+        });
+      } else if (svc.name === 'job-service') {
+        services.push({
+          name: 'Job Service (8081)',
+          status: isActive ? 'active' : 'disconnected',
+          details: isActive ? 'Job business API operational' : 'Job service is offline',
         });
       } else {
         services.push({
@@ -176,7 +191,7 @@ export async function getServiceStatus(): Promise<SystemStatusResponse> {
  * Calls real GET /activities from the Go backend.
  */
 export async function getActivity(): Promise<Activity[]> {
-  const response = await fetch(`${API_BASE_URL}/activities`);
+  const response = await fetch(`${DEMO_CONTROL_URL}/activities`);
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
     throw new Error(`Failed to fetch activity logs: ${response.status} ${response.statusText}. ${errorText}`);
@@ -221,7 +236,7 @@ export interface ReplayResponse {
  * Calls GET /jobs/{job_id} from the Go backend.
  */
 export async function getJobDetail(jobId: string): Promise<JobDetailResponse> {
-  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
+  const response = await fetch(`${JOB_SERVICE_URL}/jobs/${jobId}`);
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
     throw new Error(`Failed to fetch job detail for "${jobId}": ${response.status} ${response.statusText}. ${errorText}`);
@@ -234,7 +249,7 @@ export async function getJobDetail(jobId: string): Promise<JobDetailResponse> {
  * Calls POST /jobs/replay from the Go backend.
  */
 export async function replayJobs(req: ReplayRequest): Promise<ReplayResponse> {
-  const response = await fetch(`${API_BASE_URL}/jobs/replay`, {
+  const response = await fetch(`${DEMO_CONTROL_URL}/jobs/replay`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -267,7 +282,7 @@ export interface AddressingEvent {
  * Calls GET /messaging/subscriptions.
  */
 export async function getAddressingSubscriptions(): Promise<AddressingSubscription[]> {
-  const response = await fetch(`${API_BASE_URL}/messaging/subscriptions`);
+  const response = await fetch(`${DEMO_CONTROL_URL}/messaging/subscriptions`);
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
     throw new Error(`Failed to fetch addressing subscriptions: ${response.status} ${response.statusText}. ${errorText}`);
@@ -281,7 +296,7 @@ export async function getAddressingSubscriptions(): Promise<AddressingSubscripti
  * Calls GET /messaging/activity.
  */
 export async function getAddressingActivity(): Promise<AddressingEvent[]> {
-  const response = await fetch(`${API_BASE_URL}/messaging/activity`);
+  const response = await fetch(`${DEMO_CONTROL_URL}/messaging/activity`);
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
     throw new Error(`Failed to fetch addressing activity: ${response.status} ${response.statusText}. ${errorText}`);
@@ -300,7 +315,7 @@ export interface ProcessorStateResponse {
  * Calls PUT /processor/state.
  */
 export async function updateProcessorState(enabled: boolean): Promise<ProcessorStateResponse> {
-  const response = await fetch(`${API_BASE_URL}/processor/state`, {
+  const response = await fetch(`${DEMO_CONTROL_URL}/processor/state`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -339,7 +354,7 @@ export interface ConsumerStatus {
  * Calls GET /consumer.
  */
 export async function getConsumerStatus(): Promise<ConsumerStatus> {
-  const response = await fetch(`${API_BASE_URL}/consumer`);
+  const response = await fetch(`${DEMO_CONTROL_URL}/consumer`);
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
     throw new Error(`Failed to fetch consumer status: ${response.status} ${response.statusText}. ${errorText}`);
@@ -352,7 +367,7 @@ export async function getConsumerStatus(): Promise<ConsumerStatus> {
  * Calls PUT /consumer.
  */
 export async function updateConsumerConfig(config: ConsumerConfig): Promise<ConsumerStatus> {
-  const response = await fetch(`${API_BASE_URL}/consumer`, {
+  const response = await fetch(`${DEMO_CONTROL_URL}/consumer`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',

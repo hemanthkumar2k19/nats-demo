@@ -15,11 +15,14 @@ const (
 	SubjectJobReceived            = "jobs.received"
 	SubjectJobNoConsumer          = "jobs.noconsumer"
 	SubjectProcessorStateSet      = "processor.state.set"
+	SubjectProcessorState         = SubjectProcessorStateSet
 
-	// Request/Reply lifecycle events published by processor-service so job-service
-	// can record them in the activity log and make the flow visible in the UI.
+	// Request/Reply lifecycle events published so observers can record them in the activity log
+	SubjectJobRequestSent     = "jobs.request.sent"
 	SubjectJobRequestReceived = "jobs.request.received"
 	SubjectJobReplySent       = "jobs.reply.sent"
+	SubjectJobReplyReceived   = "jobs.reply.received"
+	SubjectJobRequestTimeout  = "jobs.request.timeout"
 
 	// Consumer management and deduplication subjects
 	SubjectConsumerConfigSet = "consumer.config.set"

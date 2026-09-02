@@ -23,7 +23,7 @@ nats-demo/
 +-- deploy/                 # Docker Compose and NATS configuration files
 +-- backend/                # Go Backend Service Workspace
 |   +-- src/
-|       +-- cmd/            # Entry points (job-service, processor-service)
+|       +-- cmd/            # Entry points (demo-control-service, job-service, processor-service)
 |       +-- internal/       # Common configurations, jobs, and messaging clients
 +-- frontend/               # React SPA Dashboard application
 ```
@@ -34,11 +34,18 @@ nats-demo/
 
 ### Backend Services
 1. **Job Service (`cmd/job-service`)**:
-   - Serves the dashboard HTTP APIs.
-   - Accepts jobs, validates payloads, and queries job statuses.
+   - Pure business microservice listening on `:8081`.
+   - Accepts job submissions (`POST /jobs`), validation requests (`POST /jobs/validate`), and job status queries (`GET /jobs`).
    - Publishes jobs to NATS (`jobs.submitted`).
-   - Listens to wildcard lifecycle events (`jobs.>`) to update an in-memory job store.
-2. **Processor Service (`cmd/processor-service`)**:
+   - Injects standard W3C OpenTelemetry trace context into message headers.
+   - Contains zero demo harness code and zero in-memory activity ring buffers.
+2. **Demo Control Service (`cmd/demo-control-service`)**:
+   - Dedicated UI gateway and observability harness listening on `:8080`.
+   - Passively taps NATS lifecycle events (`jobs.>`) to maintain the live activity stream.
+   - Powers the wildcard subject addressing comparison (`Observer`).
+   - Manages ephemeral JetStream replay consumers (`POST /jobs/replay`).
+   - Relays processor state and consumer lab configuration changes over NATS.
+3. **Processor Service (`cmd/processor-service`)**:
    - Background worker service simulating task execution.
    - Subscribes to `jobs.submitted` to receive jobs.
    - Subscribes to `jobs.validate` to answer validation requests.
@@ -49,7 +56,7 @@ nats-demo/
 ### Frontend
 - **React SPA Dashboard (`frontend`)**:
    - Displays interactive **Current Demo Setup** pairing runtime topology on the left with embedded **Consumer Lab** controls and live metrics on the right.
-   - Accurately distinguishes **Deployed Runtime Components** (`Job Service`, `NATS Server`, `Processor Service`) from **Internal NATS/JetStream Resources** (`JOBS Stream`, `job-processor Consumer`) and worker pool routines (`processor-1`, `processor-2`).
+   - Accurately visualizes a two-tier architecture: Tier 1 with **React UI** and **Demo Control Service** connected to Tier 2 with **Job Service**, **NATS Server**, and **Processor Service**, clearly distinguishing deployed runtime components from internal NATS/JetStream resources (`JOBS Stream`, `job-processor Consumer`) and worker pool routines (`processor-1`, `processor-2`).
    - Provides contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
    - Provides controls to publish jobs in Core NATS or JetStream mode (`JobPanel` - Pub Sub).
    - Provides a dedicated Message Deduplication panel (`DeduplicationPanel`) displaying stream deduplication parameters (`2m` window, `Nats-Msg-Id`), NATS docs knowledge, and live duplicate testing.

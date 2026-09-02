@@ -11,39 +11,66 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
 
   // Topology Components
 
+  'react-ui': {
+    id: 'react-ui',
+    title: 'React UI',
+    role: 'Developer demonstration dashboard providing interactive controls and topology visualization.',
+    concepts: [
+      'Decoupled Frontend Architecture',
+      'HTTP API Client (Fetch API)',
+      'Real-Time Polling & State Synchronization',
+      'Zero Direct NATS Coupling',
+    ],
+    demoUsage:
+      'Runs locally on port 5173. Calls Demo Control Service (:8080) for UI state, activity logs, replay, and worker toggles, and Job Service (:8081) for business job submissions.',
+    trivia:
+      'In a well-designed NATS architecture, web browsers do not need direct NATS credentials or socket connections when HTTP gateway services provide clean boundary abstraction.',
+  },
+
   'job-service': {
     id: 'job-service',
     title: 'Job Service',
-    role: 'Application service that accepts jobs and interacts with NATS.',
+    role: 'Pure business microservice handling job submissions and domain validation.',
     concepts: [
+      'Clean Business Architecture',
       'NATS Go Client (nats.go)',
-      'Publish / Subscribe',
-      'Request / Reply',
-      'NATS Subjects',
-      'Core NATS vs JetStream publishing',
+      'Publish / Subscribe (jobs.submitted)',
+      'Request / Reply (jobs.validate)',
+      'OpenTelemetry W3C Trace Context Injection',
     ],
     demoUsage:
-      'Receives HTTP requests from the React UI and uses the NATS Go client to publish jobs, send validation requests, and observe job lifecycle events.',
+      'Exposes standard HTTP endpoints (POST /jobs, POST /jobs/validate) on port 8081. Decoupled from demo UI concerns - only executes business logic and communicates via NATS.',
     trivia:
-      'A NATS client connects to the NATS Server and uses subjects to publish and subscribe to messages. The application does not need to know where another subscriber is running.',
+      'A pure business service publishes events and lets interested parties (like consumers, audit loggers, or the demo harness) react asynchronously through subjects.',
+  },
+
+  'demo-control-service': {
+    id: 'demo-control-service',
+    title: 'Demo Control Service',
+    role: 'Dedicated UI gateway and demo controller for the demonstration dashboard.',
+    concepts: [
+      'Separation of Concerns (Decoupled Demo vs Business Logic)',
+      'NATS Wildcard Passive Observation (jobs.>)',
+      'Ephemeral Replay Consumer Management',
+      'Remote Worker State & Configuration Control',
+    ],
+    demoUsage:
+      'Passively observes NATS events to populate the live activity log, powers the wildcard subject addressing comparison, triggers JetStream message replay, and relays consumer configuration commands without polluting the production job-service.',
+    trivia:
+      'Because NATS is an open publish/subscribe broker, any authorized service can attach a wildcard subscription (jobs.>) to observe events in real time without the publisher or consumer ever knowing or modifying their code.',
   },
 
   // Backward compatibility alias
   'demo-service': {
-    id: 'job-service',
-    title: 'Job Service',
-    role: 'Application service that accepts jobs and interacts with NATS.',
+    id: 'demo-control-service',
+    title: 'Demo Control Service',
+    role: 'Dedicated UI gateway and demo controller for the demonstration dashboard.',
     concepts: [
-      'NATS Go Client (nats.go)',
-      'Publish / Subscribe',
-      'Request / Reply',
-      'NATS Subjects',
-      'Core NATS vs JetStream publishing',
+      'Separation of Concerns',
+      'NATS Wildcard Observation',
+      'UI Dashboard Gateway',
     ],
-    demoUsage:
-      'Receives HTTP requests from the React UI and uses the NATS Go client to publish jobs, send validation requests, and observe job lifecycle events.',
-    trivia:
-      'A NATS client connects to the NATS Server and uses subjects to publish and subscribe to messages. The application does not need to know where another subscriber is running.',
+    demoUsage: 'Serves the React dashboard and provides activity taps into NATS.',
   },
 
   'nats-server': {

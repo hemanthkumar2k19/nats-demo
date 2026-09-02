@@ -1,14 +1,15 @@
 # NATS Platform Demo - API Specification
 
-This document details the HTTP endpoints and NATS subject/message contracts for the **NATS Platform Demo**. The system consists of two services:
-1. **Job Service**: Exposes an HTTP API for job submission, validation, status checks, and replay triggers.
-2. **Processor Service**: Consumes jobs, validates requests, processes jobs (with redelivery/deduplication support), and publishes lifecycle events.
+This document details the HTTP endpoints and NATS subject/message contracts for the **NATS Platform Demo**. The system consists of three backend services:
+1. **Job Service** (`:8081`): Pure business microservice for job submission, synchronous validation, and job status checks.
+2. **Demo Control Service** (`:8080`): Dedicated UI gateway and observability harness for live activity streaming, wildcard addressing observation, ephemeral JetStream replay, and remote consumer/processor control.
+3. **Processor Service**: Background worker daemon consuming jobs, handling validation requests, and executing processing pipelines.
 
 ---
 
-## 1. HTTP API (Job Service)
+## 1. Pure Business HTTP API (Job Service :8081)
 
-All endpoints below are served by the **Job Service** (defaulting to `http://localhost:8080`).
+All business endpoints below are served by the **Job Service** (`http://localhost:8081`).
 
 ### 1.1. Submit Job
 Submit a job for processing. This is a **fire-and-forget** operation. The Job Service publishes a NATS message and immediately returns `202 Accepted`.
@@ -138,8 +139,12 @@ List all jobs currently stored in the Job Service's in-memory store. Essential f
 
 ---
 
-### 1.5. Replay Jobs
-Trigger a JetStream replay. The Job Service creates an ephemeral replay consumer to replay historical events from the stream without modifying stored stream messages.
+## 2. Demo Control & Observability HTTP API (Demo Control Service :8080)
+
+All demo-specific endpoints below are served by the **Demo Control Service** (`http://localhost:8080`).
+
+### 2.1. Replay Jobs
+Trigger a JetStream replay. The Demo Control Service creates an ephemeral replay consumer to replay historical events from the stream without modifying stored stream messages.
 
 * **Endpoint**: `POST /jobs/replay`
 * **Content-Type**: `application/json`
@@ -174,7 +179,7 @@ Trigger a JetStream replay. The Job Service creates an ephemeral replay consumer
 
 ---
 
-### 1.6. Get Subscriptions
+### 2.2. Get Subscriptions
 Retrieve the active subscriptions configured for demonstrating NATS subject addressing.
 
 * **Endpoint**: `GET /messaging/subscriptions`
@@ -201,7 +206,7 @@ Retrieve the active subscriptions configured for demonstrating NATS subject addr
 
 ---
 
-### 1.7. Get Addressing Activity
+### 2.3. Get Addressing Activity
 Retrieve the observed routing activity displaying which subscriptions received each message.
 
 * **Endpoint**: `GET /messaging/activity`
@@ -232,7 +237,7 @@ Retrieve the observed routing activity displaying which subscriptions received e
 
 ---
 
-### 1.8. Get Activities
+### 2.4. Get Activities
 Retrieve flat chronological NATS activity logs for the dashboard.
 * **Endpoint**: `GET /activities`
 * **Response**: `200 OK`
@@ -270,7 +275,7 @@ Retrieve flat chronological NATS activity logs for the dashboard.
 
 ---
 
-### 1.9. Get System Status
+### 2.5. Get System Status
 Retrieve overall service connectivity and JetStream Stream pending stats.
 * **Endpoint**: `GET /status`
 * **Response**: `200 OK`
@@ -282,10 +287,19 @@ Retrieve overall service connectivity and JetStream Stream pending stats.
     },
     "services": [
       {
+        "name": "demo-control-service",
+        "status": "ACTIVE"
+      },
+      {
+        "name": "job-service",
+        "status": "ACTIVE"
+      },
+      {
         "name": "processor-service",
         "status": "ACTIVE",
         "details": "Processor is active and processing messages",
-        "processing": true
+        "processing": true,
+        "workers": 2
       }
     ],
     "jetstream": {
@@ -301,7 +315,7 @@ Retrieve overall service connectivity and JetStream Stream pending stats.
 
 ---
 
-### 1.10. Put Processor State
+### 2.6. Put Processor State
 Dynamically toggle whether the processor-service background processing is enabled or disabled.
 * **Endpoint**: `PUT /processor/state`
 * **Content-Type**: `application/json`
@@ -322,7 +336,7 @@ Dynamically toggle whether the processor-service background processing is enable
 
 ---
 
-### 1.11. Get Consumer Status
+### 2.7. Get Consumer Status
 Retrieve active JetStream consumer configuration and live metrics (pending, ack_pending, redelivered).
 * **Endpoint**: `GET /consumer`
 * **Response**: `200 OK`
@@ -343,7 +357,7 @@ Retrieve active JetStream consumer configuration and live metrics (pending, ack_
 
 ---
 
-### 1.12. Put Consumer Configuration
+### 2.8. Put Consumer Configuration
 Dynamically configure consumer settings (Durable vs Ephemeral, worker pool size, ordering).
 * **Endpoint**: `PUT /consumer`
 * **Content-Type**: `application/json`
@@ -360,11 +374,11 @@ Dynamically configure consumer settings (Durable vs Ephemeral, worker pool size,
 
 ---
 
-## 2. NATS Subjects & Payload Contracts
+## 3. NATS Subjects & Payload Contracts
 
 All NATS message payloads are structured as JSON. Standard metadata is passed via NATS headers to keep the payload clean.
 
-### 2.1. Headers
+### 3.1. Headers
 The following headers are present in messages:
 * `Content-Type`: `application/json`
 * `Nats-Msg-Id`: Unique message ID (used for JetStream message deduplication).
@@ -374,14 +388,17 @@ The following headers are present in messages:
 
 ---
 
-### 2.2. NATS Contracts
+### 3.2. NATS Contracts
 
 | Subject | Direction | Purpose | Payload Schema |
 | :--- | :--- | :--- | :--- |
 | `jobs.submitted` | Job -> Processor | Job submission event | `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}` |
 | `jobs.validate` | Job <-> Processor | Req/Rep validation | **Req**: `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}`<br>**Rep**: `{"valid": boolean, "message": string}` |
+| `jobs.request.sent` | Job -> Observability | Validation request dispatched event | `{"job_id": string, "status": "REQUEST_SENT", "delivery_count": 1}` |
 | `jobs.request.received` | Processor -> Job | Validation request received event | `{"job_id": string, "status": "REQUEST_RECEIVED", "delivery_count": 1}` |
 | `jobs.reply.sent` | Processor -> Job | Validation reply dispatched event | `{"job_id": string, "status": "REPLY_SENT", "delivery_count": 1}` |
+| `jobs.request.timeout` | Job -> Observability | Validation request timed out event | `{"job_id": string, "status": "REQUEST_TIMEOUT", "delivery_count": 1}` |
+| `jobs.received` | Processor -> Observability | Job message received by worker | `{"job_id": string, "status": "RECEIVED", "delivery_count": int}` |
 | `jobs.processing.started` | Processor -> Job | Job processing started | `{"job_id": string, "status": "PROCESSING", "delivery_count": int}` |
 | `jobs.processing.completed` | Processor -> Job | Processing completed successfully | `{"job_id": string, "status": "COMPLETED", "delivery_count": int}` |
 | `jobs.processing.failed` | Processor -> Job | Processing failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |
@@ -389,11 +406,13 @@ The following headers are present in messages:
 | `jobs.failed` | Processor -> Job | Job execution failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |
 | `jobs.stored` | Job -> Job/Observability | JetStream message stored ack | `{"job_id": string, "status": "STORED", "sequence": uint64}` |
 | `jobs.deduplicated` | Job -> Job/Observability | JetStream deduplication ack | `{"job_id": string, "status": "DEDUPLICATED", "sequence": uint64}` |
-| `consumer.config.set` | Job <-> Processor | Dynamic consumer reconfiguration | **Req**: `{"type": string, "workers": int, "ordering": string}`<br>**Rep**: `ConsumerStatusResponse` |
+| `jobs.replayed` | Demo Control -> Observability | Historical message replayed from stream | `{"job_id": string, "status": "REPLAYED", "sequence": uint64}` |
+| `processor.state.set` | Demo Control <-> Processor | Toggle processor processing state | **Req**: `{"enabled": boolean}`<br>**Rep**: `{"enabled": boolean, "status": string}` |
+| `consumer.config.set` | Demo Control <-> Processor | Dynamic consumer reconfiguration | **Req**: `{"type": string, "workers": int, "ordering": string}`<br>**Rep**: `ConsumerStatusResponse` |
 
 ---
 
-## 3. Workflow Flowchart
+## 4. Workflow Flowchart
 
 ```mermaid
 sequenceDiagram
@@ -435,7 +454,7 @@ sequenceDiagram
 
 ---
 
-## 4. Proposed Phased Approach
+## 5. Proposed Phased Approach
 
 We recommend building the services incrementally across the following stages:
 

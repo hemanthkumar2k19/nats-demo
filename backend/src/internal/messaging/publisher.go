@@ -131,10 +131,38 @@ func (p *Publisher) RequestJobValidation(ctx context.Context, job jobs.Job, corr
 	// Inject W3C traceparent into NATS message headers
 	telemetry.InjectTraceContext(reqCtx, msg.Header)
 
+	// Publish jobs.request.sent so observers can record the outgoing request
+	reqEvtData, _ := json.Marshal(map[string]interface{}{
+		"job_id":         job.JobID,
+		"type":           job.Type,
+		"status":         "REQUEST_SENT",
+		"delivery_count": 1,
+		"correlation_id": correlationID,
+	})
+	reqEvtMsg := nats.NewMsg(SubjectJobRequestSent)
+	reqEvtMsg.Data = reqEvtData
+	reqEvtMsg.Header.Set("X-Source", "job-service")
+	reqEvtMsg.Header.Set("X-Correlation-Id", correlationID)
+	_ = p.client.Conn.PublishMsg(reqEvtMsg)
+
 	reply, err := p.client.Conn.RequestMsg(msg, 2*time.Second)
 	if err != nil {
 		reqSpan.RecordError(err)
 		reqSpan.SetStatus(codes.Error, err.Error())
+
+		timeoutEvtData, _ := json.Marshal(map[string]interface{}{
+			"job_id":         job.JobID,
+			"type":           job.Type,
+			"status":         "REQUEST_TIMEOUT",
+			"delivery_count": 1,
+			"correlation_id": correlationID,
+		})
+		timeoutEvtMsg := nats.NewMsg(SubjectJobRequestTimeout)
+		timeoutEvtMsg.Data = timeoutEvtData
+		timeoutEvtMsg.Header.Set("X-Source", "job-service")
+		timeoutEvtMsg.Header.Set("X-Correlation-Id", correlationID)
+		_ = p.client.Conn.PublishMsg(timeoutEvtMsg)
+
 		// Surface timeout and no-responder as a typed sentinel so the caller
 		// can distinguish them from internal errors.
 		if err == nats.ErrTimeout || err == nats.ErrNoResponders {
@@ -149,6 +177,19 @@ func (p *Publisher) RequestJobValidation(ctx context.Context, job jobs.Job, corr
 		reqSpan.SetStatus(codes.Error, err.Error())
 		return nil, fmt.Errorf("failed to unmarshal validation reply: %w", err)
 	}
+
+	replyEvtData, _ := json.Marshal(map[string]interface{}{
+		"job_id":         job.JobID,
+		"type":           job.Type,
+		"status":         "REPLY_RECEIVED",
+		"delivery_count": 1,
+		"correlation_id": correlationID,
+	})
+	replyEvtMsg := nats.NewMsg(SubjectJobReplyReceived)
+	replyEvtMsg.Data = replyEvtData
+	replyEvtMsg.Header.Set("X-Source", "job-service")
+	replyEvtMsg.Header.Set("X-Correlation-Id", correlationID)
+	_ = p.client.Conn.PublishMsg(replyEvtMsg)
 
 	reqSpan.SetStatus(codes.Ok, "validated")
 	return &resp, nil

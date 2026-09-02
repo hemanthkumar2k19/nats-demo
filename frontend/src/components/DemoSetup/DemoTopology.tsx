@@ -15,11 +15,13 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
   onSelectInfo,
 }) => {
   const natsService = services.find((s) => s.name.toLowerCase().includes('nats'));
-  const jobService = services.find((s) => s.name.toLowerCase().includes('job') || s.name.toLowerCase().includes('demo'));
+  const jobService = services.find((s) => s.name.toLowerCase().includes('job'));
+  const demoControlService = services.find((s) => s.name.toLowerCase().includes('control') || s.name.toLowerCase().includes('demo'));
   const processorService = services.find((s) => s.name.toLowerCase().includes('processor'));
 
   const isNatsConnected = natsService?.status === 'connected' || natsService?.status === 'active';
   const isJobActive = jobService?.status === 'active' || jobService?.status === 'connected';
+  const isDemoControlActive = demoControlService?.status === 'active' || demoControlService?.status === 'connected';
   const isProcessorOnline = processorService?.status !== 'disconnected' && processorService?.status !== 'unknown';
   const isProcessing = processorService?.processing ?? false;
 
@@ -38,8 +40,106 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
       <div className="topology-runtime-header">
         <span className="topology-legend-tag">DEPLOYED RUNTIME ARCHITECTURE</span>
         <span className="topology-legend-note">
-          3 Deployed Services | Stream &amp; Consumer are internal JetStream resources
+          UI &amp; Demo Gateway Tier decoupled from Business Messaging Pipeline
         </span>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* TIER 1: CLIENT & DEMO CONTROL GATEWAY                                     */}
+      {/* ========================================================================= */}
+      <div className="topology-tier topology-tier-control">
+        <div className="topology-tier-header">
+          <span className="topology-tier-tag">TIER 1: CLIENT &amp; DEMO CONTROL GATEWAY</span>
+        </div>
+        <div className="topology-tier-row">
+          {/* Component: React UI */}
+          <div className="topology-col deployed-col">
+            <div className="deployed-boundary-label">DEMO DASHBOARD</div>
+            <div className="topology-node deployed-card node-active">
+              <div className="node-header">
+                <span className="node-title">React UI</span>
+                <button
+                  type="button"
+                  className="node-info-btn"
+                  onClick={() => onSelectInfo('react-ui')}
+                  title="Learn about React UI"
+                >
+                  (i)
+                </button>
+              </div>
+              <div className="node-body">
+                <span className="node-badge badge-online">Active</span>
+                <span className="node-detail">Dashboard (:5173)</span>
+                <span className="node-subtle">Developer UI &amp; Controls</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Connector: React UI -> Demo Control Service */}
+          <div className="topology-connector horizontal connector-active">
+            <div className="connector-flow-group">
+              <span className="connector-flow-label">UI Gateway HTTP</span>
+              <div className="connector-line-with-arrow">
+                <div className="connector-line" />
+                <span className="connector-arrow">-&gt;</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Component: Demo Control Service */}
+          <div className="topology-col deployed-col">
+            <div className="deployed-boundary-label">CONTROL GATEWAY</div>
+            <div className={`topology-node deployed-card ${isDemoControlActive ? 'node-active' : 'node-inactive'}`}>
+              <div className="node-header">
+                <span className="node-title">Demo Control Service</span>
+                <button
+                  type="button"
+                  className="node-info-btn"
+                  onClick={() => onSelectInfo('demo-control-service')}
+                  title="Learn about Demo Control Service"
+                >
+                  (i)
+                </button>
+              </div>
+              <div className="node-body">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <span className={`node-badge ${isDemoControlActive ? 'badge-online' : 'badge-offline'}`}>
+                    {isDemoControlActive ? 'Active' : 'Offline'}
+                  </span>
+                  <span className="node-detail">HTTP API (:8080)</span>
+                </div>
+                <span className="node-subtle">Activity Taps &amp; Remote Control</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* INTER-TIER VERTICAL CONNECTORS                                            */}
+      {/* ========================================================================= */}
+      <div className="topology-vertical-bridge">
+        <div className="v-bridge-col v-bridge-col-left">
+          <div className="v-bridge-flow">
+            <div className="v-bridge-line" />
+            <span className="v-bridge-arrow">v</span>
+          </div>
+          <span className="v-bridge-label">POST /jobs, /validate (:8081)</span>
+        </div>
+        <div className="v-bridge-col v-bridge-col-right">
+          <div className="v-bridge-flow">
+            <div className="v-bridge-line" />
+            <span className="v-bridge-arrow">v</span>
+          </div>
+          <span className="v-bridge-label">Passive Tap (jobs.&gt;) &amp; Control</span>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* TIER 2: BUSINESS & MESSAGING PIPELINE                                     */}
+      {/* ========================================================================= */}
+      <div className="topology-tier-header" style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
+        <span className="topology-tier-tag">TIER 2: BUSINESS &amp; MESSAGING PIPELINE</span>
       </div>
 
       <div className="topology-pipeline-layout">
@@ -64,8 +164,8 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
               <span className={`node-badge ${isJobActive ? 'badge-online' : 'badge-offline'}`}>
                 {isJobActive ? 'Active' : 'Offline'}
               </span>
-              <span className="node-detail">HTTP API (:8080)</span>
-              <span className="node-subtle">Publisher &amp; Requester</span>
+              <span className="node-detail">HTTP API (:8081)</span>
+              <span className="node-subtle">Pure Business Service</span>
             </div>
           </div>
         </div>

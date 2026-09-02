@@ -13,16 +13,15 @@ The workspace relies on the following runtime components:
 
 ---
 
-## 2. NATS & NATS UI Deployment (Docker Compose)
+## 2. NATS & Observability Infrastructure Deployment (Docker Compose)
 
-The NATS message broker and management UI are run via Docker.
+The NATS message broker and observability stack are run via Docker.
 
 ### Configuration (`deploy/docker-compose.yaml`)
 The compose configuration starts:
 1. **NATS Server (`nats`)**: Runs the official NATS image, exposes port `4222` (client connection), port `8222` (monitoring server), and maps a local volume `nats-data` to `/data` for JetStream persistence.
-2. **NATS UI (`nats-ui`)**: A web console exposed on port `3001` to inspect NATS connections and cluster configurations.
-3. **NATS Prometheus Exporter (`nats-exporter`)**: Exposes NATS monitoring metrics on port `7777` (`/metrics`), scraping NATS port `8222` with `-jsz`, `-connz`, `-subz`, `-varz`.
-4. **Grafana OTEL-LGTM (`otel-lgtm`)**: Unified local observability stack combining OpenTelemetry Collector (`:4317` gRPC / `:4318` HTTP), Prometheus (`:9090`), Tempo (`:3200` / OTLP `:4317`), and Grafana (`:3000`). Pre-provisioned with the `NATS Platform Demo - Metrics` dashboard and Tempo distributed trace explorer.
+2. **NATS Prometheus Exporter (`nats-exporter`)**: Exposes NATS monitoring metrics on port `7777` (`/metrics`), scraping NATS port `8222` with `-jsz`, `-connz`, `-subz`, `-varz`.
+3. **Grafana OTEL-LGTM (`otel-lgtm`)**: Unified local observability stack combining OpenTelemetry Collector (`:4317` gRPC / `:4318` HTTP), Prometheus (`:9090`), Tempo (`:3200` / OTLP `:4317`), and Grafana (`:3000`). Pre-provisioned with the `NATS Platform Demo - Metrics` dashboard and Tempo distributed trace explorer.
 
 ### Command to Start:
 From the project root directory, run:
@@ -34,7 +33,7 @@ docker compose -f deploy/docker-compose.yaml up -d
 
 ## 3. Backend Deployment
 
-The backend consists of two Go services located under `backend/src`.
+The backend consists of three Go services located under `backend/src`.
 
 ### Configuration (`backend/src/.env`)
 The Go services load settings from environment variables or a local `.env` file. Initialize it by copying `.env.example`:
@@ -42,17 +41,23 @@ The Go services load settings from environment variables or a local `.env` file.
 cp backend/src/.env.example backend/src/.env
 ```
 Default parameters:
-- `PORT=8080` (HTTP port for `job-service`)
+- `PORT=8080` (HTTP port for `demo-control-service`)
+- `JOB_SERVICE_PORT=8081` (HTTP port for `job-service`)
 - `NATS_URL=nats://localhost:4222` (connection string for NATS client)
 
 ### Starting Backend Services
 In separate terminal windows, run the following commands:
-1. **Job Service**:
+1. **Demo Control Service** (UI Gateway & Observability Tap):
+   ```bash
+   cd backend/src
+   go run cmd/demo-control-service/main.go
+   ```
+2. **Job Service** (Pure Business REST API):
    ```bash
    cd backend/src
    go run cmd/job-service/main.go
    ```
-2. **Processor Service**:
+3. **Processor Service** (Worker Daemon):
    ```bash
    cd backend/src
    go run cmd/processor-service/main.go
@@ -85,11 +90,12 @@ The console will expose the local URL (e.g., `http://localhost:5173`). Open it i
 Once all services are running, verify the setup with these steps:
 
 ### Connection Checks
-1. Access NATS UI at `http://localhost:3001` and confirm the NATS client connection lists `job-service` and `processor-service`.
+1. Access Grafana at `http://localhost:3000` (credentials: `admin` / `admin`) and confirm the NATS metrics dashboard and Tempo traces are operational.
 2. Confirm the main header status bar in the React UI displays:
    - **NATS Server: Connected**
-   - **job-service: Active**
-   - **processor-service: Active**
+   - **Demo Control: Active (:8080)**
+   - **Job Service: Active (:8081)**
+   - **Processor Service: Active**
 
 ### Flow Verification
 1. **Submit Core Job**: Submit a job in `CORE` mode. Ensure the activity log displays:

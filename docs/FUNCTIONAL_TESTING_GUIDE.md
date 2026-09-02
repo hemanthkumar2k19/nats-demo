@@ -6,19 +6,22 @@ This guide provides step-by-step instructions for evaluating, demonstrating, and
 
 ## Prerequisites & Starting the Platform
 
-Open three terminal windows to launch the demo components:
+Open terminal windows to launch the demo components:
 
 ```bash
 # Terminal 0: Start NATS Broker, Exporter, and Grafana OTEL-LGTM
 docker compose -f deploy/docker-compose.yaml up -d
 
-# Terminal 1: Job Service (HTTP API, Publisher, Lifecycle Observer)
-cd backend && go run ./src/cmd/job-service/main.go
+# Terminal 1: Demo Control Service (UI Gateway, Activity Taps, Replay & Consumer Control)
+cd backend/src && go run cmd/demo-control-service/main.go
 
-# Terminal 2: Processor Service (Consumers, Workers, Request/Reply Responder)
-cd backend && go run ./src/cmd/processor-service/main.go
+# Terminal 2: Job Service (Pure Business REST API, Publisher, Trace Context Injection)
+cd backend/src && go run cmd/job-service/main.go
 
-# Terminal 3: Demonstration UI (React SPA)
+# Terminal 3: Processor Service (Consumers, Workers, Request/Reply Responder)
+cd backend/src && go run cmd/processor-service/main.go
+
+# Terminal 4: Demonstration UI (React SPA)
 cd frontend && npm run dev
 ```
 

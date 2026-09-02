@@ -6,21 +6,37 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterRoutes registers the handlers onto the HTTP router.
-func RegisterRoutes(router *gin.Engine, h *Handler) {
+// RegisterJobRoutes registers pure business job endpoints onto the router.
+func RegisterJobRoutes(router *gin.Engine, h *JobHandler) {
 	router.Use(CORSMiddleware())
+	router.GET("/health", h.HealthCheck)
 	router.POST("/jobs", h.SubmitJob)
 	router.POST("/jobs/validate", h.ValidateJob)
 	router.GET("/jobs", h.ListJobs)
 	router.GET("/jobs/:job_id", h.GetJob)
+}
+
+// RegisterControlRoutes registers demo inspection and UI control endpoints onto the router.
+func RegisterControlRoutes(router *gin.Engine, h *ControlHandler) {
+	router.Use(CORSMiddleware())
+	router.GET("/status", h.GetStatus)
 	router.GET("/activities", h.GetActivities)
 	router.POST("/jobs/replay", h.ReplayJobs)
-	router.GET("/status", h.GetStatus)
 	router.GET("/messaging/subscriptions", h.GetSubscriptions)
 	router.GET("/messaging/activity", h.GetAddressingActivity)
 	router.PUT("/processor/state", h.PutProcessorState)
 	router.GET("/consumer", h.GetConsumerStatus)
 	router.PUT("/consumer", h.PutConsumerConfig)
+}
+
+// RegisterRoutes registers the handlers onto the HTTP router (legacy all-in-one).
+func RegisterRoutes(router *gin.Engine, h *Handler) {
+	if h.JobHandler != nil {
+		RegisterJobRoutes(router, h.JobHandler)
+	}
+	if h.ControlHandler != nil {
+		RegisterControlRoutes(router, h.ControlHandler)
+	}
 }
 
 // CORSMiddleware returns a Gin HandlerFunc that configures CORS headers.
@@ -39,4 +55,3 @@ func CORSMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
-

@@ -1121,6 +1121,88 @@ body {
   color: var(--text-muted);
 }
 
+/* Tier Headers & Tags */
+.topology-tier-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.topology-tier-tag {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.topology-tier-control {
+  display: flex;
+  flex-direction: column;
+}
+
+.topology-tier-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+/* Vertical Inter-Tier Bridge */
+.topology-vertical-bridge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+}
+
+.v-bridge-col {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  color: var(--text-muted);
+}
+
+.v-bridge-col-left {
+  min-width: 170px;
+  max-width: 200px;
+  justify-content: center;
+}
+
+.v-bridge-col-right {
+  margin-left: 2rem;
+  min-width: 220px;
+  max-width: 320px;
+  justify-content: center;
+}
+
+.v-bridge-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.v-bridge-line {
+  width: 2px;
+  height: 10px;
+  background: var(--border-color);
+}
+
+.v-bridge-arrow {
+  font-size: 0.625rem;
+  line-height: 1;
+  color: #38BDF8;
+}
+
+.v-bridge-label {
+  font-size: 0.5625rem;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
 .topology-pipeline-layout {
   display: flex;
   align-items: flex-start;

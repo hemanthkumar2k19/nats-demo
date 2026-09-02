@@ -293,11 +293,12 @@ func registerInstruments() error {
 
 // Job Service Recorders
 
-func RecordJobSubmitted(ctx context.Context, deliveryMode, jobType string, duration time.Duration) {
+// RecordJobSubmission records job submission metrics including delivery mode, status, and duration.
+func RecordJobSubmission(ctx context.Context, deliveryMode, status string, duration time.Duration) {
 	if jobsSubmittedCounter != nil {
 		attrs := []attribute.KeyValue{
 			attribute.String("delivery_mode", deliveryMode),
-			attribute.String("type", jobType),
+			attribute.String("status", status),
 		}
 		jobsSubmittedCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
 		if jobSubmissionDurationHist != nil {
@@ -305,6 +306,12 @@ func RecordJobSubmitted(ctx context.Context, deliveryMode, jobType string, durat
 		}
 	}
 }
+
+// RecordJobSubmitted is an alias for RecordJobSubmission to maintain backward compatibility.
+func RecordJobSubmitted(ctx context.Context, deliveryMode, status string, duration time.Duration) {
+	RecordJobSubmission(ctx, deliveryMode, status, duration)
+}
+
 
 func RecordValidationRequest(ctx context.Context, result string, duration time.Duration) {
 	if jobValidationRequestsCounter != nil {
