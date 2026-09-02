@@ -42,15 +42,15 @@ The Go services load settings from environment variables or a local `.env` file.
 cp backend/src/.env.example backend/src/.env
 ```
 Default parameters:
-- `PORT=8080` (HTTP port for `demo-service`)
+- `PORT=8080` (HTTP port for `job-service`)
 - `NATS_URL=nats://localhost:4222` (connection string for NATS client)
 
 ### Starting Backend Services
 In separate terminal windows, run the following commands:
-1. **Demo Service**:
+1. **Job Service**:
    ```bash
    cd backend/src
-   go run cmd/demo-service/main.go
+   go run cmd/job-service/main.go
    ```
 2. **Processor Service**:
    ```bash
@@ -85,10 +85,10 @@ The console will expose the local URL (e.g., `http://localhost:5173`). Open it i
 Once all services are running, verify the setup with these steps:
 
 ### Connection Checks
-1. Access NATS UI at `http://localhost:3001` and confirm the NATS client connection lists `demo-service` and `processor-service`.
+1. Access NATS UI at `http://localhost:3001` and confirm the NATS client connection lists `job-service` and `processor-service`.
 2. Confirm the main header status bar in the React UI displays:
    - **NATS Server: Connected**
-   - **demo-service: Active**
+   - **job-service: Active**
    - **processor-service: Active**
 
 ### Flow Verification
@@ -114,4 +114,4 @@ Once all services are running, verify the setup with these steps:
    - Access Grafana Explore at `http://localhost:3000/explore`.
    - Select the `Tempo` data source.
    - Click **[ View in Tempo -> ]** from any inspected job in the Job Details Inspector in the React UI (or paste the Trace ID into the Tempo query bar).
-   - Observe the full distributed trace waterfall spanning `demo-service` HTTP handlers, NATS context-injected headers, and `processor-service` consumer and execution spans.
+   - Observe the full distributed trace waterfall spanning `job-service` HTTP handlers, NATS context-injected headers, and `processor-service` consumer and execution spans.

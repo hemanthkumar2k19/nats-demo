@@ -511,7 +511,7 @@ func (a *App) subscribeValidation(workerName string) error {
 
 		log.Printf("[%s] Received validation request for job: %s of type %s", workerName, job.JobID, job.Type)
 
-		// Publish REQUEST_RECEIVED so demo-service activity log captures it.
+		// Publish REQUEST_RECEIVED so job-service activity log captures it.
 		_ = a.publisher.PublishJobLifecycle(
 			messaging.SubjectJobRequestReceived,
 			job.JobID,

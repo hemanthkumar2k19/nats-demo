@@ -58,8 +58,8 @@ func (s *Service) SubmitJob(ctx context.Context, job Job, correlationID string) 
 // correlationID is propagated into the NATS request so the full interaction can
 // be traced in the activity log.
 func (s *Service) ValidateJob(ctx context.Context, job Job, correlationID string) (*JobValidationResponse, error) {
-	// Record that demo-service is about to send the request.
-	s.store.AddEvent(job.JobID, "REQUEST_SENT", 1, correlationID, "jobs.validate", "demo-service", "", 0, job.JobID, job.Type)
+	// Record that job-service is about to send the request.
+	s.store.AddEvent(job.JobID, "REQUEST_SENT", 1, correlationID, "jobs.validate", "job-service", "", 0, job.JobID, job.Type)
 	if job.TraceID != "" {
 		s.store.SetTraceID(job.JobID, job.TraceID)
 	}
@@ -67,12 +67,12 @@ func (s *Service) ValidateJob(ctx context.Context, job Job, correlationID string
 	resp, err := s.publisher.RequestJobValidation(ctx, job, correlationID)
 	if err != nil {
 		// Record timeout so it appears in the activity log.
-		s.store.AddEvent(job.JobID, "REQUEST_TIMEOUT", 1, correlationID, "jobs.validate", "demo-service", "", 0, job.JobID, job.Type)
+		s.store.AddEvent(job.JobID, "REQUEST_TIMEOUT", 1, correlationID, "jobs.validate", "job-service", "", 0, job.JobID, job.Type)
 		return nil, err
 	}
 
-	// Record that demo-service received the reply.
-	s.store.AddEvent(job.JobID, "REPLY_RECEIVED", 1, correlationID, "jobs.validate", "demo-service", "", 0, job.JobID, job.Type)
+	// Record that job-service received the reply.
+	s.store.AddEvent(job.JobID, "REPLY_RECEIVED", 1, correlationID, "jobs.validate", "job-service", "", 0, job.JobID, job.Type)
 	return resp, nil
 }
 
@@ -170,7 +170,7 @@ func (s *Service) ProcessLifecycleEvent(subject string, data []byte, correlation
 	var status string
 	switch subject {
 	case "jobs.validate":
-		// demo-service's jobs.> wildcard subscription catches its own outgoing
+		// job-service's jobs.> wildcard subscription catches its own outgoing
 		// RequestMsg to jobs.validate. That message is a Job payload, not a
 		// lifecycle event. Silently discard it to avoid a blank activity row.
 		return nil

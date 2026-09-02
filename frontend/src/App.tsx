@@ -36,7 +36,7 @@ import {
 
 const DEFAULT_SERVICES: ServiceStatus[] = [
   { name: 'NATS Server (4222)', status: 'unknown', details: 'Status API not implemented' },
-  { name: 'Demo Service (8080)', status: 'unknown', details: 'Status API not implemented' },
+  { name: 'Job Service (8080)', status: 'unknown', details: 'Status API not implemented' },
   { name: 'Processor Service', status: 'unknown', details: 'Status API not implemented' },
 ];
 
@@ -102,7 +102,7 @@ export const App: React.FC = () => {
       }
       setServices([
         { name: 'NATS Server (4222)', status: 'disconnected', details: 'Demo backend is unreachable' },
-        { name: 'demo-service (8080)', status: 'disconnected', details: 'Demo backend is unreachable' },
+        { name: 'job-service (8080)', status: 'disconnected', details: 'Job backend is unreachable' },
         { name: 'processor-service', status: 'disconnected', details: 'Demo backend is unreachable' },
       ]);
       setJetstreamInfo(null);

@@ -23,7 +23,7 @@ nats-demo/
 +-- deploy/                 # Docker Compose and NATS configuration files
 +-- backend/                # Go Backend Service Workspace
 |   +-- src/
-|       +-- cmd/            # Entry points (demo-service, processor-service)
+|       +-- cmd/            # Entry points (job-service, processor-service)
 |       +-- internal/       # Common configurations, jobs, and messaging clients
 +-- frontend/               # React SPA Dashboard application
 ```
@@ -33,7 +33,7 @@ nats-demo/
 ## 3. Service Responsibilities
 
 ### Backend Services
-1. **Demo Service (`cmd/demo-service`)**:
+1. **Job Service (`cmd/job-service`)**:
    - Serves the dashboard HTTP APIs.
    - Accepts jobs, validates payloads, and queries job statuses.
    - Publishes jobs to NATS (`jobs.submitted`).
@@ -49,7 +49,7 @@ nats-demo/
 ### Frontend
 - **React SPA Dashboard (`frontend`)**:
    - Displays interactive **Current Demo Setup** pairing runtime topology on the left with embedded **Consumer Lab** controls and live metrics on the right.
-   - Accurately distinguishes **Deployed Runtime Components** (`Demo Service`, `NATS Server`, `Processor Service`) from **Internal NATS/JetStream Resources** (`JOBS Stream`, `job-processor Consumer`) and worker pool routines (`processor-1`, `processor-2`).
+   - Accurately distinguishes **Deployed Runtime Components** (`Job Service`, `NATS Server`, `Processor Service`) from **Internal NATS/JetStream Resources** (`JOBS Stream`, `job-processor Consumer`) and worker pool routines (`processor-1`, `processor-2`).
    - Provides contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
    - Provides controls to publish jobs in Core NATS or JetStream mode (`JobPanel` - Pub Sub).
    - Configures JetStream consumers (Durable vs Ephemeral, 1 or 2 Workers, Normal vs Ordered) directly within Demo Setup.
@@ -92,7 +92,7 @@ Events happening within the same second are sorted by logical state sequence (`P
 ### Request/Reply Lifecycle Flow
 
 ```text
-UI                 demo-service          NATS          processor-service
+UI                 job-service           NATS          processor-service
 |                       |                 |                    |
 | POST /jobs/validate   |                 |                    |
 |---------------------->|                 |                    |
@@ -113,13 +113,13 @@ UI                 demo-service          NATS          processor-service
 
 **Correlation ID propagation**:
 - The HTTP client sends (or the backend generates) a `X-Correlation-Id` header.
-- `demo-service` includes it in the NATS `RequestMsg` headers.
+- `job-service` includes it in the NATS `RequestMsg` headers.
 - `processor-service` extracts it and forwards it in the `jobs.request.received` and `jobs.reply.sent` lifecycle events.
 - All activity log entries carry the same correlation ID so the full flow can be traced.
 
 **Natural timeout when Processor is OFF**:
 - When the processor state is toggled to `OFF`, it calls `unsubscribeValidation()`, which removes the `jobs.validate` subscriber.
-- The NATS `RequestMsg` in `demo-service` finds no active responder and returns `nats.ErrNoResponders` (or `nats.ErrTimeout` after 2 seconds).
+- The NATS `RequestMsg` in `job-service` finds no active responder and returns `nats.ErrNoResponders` (or `nats.ErrTimeout` after 2 seconds).
 - `publisher.RequestJobValidation` converts this to `messaging.ErrRequestTimeout`.
 - The HTTP handler detects this sentinel error and returns HTTP `504 Gateway Timeout`.
 - No artificial timeout generation is used; the behavior is an authentic NATS timeout.
@@ -149,7 +149,7 @@ UI                 demo-service          NATS          processor-service
 Distributed traces use the standard W3C `traceparent` HTTP header format (`00-<trace-id>-<span-id>-01`), carried natively inside `nats.Msg.Header` (`map[string][]string`).
 
 ```text
-React UI              demo-service                NATS Server              processor-service
+React UI              job-service                 NATS Server              processor-service
    |                       |                           |                           |
    | POST /jobs            |                           |                           |
    |---------------------->| Span: POST /jobs (Server) |                           |
@@ -167,13 +167,13 @@ React UI              demo-service                NATS Server              proce
 
 ### Trace Span Hierarchy
 1. **Asynchronous Job Processing**:
-   - `POST /jobs` (`SpanKindServer`): Root span created by HTTP handler in `demo-service`.
+   - `POST /jobs` (`SpanKindServer`): Root span created by HTTP handler in `job-service`.
      - `NATS Publish jobs.submitted` (`SpanKindProducer`): Child span created by `Publisher.PublishJobSubmitted`.
        - `Consumer Receive` (`SpanKindConsumer`): Span created upon message delivery in `processor-service`.
          - `Process Job` (`SpanKindInternal`): Child span representing job execution. Records errors and failure status if simulation fails.
 2. **Synchronous Validation RPC (Request/Reply)**:
-   - `POST /jobs/validate` (`SpanKindServer`): Root span in `demo-service`.
-     - `NATS Request jobs.validate` (`SpanKindClient`): Child span in `demo-service` covering the 2-second timeout window.
+   - `POST /jobs/validate` (`SpanKindServer`): Root span in `job-service`.
+     - `NATS Request jobs.validate` (`SpanKindClient`): Child span in `job-service` covering the 2-second timeout window.
        - `Process Validation Request` (`SpanKindServer`): Span in `processor-service` validating parameters.
          - `NATS Reply` (`SpanKindProducer`): Response span dispatched back to requester inbox.
 

@@ -27,7 +27,7 @@ var (
 	meter  metric.Meter
 	tracer trace.Tracer
 
-	// Demo Service Instruments
+	// Job Service Instruments
 	jobsSubmittedCounter          metric.Int64Counter
 	jobValidationRequestsCounter  metric.Int64Counter
 	natsPublishCounter            metric.Int64Counter
@@ -195,7 +195,7 @@ func initNoopInstruments() {
 func registerInstruments() error {
 	var err error
 
-	// Demo Service Instruments
+	// Job Service Instruments
 	jobsSubmittedCounter, err = meter.Int64Counter("jobs_submitted_total",
 		metric.WithDescription("Total number of jobs submitted"),
 		metric.WithUnit("{job}"))
@@ -291,7 +291,7 @@ func registerInstruments() error {
 	return nil
 }
 
-// Demo Service Recorders
+// Job Service Recorders
 
 func RecordJobSubmitted(ctx context.Context, deliveryMode, jobType string, duration time.Duration) {
 	if jobsSubmittedCounter != nil {

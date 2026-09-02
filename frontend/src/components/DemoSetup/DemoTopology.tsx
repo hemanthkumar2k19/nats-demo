@@ -15,11 +15,11 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
   onSelectInfo,
 }) => {
   const natsService = services.find((s) => s.name.toLowerCase().includes('nats'));
-  const demoService = services.find((s) => s.name.toLowerCase().includes('demo'));
+  const jobService = services.find((s) => s.name.toLowerCase().includes('job') || s.name.toLowerCase().includes('demo'));
   const processorService = services.find((s) => s.name.toLowerCase().includes('processor'));
 
   const isNatsConnected = natsService?.status === 'connected' || natsService?.status === 'active';
-  const isDemoActive = demoService?.status === 'active' || demoService?.status === 'connected';
+  const isJobActive = jobService?.status === 'active' || jobService?.status === 'connected';
   const isProcessorOnline = processorService?.status !== 'disconnected' && processorService?.status !== 'unknown';
   const isProcessing = processorService?.processing ?? false;
 
@@ -44,25 +44,25 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
 
       <div className="topology-pipeline-layout">
         {/* ========================================================================= */}
-        {/* DEPLOYED COMPONENT 1: Demo Service                                        */}
+        {/* DEPLOYED COMPONENT 1: Job Service                                         */}
         {/* ========================================================================= */}
         <div className="topology-col deployed-col">
           <div className="deployed-boundary-label">DEPLOYED SERVICE</div>
-          <div className={`topology-node deployed-card ${isDemoActive ? 'node-active' : 'node-inactive'}`}>
+          <div className={`topology-node deployed-card ${isJobActive ? 'node-active' : 'node-inactive'}`}>
             <div className="node-header">
-              <span className="node-title">Demo Service</span>
+              <span className="node-title">Job Service</span>
               <button
                 type="button"
                 className="node-info-btn"
-                onClick={() => onSelectInfo('demo-service')}
-                title="Learn about Demo Service"
+                onClick={() => onSelectInfo('job-service')}
+                title="Learn about Job Service"
               >
                 (i)
               </button>
             </div>
             <div className="node-body">
-              <span className={`node-badge ${isDemoActive ? 'badge-online' : 'badge-offline'}`}>
-                {isDemoActive ? 'Active' : 'Offline'}
+              <span className={`node-badge ${isJobActive ? 'badge-online' : 'badge-offline'}`}>
+                {isJobActive ? 'Active' : 'Offline'}
               </span>
               <span className="node-detail">HTTP API (:8080)</span>
               <span className="node-subtle">Publisher &amp; Requester</span>
@@ -70,8 +70,8 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
           </div>
         </div>
 
-        {/* Connector 1: Demo Service -> NATS Server */}
-        <div className={`topology-connector horizontal ${isDemoActive && isNatsConnected ? 'connector-active' : 'connector-inactive'}`}>
+        {/* Connector 1: Job Service -> NATS Server */}
+        <div className={`topology-connector horizontal ${isJobActive && isNatsConnected ? 'connector-active' : 'connector-inactive'}`}>
           <div className="connector-flow-group">
             <span className="connector-flow-label">Publish / Request</span>
             <div className="connector-line-with-arrow">

@@ -28,7 +28,7 @@ type JobService interface {
 	GetActivities() []jobs.Activity
 }
 
-// Handler handles HTTP requests for the Demo Service.
+// Handler handles HTTP requests for the Job Service.
 type Handler struct {
 	jobService JobService
 	natsClient *natsclient.Client
@@ -125,7 +125,7 @@ func (h *Handler) GetStatus(c *gin.Context) {
 		},
 		"services": []gin.H{
 			{
-				"name":   "demo-service",
+				"name":   "job-service",
 				"status": "ACTIVE",
 			},
 			{
@@ -215,7 +215,7 @@ func (h *Handler) SubmitJob(c *gin.Context) {
 				1,
 				"No active consumer for Core NATS message",
 				correlationID,
-				"demo-service",
+				"job-service",
 				job.DeliveryMode,
 				0,
 			)

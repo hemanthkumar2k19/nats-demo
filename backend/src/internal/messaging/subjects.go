@@ -16,7 +16,7 @@ const (
 	SubjectJobNoConsumer          = "jobs.noconsumer"
 	SubjectProcessorStateSet      = "processor.state.set"
 
-	// Request/Reply lifecycle events published by processor-service so demo-service
+	// Request/Reply lifecycle events published by processor-service so job-service
 	// can record them in the activity log and make the flow visible in the UI.
 	SubjectJobRequestReceived = "jobs.request.received"
 	SubjectJobReplySent       = "jobs.reply.sent"

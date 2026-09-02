@@ -7,7 +7,7 @@ This repository is a lightweight demonstration and evaluation workspace for NATS
 The demo demonstrates NATS messaging capabilities (addressing, fire-and-forget pub/sub, durable JetStream streaming, competing consumers, request/reply, and stream replay) using a Job Processing domain.
 
 The workspace consists of:
-*   **Demo Service**: An HTTP API (`:8080`) that accepts jobs, validates payloads via Request/Reply, tracks job activity, and publishes events to NATS.
+*   **Job Service**: An HTTP API (`:8080`) that accepts jobs, validates payloads via Request/Reply, tracks job activity, and publishes events to NATS.
 *   **Processor Service**: A background worker service that consumes jobs, handles validation requests, and publishes lifecycle events.
 *   **Frontend Dashboard**: A React SPA developer dashboard (`:5173`) to submit jobs, trigger Request/Reply validation, toggle processor state, view replay, and inspect live NATS activity.
 *   **NATS Server**: Run via Docker Compose or Podman Compose, configured with JetStream.
@@ -26,7 +26,7 @@ The workspace consists of:
             | HTTP               +-----------+------------+
             v                                |
 +------------------------+                   |
-|     Demo Service       |                   |
+|     Job Service        |                   |
 |                        |                   |
 |   HTTP API (:8080)     |                   |
 |   NATS Publisher       |<------------------+
@@ -80,10 +80,10 @@ PORT=8080
 NATS_URL=nats://localhost:4222
 ```
 
-#### Run Demo Service (Terminal 1)
+#### Run Job Service (Terminal 1)
 ```bash
 cd backend/src
-go run cmd/demo-service/main.go
+go run cmd/job-service/main.go
 ```
 The HTTP API will start listening on `:8080`.
 

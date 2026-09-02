@@ -1,22 +1,22 @@
 # NATS Platform Demo - API Specification
 
 This document details the HTTP endpoints and NATS subject/message contracts for the **NATS Platform Demo**. The system consists of two services:
-1. **Demo Service**: Exposes an HTTP API for job submission, validation, status checks, and replay triggers.
+1. **Job Service**: Exposes an HTTP API for job submission, validation, status checks, and replay triggers.
 2. **Processor Service**: Consumes jobs, validates requests, processes jobs (with redelivery/deduplication support), and publishes lifecycle events.
 
 ---
 
-## 1. HTTP API (Demo Service)
+## 1. HTTP API (Job Service)
 
-All endpoints below are served by the **Demo Service** (defaulting to `http://localhost:8080`).
+All endpoints below are served by the **Job Service** (defaulting to `http://localhost:8080`).
 
 ### 1.1. Submit Job
-Submit a job for processing. This is a **fire-and-forget** operation. The Demo Service publishes a NATS message and immediately returns `202 Accepted`.
+Submit a job for processing. This is a **fire-and-forget** operation. The Job Service publishes a NATS message and immediately returns `202 Accepted`.
 
 * **Endpoint**: `POST /jobs`
 * **Content-Type**: `application/json`
 * **Request Headers**:
-  * `X-Correlation-Id`: (Optional) A unique string for tracing. If not provided, the Demo Service will generate one.
+  * `X-Correlation-Id`: (Optional) A unique string for tracing. If not provided, the Job Service will generate one.
 * **Request Body**:
   ```json
   {
@@ -46,7 +46,7 @@ Submit a job for processing. This is a **fire-and-forget** operation. The Demo S
 ---
 
 ### 1.2. Validate Job
-Synchronously validates a job configuration using NATS **Request/Reply**. The Demo Service blocks waiting for the Processor Service's response.
+Synchronously validates a job configuration using NATS **Request/Reply**. The Job Service blocks waiting for the Processor Service's response.
 
 * **Endpoint**: `POST /jobs/validate`
 * **Content-Type**: `application/json`
@@ -84,7 +84,7 @@ Synchronously validates a job configuration using NATS **Request/Reply**. The De
 ---
 
 ### 1.3. Get Job Status
-Retrieve the status of a specific job. Initially, this status is tracked in-memory by the Demo Service by listening to NATS lifecycle events.
+Retrieve the status of a specific job. Initially, this status is tracked in-memory by the Job Service by listening to NATS lifecycle events.
 
 * **Endpoint**: `GET /jobs/{job_id}`
 * **Response**: `200 OK` (if found) or `404 Not Found`
@@ -116,7 +116,7 @@ Retrieve the status of a specific job. Initially, this status is tracked in-memo
 ---
 
 ### 1.4. List Jobs
-List all jobs currently stored in the Demo Service's in-memory store. Essential for observing overall progress during a demo.
+List all jobs currently stored in the Job Service's in-memory store. Essential for observing overall progress during a demo.
 
 * **Endpoint**: `GET /jobs`
 * **Response**: `200 OK`
@@ -139,7 +139,7 @@ List all jobs currently stored in the Demo Service's in-memory store. Essential 
 ---
 
 ### 1.5. Replay Jobs
-Trigger a JetStream replay. The Demo Service creates an ephemeral replay consumer to replay historical events from the stream.
+Trigger a JetStream replay. The Job Service creates an ephemeral replay consumer to replay historical events from the stream.
 
 * **Endpoint**: `POST /jobs/replay`
 * **Content-Type**: `application/json`
@@ -238,7 +238,7 @@ Retrieve flat chronological NATS activity logs for the dashboard.
       "job_id": "job-772",
       "event": "PUBLISHED",
       "subject": "jobs.submitted",
-      "worker": "demo-service",
+      "worker": "job-service",
       "delivery_count": 1,
       "delivery_mode": "CORE",
       "correlation_id": "corr-job-772",
@@ -359,7 +359,7 @@ The following headers are present in messages:
 * `Content-Type`: `application/json`
 * `Nats-Msg-Id`: Unique message ID (used for JetStream message deduplication).
 * `X-Correlation-Id`: Correlation ID passed down from the client.
-* `X-Source`: Identifier of the sending service (e.g., `demo-service` or `processor-service`).
+* `X-Source`: Identifier of the sending service (e.g., `job-service` or `processor-service`).
 * `traceparent`: Standard W3C distributed tracing header (`00-<trace_id>-<span_id>-01`) for OpenTelemetry context propagation.
 
 ---
@@ -368,18 +368,18 @@ The following headers are present in messages:
 
 | Subject | Direction | Purpose | Payload Schema |
 | :--- | :--- | :--- | :--- |
-| `jobs.submitted` | Demo -> Processor | Job submission event | `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}` |
-| `jobs.validate` | Demo <-> Processor | Req/Rep validation | **Req**: `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}`<br>**Rep**: `{"valid": boolean, "message": string}` |
-| `jobs.request.received` | Processor -> Demo | Validation request received event | `{"job_id": string, "status": "REQUEST_RECEIVED", "delivery_count": 1}` |
-| `jobs.reply.sent` | Processor -> Demo | Validation reply dispatched event | `{"job_id": string, "status": "REPLY_SENT", "delivery_count": 1}` |
-| `jobs.processing.started` | Processor -> Demo | Job processing started | `{"job_id": string, "status": "PROCESSING", "delivery_count": int}` |
-| `jobs.processing.completed` | Processor -> Demo | Processing completed successfully | `{"job_id": string, "status": "COMPLETED", "delivery_count": int}` |
-| `jobs.processing.failed` | Processor -> Demo | Processing failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |
-| `jobs.completed` | Processor -> Demo | Job successfully finished | `{"job_id": string, "status": "COMPLETED", "delivery_count": int}` |
-| `jobs.failed` | Processor -> Demo | Job execution failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |
-| `jobs.stored` | Demo -> Demo/Observability | JetStream message stored ack | `{"job_id": string, "status": "STORED", "sequence": uint64}` |
-| `jobs.deduplicated` | Demo -> Demo/Observability | JetStream deduplication ack | `{"job_id": string, "status": "DEDUPLICATED", "sequence": uint64}` |
-| `consumer.config.set` | Demo <-> Processor | Dynamic consumer reconfiguration | **Req**: `{"type": string, "workers": int, "ordering": string}`<br>**Rep**: `ConsumerStatusResponse` |
+| `jobs.submitted` | Job -> Processor | Job submission event | `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}` |
+| `jobs.validate` | Job <-> Processor | Req/Rep validation | **Req**: `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}`<br>**Rep**: `{"valid": boolean, "message": string}` |
+| `jobs.request.received` | Processor -> Job | Validation request received event | `{"job_id": string, "status": "REQUEST_RECEIVED", "delivery_count": 1}` |
+| `jobs.reply.sent` | Processor -> Job | Validation reply dispatched event | `{"job_id": string, "status": "REPLY_SENT", "delivery_count": 1}` |
+| `jobs.processing.started` | Processor -> Job | Job processing started | `{"job_id": string, "status": "PROCESSING", "delivery_count": int}` |
+| `jobs.processing.completed` | Processor -> Job | Processing completed successfully | `{"job_id": string, "status": "COMPLETED", "delivery_count": int}` |
+| `jobs.processing.failed` | Processor -> Job | Processing failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |
+| `jobs.completed` | Processor -> Job | Job successfully finished | `{"job_id": string, "status": "COMPLETED", "delivery_count": int}` |
+| `jobs.failed` | Processor -> Job | Job execution failed | `{"job_id": string, "status": "FAILED", "delivery_count": int, "error": string}` |
+| `jobs.stored` | Job -> Job/Observability | JetStream message stored ack | `{"job_id": string, "status": "STORED", "sequence": uint64}` |
+| `jobs.deduplicated` | Job -> Job/Observability | JetStream deduplication ack | `{"job_id": string, "status": "DEDUPLICATED", "sequence": uint64}` |
+| `consumer.config.set` | Job <-> Processor | Dynamic consumer reconfiguration | **Req**: `{"type": string, "workers": int, "ordering": string}`<br>**Rep**: `ConsumerStatusResponse` |
 
 ---
 
@@ -389,38 +389,38 @@ The following headers are present in messages:
 sequenceDiagram
     autonumber
     actor Client
-    participant DS as Demo Service (HTTP/NATS)
+    participant JS as Job Service (HTTP/NATS)
     participant NATS as NATS (JetStream)
     participant PS as Processor Service (NATS)
 
     Note over Client, PS: Core Pub/Sub Workflow (Phase 1 & 4)
-    Client->>DS: POST /jobs (job-101)
-    DS->>NATS: Publish jobs.submitted
-    DS-->>Client: 202 Accepted (SUBMITTED)
+    Client->>JS: POST /jobs (job-101)
+    JS->>NATS: Publish jobs.submitted
+    JS-->>Client: 202 Accepted (SUBMITTED)
     NATS->>PS: Deliver job-101
     PS->>NATS: Publish jobs.processing
-    NATS->>DS: Deliver jobs.processing event (status updated in memory)
+    NATS->>JS: Deliver jobs.processing event (status updated in memory)
     PS->>PS: Process job
     PS->>NATS: Publish jobs.completed
-    NATS->>DS: Deliver jobs.completed event (status updated in memory)
+    NATS->>JS: Deliver jobs.completed event (status updated in memory)
     PS->>NATS: ACK message
 
     Note over Client, PS: Request/Reply Workflow (Success Path)
-    Client->>DS: POST /jobs/validate (X-Correlation-Id)
-    DS->>NATS: Request jobs.validate
+    Client->>JS: POST /jobs/validate (X-Correlation-Id)
+    JS->>NATS: Request jobs.validate
     NATS->>PS: Deliver validation request
     PS->>NATS: Publish jobs.request.received
     PS-->>NATS: Reply validation response
     PS->>NATS: Publish jobs.reply.sent
-    NATS-->>DS: Deliver validation response
-    DS-->>Client: 200 OK (valid: true)
+    NATS-->>JS: Deliver validation response
+    JS-->>Client: 200 OK (valid: true)
 
     Note over Client, PS: Request/Reply Workflow (Timeout Path - PS OFF)
-    Client->>DS: POST /jobs/validate
-    DS->>NATS: Request jobs.validate (2s timeout)
+    Client->>JS: POST /jobs/validate
+    JS->>NATS: Request jobs.validate (2s timeout)
     Note over PS: Processor is OFF (not responding)
-    NATS--xDS: Timeout (2s elapsed, no reply)
-    DS-->>Client: 504 Gateway Timeout
+    NATS--xJS: Timeout (2s elapsed, no reply)
+    JS-->>Client: 504 Gateway Timeout
 ```
 
 ---
@@ -435,10 +435,10 @@ We recommend building the services incrementally across the following stages:
    * Processor subscribing to `jobs.submitted` with simple logging.
 2. **Phase 2 (Lifecycle & Status)**:
    * Processor publishing lifecycle events (`jobs.processing`, `jobs.completed`, `jobs.failed`).
-   * Demo service subscribing to wildcard `jobs.*` to track in-memory state.
+   * Job service subscribing to wildcard `jobs.*` to track in-memory state.
    * `GET /jobs` and `GET /jobs/{job_id}` endpoints.
 3. **Phase 3 (Request/Reply)**:
-   * `POST /jobs/validate` HTTP handler on Demo Service.
+   * `POST /jobs/validate` HTTP handler on Job Service.
    * Sync NATS `jobs.validate` handler on Processor Service.
 4. **Phase 4 (JetStream & Durability)**:
    * Setup JetStream stream `JOBS` listening to `jobs.>`.

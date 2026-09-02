@@ -24,7 +24,7 @@ The demo uses a simple **Job Processing** domain. Business logic is intentionall
 
 ```text
                          +----------------------+
-                         |    Demo Service      |
+                         |    Job Service       |
                          |                      |
                          | HTTP API             |
                          | Job Management       |
@@ -56,7 +56,7 @@ The demo uses a simple **Job Processing** domain. Business logic is intentionall
 
 ## Services
 
-### Demo Service
+### Job Service
 
 Responsibilities:
 
@@ -152,7 +152,7 @@ Headers:
 Content-Type: application/json
 Nats-Msg-Id: job-101
 X-Correlation-Id: 8f32a1c2
-X-Source: demo-service
+X-Source: job-service
 
 Payload:
 {
@@ -241,7 +241,7 @@ FAILED
 
 ---
 
-# 6. Demo Service API
+# 6. Job Service API
 
 Base path:
 
@@ -359,7 +359,7 @@ X-Correlation-Id: corr-val-101 (Optional, passed to NATS request)
 ### NATS Operation
 
 ```text
-Demo Service
+Job Service
      |
      | Request (X-Correlation-Id)
      v
@@ -372,7 +372,7 @@ Processor Service
      +---> Publish jobs.reply.sent
      | Reply
      v
-Demo Service
+Job Service
 ```
 
 ---
@@ -844,7 +844,7 @@ Example:
 Content-Type: application/json
 Nats-Msg-Id: job-101
 X-Correlation-Id: 8f32a1c2
-X-Source: demo-service
+X-Source: job-service
 ```
 
 `X-Correlation-Id` should be propagated across the request and event flow.
@@ -856,7 +856,7 @@ HTTP Request
      |
      | correlation-id = 8f32a1c2
      v
-Demo Service
+Job Service
      |
      | jobs.submitted
      | correlation-id = 8f32a1c2
@@ -874,7 +874,7 @@ This will also make the system easier to observe later through the UI.
 nats-demo/
 │
 ├── cmd/
-│   ├── demo-service/
+│   ├── job-service/
 │   │   └── main.go
 │   │
 │   └── processor-service/
@@ -913,7 +913,7 @@ nats-demo/
 
 Application entry points only.
 
-### `demo-service`
+### `job-service`
 
 Responsible for starting:
 
@@ -1004,7 +1004,7 @@ Keep configuration simple initially.
 
 ## `api/http/`
 
-Contains HTTP handlers and routes for the Demo Service.
+Contains HTTP handlers and routes for the Job Service.
 
 The HTTP layer should call the job/service layer rather than directly implementing NATS operations.
 
@@ -1020,7 +1020,7 @@ Build incrementally in this order.
 POST /jobs
      |
      v
-Demo Service
+Job Service
      |
      | Publish
      v
@@ -1189,7 +1189,7 @@ React UI
    |
    | HTTP
    v
-Demo Service
+Job Service
    |
    | NATS Go Client
    v
@@ -1218,7 +1218,7 @@ Return the current status of the demo platform and its services.
   },
   "services": [
     {
-      "name": "demo-service",
+      "name": "job-service",
       "status": "ACTIVE"
     },
     {
@@ -1283,7 +1283,7 @@ Response:
 The backend should provide status information for:
 
 * NATS connectivity
-* Demo Service
+* Job Service
 * Processor Service
 * Processor instances, when applicable
 * JetStream Stream and Pending count
@@ -1300,7 +1300,7 @@ The status API should therefore remain loosely coupled to the rest of the applic
 ```text
 Current:
 
-UI -> Demo Service -> NATS
+UI -> Job Service -> NATS
 
 Future:
 

@@ -34,7 +34,7 @@ Preferred approach:
 
 Avoid introducing complex frontend frameworks or state-management libraries unless there is a clear need.
 
-The frontend communicates only with the Demo Service HTTP API.
+The frontend communicates only with the Job Service HTTP API.
 
 It should not communicate directly with NATS.
 
@@ -46,7 +46,7 @@ It should not communicate directly with NATS.
         | HTTP
         v
 +----------------+
-| Demo Service   |
+| Job Service    |
 +-------+--------+
         |
         | NATS
@@ -110,7 +110,7 @@ Use a single primary screen initially.
 +=======================================================================================================================================+
 | PLATFORM STATUS                                                                                                                       |
 +---------------------------------------------------------------------------------------------------------------------------------------+
-| NATS Server       [ Connected ]     Demo Service      [ Active ]     Processor Service   [ Active ]     Processing [ ON ]           |
+| NATS Server       [ Connected ]     Job Service       [ Active ]     Processor Service   [ Active ]     Processing [ ON ]           |
 | JetStream         [ Available ]     Stream: JOBS     Pending: 0     Workers: 1            Consumer: Active                           |
 +=======================================================================================================================================+
 | LEFT: DEMO ACTIONS                                      | RIGHT: LIVE OBSERVABILITY                                                   |
@@ -158,7 +158,7 @@ Minimum components:
 
 ```text
 NATS Server
-Demo Service
+Job Service
 Processor Service
 ```
 
@@ -170,7 +170,7 @@ Example:
 SERVICES
 
 NATS Server          ● Connected
-Demo Service         ● Active
+Job Service          ● Active
 Processor-1          ● Active
 Processor-2          ● Active
 Processor-3          ● Active

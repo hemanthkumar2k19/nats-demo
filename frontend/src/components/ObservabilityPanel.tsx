@@ -57,7 +57,7 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
           
           <div className="obs-node-card">
             <div className="obs-node-header">
-              <span className="obs-node-name">Demo Service</span>
+              <span className="obs-node-name">Job Service</span>
               <span className="badge badge-published" style={{ fontSize: '0.625rem' }}>OTLP</span>
             </div>
             <div className="obs-node-body">

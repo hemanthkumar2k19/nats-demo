@@ -21,11 +21,11 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
 }) => {
   // Extract individual service statuses
   const natsService = services.find((s) => s.name.toLowerCase().includes('nats'));
-  const demoService = services.find((s) => s.name.toLowerCase().includes('demo'));
+  const jobService = services.find((s) => s.name.toLowerCase().includes('job') || s.name.toLowerCase().includes('demo'));
   const processorService = services.find((s) => s.name.toLowerCase().includes('processor'));
 
   const natsStatus = natsService?.status || 'unknown';
-  const demoStatus = demoService?.status || 'unknown';
+  const jobStatus = jobService?.status || 'unknown';
   const processorStatus = processorService?.status || 'unknown';
 
   const isProcessing = processorService?.processing ?? false;
@@ -83,10 +83,10 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
           </div>
 
           <div className="status-metric-cell">
-            <span className="status-metric-label">Demo Service</span>
+            <span className="status-metric-label">Job Service</span>
             <StatusIndicator
-              status={demoStatus as any}
-              label={demoStatus === 'active' ? 'Active' : 'Disconnected'}
+              status={jobStatus as any}
+              label={jobStatus === 'active' ? 'Active' : 'Disconnected'}
             />
           </div>
 

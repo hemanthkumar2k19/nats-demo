@@ -12,8 +12,8 @@ Open three terminal windows to launch the demo components:
 # Terminal 0: Start NATS Broker, Exporter, and Grafana OTEL-LGTM
 docker compose -f deploy/docker-compose.yaml up -d
 
-# Terminal 1: Demo Service (HTTP API, Publisher, Lifecycle Observer)
-cd backend && go run ./src/cmd/demo-service/main.go
+# Terminal 1: Job Service (HTTP API, Publisher, Lifecycle Observer)
+cd backend && go run ./src/cmd/job-service/main.go
 
 # Terminal 2: Processor Service (Consumers, Workers, Request/Reply Responder)
 cd backend && go run ./src/cmd/processor-service/main.go
@@ -48,12 +48,12 @@ NATS CONNECTED (Port 4222)
 #### What to Observe:
 * **Dynamic Alert Banner**: Displays `Job job-101 submitted via Core NATS`.
 * **Activity Log**:
-  - `PUBLISHED` on subject `jobs.submitted` (Mode: `CORE`, Worker: `demo-service`, Seq: `-`).
+  - `PUBLISHED` on subject `jobs.submitted` (Mode: `CORE`, Worker: `job-service`, Seq: `-`).
   - `RECEIVED` on subject `jobs.received` (Worker: `processor-1` or `processor-2`).
   - `COMPLETED` on subject `jobs.completed`.
 * **Terminal Logs**:
   ```text
-  [demo-service] Published job job-101 to Core NATS subject jobs.submitted
+  [job-service] Published job job-101 to Core NATS subject jobs.submitted
   [processor-service] [worker] Received Core NATS job: job-101
   [processor-service] [worker] Job job-101 completed
   ```
@@ -80,7 +80,7 @@ NATS CONNECTED (Port 4222)
   - `COMPLETED` and `ACKED`: Worker explicitly acknowledged the message back to JetStream.
 * **Terminal Logs**:
   ```text
-  [demo-service] Published job job-102 to JetStream JOBS (stream seq: 2)
+  [job-service] Published job job-102 to JetStream JOBS (stream seq: 2)
   [processor-service] [worker] Fetched JetStream job: job-102 (stream seq: 2)
   [processor-service] [worker] Explicitly ACKed job-102
   ```
@@ -137,7 +137,7 @@ NATS CONNECTED (Port 4222)
   - The job is **NOT processed a second time** by the workers.
 * **Terminal Logs**:
   ```text
-  [demo-service] JetStream detected duplicate publish for Msg-Id: dedup-test-999 (seq: N)
+  [job-service] JetStream detected duplicate publish for Msg-Id: dedup-test-999 (seq: N)
   ```
 
 ---
@@ -243,7 +243,7 @@ NATS CONNECTED (Port 4222)
      - `REQUEST_SENT` on `jobs.validate`.
      - `REQUEST_RECEIVED` by `processor-1`.
      - `REPLY_SENT` back to the dynamic `_INBOX.*` address.
-     - `REPLY_RECEIVED` by `demo-service`.
+     - `REPLY_RECEIVED` by `job-service`.
 
 #### Steps - Timeout Flow:
 1. In Platform Status, toggle **Processing: OFF**.
@@ -362,7 +362,7 @@ NATS CONNECTED (Port 4222)
 4. Observe the **Trace ID** field displayed in purple/indigo monospace, alongside a **[ View in Tempo -> ]** button.
 5. Click **[ View in Tempo -> ]** (or open `http://localhost:3000/explore` and paste the Trace ID in the Tempo query input).
 6. Observe the complete distributed trace waterfall diagram in Tempo:
-   - `POST /jobs` (Server span, demo-service)
+   - `POST /jobs` (Server span, job-service)
      - `NATS Publish jobs.submitted` (Producer span, messaging.system: nats, jetstream.stream: JOBS)
        - `Consumer Receive` (Consumer span, processor-service, messaging.destination: jobs.submitted)
          - `Process Job` (Internal span, worker: processor-1, delivery.count: 1)
@@ -370,8 +370,8 @@ NATS CONNECTED (Port 4222)
    - In the **REQUEST / REPLY VALIDATION** panel, click **Send Validation Request**.
    - Check the response card or the Activity Log for the Trace ID.
    - In Tempo, view the synchronous trace waterfall:
-     - `POST /jobs/validate` (Server span, demo-service)
-       - `NATS Request jobs.validate` (Client span, demo-service)
+     - `POST /jobs/validate` (Server span, job-service)
+       - `NATS Request jobs.validate` (Client span, job-service)
          - `Process Validation Request` (Server span, processor-service)
            - `NATS Reply` (Producer span, processor-service)
 8. **Trace Error / Redelivery Scenarios**:

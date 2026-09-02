@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-02
 
+### Changed (Service Renaming: demo-service to job-service)
+- **Backend Service Renaming**: Renamed the primary API and publisher service from `demo-service` to `job-service`. Created entry point `backend/src/cmd/job-service/main.go`, updated OpenTelemetry service registration to `"job-service"`, and updated log output prefixes.
+- **Header Attribution & Event Metadata**: Updated `X-Source` header and in-memory event tracking to identify `"job-service"` as the source for `PUBLISHED`, `STORED`, `DEDUPLICATED`, `REQUEST_SENT`, and `REPLY_RECEIVED` transitions.
+- **Frontend Alignment**: Updated `StatusPanel.tsx`, `DemoTopology.tsx`, `ObservabilityPanel.tsx`, and `App.tsx` to reference `Job Service (8080)` and query service status for `job-service`.
+- **Educational Content**: Added `job-service` entry in `natsInfo.ts` with backward-compatible alias `demo-service`.
+- **Documentation**: Updated `README.md`, `DEVELOPER_GUIDE.md`, `DEPLOYMENT_GUIDE.md`, `FUNCTIONAL_TESTING_GUIDE.md`, `api-spec.md`, `backend.md`, and `frontend.md` to reference `job-service` and `Job Service`.
+
+### Reason
+- Establish domain-specific, meaningful naming (`job-service`) aligned with its actual role as the job management, API gateway, and publisher component rather than generic demo nomenclature.
+
+### Affected Area
+- Backend (`cmd/job-service/main.go`, `api/http/handler.go`, `internal/messaging/publisher.go`, `internal/jobs/service.go`), Frontend (`StatusPanel.tsx`, `DemoTopology.tsx`, `ObservabilityPanel.tsx`, `App.tsx`, `natsInfo.ts`), Documentation (`README.md`, `docs/`).
+
 ### Changed (Correct CURRENT DEMO SETUP Architecture Representation)
 - **Deployed Runtime Boundaries vs. Logical Resources**: Redesigned the `DemoTopology` visualizer in `DemoSetupPanel.tsx` to clearly differentiate the 3 deployed runtime components (`Demo Service`, `NATS Server`, `Processor Service`) from internal logical NATS/JetStream resources and worker routines.
 - **NATS Server Containment Model**: Nested `Core NATS` (Pub/Sub & Req/Reply) and `JetStream` (Persistence & Streaming) capabilities inside the `NATS Server` boundary card. Contained `JOBS Stream` and `job-processor` Consumer within a dedicated JetStream managed resources sub-container, preventing them from being misinterpreted as separate deployable services.

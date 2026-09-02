@@ -9,9 +9,9 @@ export interface NatsComponentInfo {
 
 export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
   // Topology Components
-  'demo-service': {
-    id: 'demo-service',
-    title: 'Demo Service',
+  'job-service': {
+    id: 'job-service',
+    title: 'Job Service',
     role: 'API Gateway and Message Publisher / Requester',
     concepts: [
       'NATS Go Client (nats.go)',
@@ -23,7 +23,24 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
     demoUsage:
       'Receives HTTP requests from the React UI and uses the official NATS Go client to publish jobs, request synchronous validations, and listen to platform lifecycle events.',
     trivia:
-      'The Demo Service uses subject wildcards (jobs.>) to observe all job lifecycle transitions across the system without coupling directly to processor implementations.',
+      'The Job Service uses subject wildcards (jobs.>) to observe all job lifecycle transitions across the system without coupling directly to processor implementations.',
+  },
+  // Alias for backward compatibility
+  'demo-service': {
+    id: 'job-service',
+    title: 'Job Service',
+    role: 'API Gateway and Message Publisher / Requester',
+    concepts: [
+      'NATS Go Client (nats.go)',
+      'Publish / Subscribe (Core NATS)',
+      'JetStream Publishing (PublishMsg with Ack)',
+      'Request / Reply pattern (RequestMsg)',
+      'Subject-based routing',
+    ],
+    demoUsage:
+      'Receives HTTP requests from the React UI and uses the official NATS Go client to publish jobs, request synchronous validations, and listen to platform lifecycle events.',
+    trivia:
+      'The Job Service uses subject wildcards (jobs.>) to observe all job lifecycle transitions across the system without coupling directly to processor implementations.',
   },
 
   'nats-server': {
@@ -192,7 +209,7 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
     demoUsage:
       'Displays a real-time table of all lifecycle events published across the system, showing event type, sequence number, subject, delivery count, and worker assignment.',
     trivia:
-      'By subscribing to the wildcard jobs.>, the observability panel captures events emitted by the Demo Service, NATS JetStream, and multiple processor workers in a unified stream.',
+      'By subscribing to the wildcard jobs.>, the observability panel captures events emitted by the Job Service, NATS JetStream, and multiple processor workers in a unified stream.',
   },
 
   'job-details': {
@@ -239,7 +256,7 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
       'Real-time rate, counter, and latency percentile tracking (p50/p95)',
     ],
     demoUsage:
-      'Application metrics (job counts, validation RPCs, latencies, redeliveries) are exported from demo-service and processor-service via OpenTelemetry OTLP to the local Grafana OTEL-LGTM stack. NATS Server and JetStream infrastructure metrics are scraped by Prometheus via the NATS Prometheus Exporter.',
+      'Application metrics (job counts, validation RPCs, latencies, redeliveries) are exported from job-service and processor-service via OpenTelemetry OTLP to the local Grafana OTEL-LGTM stack. NATS Server and JetStream infrastructure metrics are scraped by Prometheus via the NATS Prometheus Exporter.',
     trivia:
       'Following best practices, metric labels use low-cardinality dimensions (e.g. delivery_mode, worker, status) rather than high-cardinality values like job_id or correlation_id, ensuring optimal Prometheus query performance.',
   },

@@ -52,7 +52,7 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job, corre
 	if correlationID != "" {
 		msg.Header.Set("X-Correlation-Id", correlationID)
 	}
-	msg.Header.Set("X-Source", "demo-service")
+	msg.Header.Set("X-Source", "job-service")
 	msg.Header.Set("X-Delivery-Mode", job.DeliveryMode)
 	msg.Data = payload
 
@@ -77,10 +77,10 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job, corre
 		if ack.Duplicate {
 			pubSpan.SetAttributes(attribute.Bool("jetstream.duplicate", true))
 			// Duplicate publish recognized by JetStream deduplication window
-			_ = p.PublishJobLifecycle(SubjectJobDeduplicated, job.JobID, "DEDUPLICATED", 1, "Duplicate message recognized by JetStream deduplication window", correlationID, "demo-service", job.DeliveryMode, ack.Sequence)
+			_ = p.PublishJobLifecycle(SubjectJobDeduplicated, job.JobID, "DEDUPLICATED", 1, "Duplicate message recognized by JetStream deduplication window", correlationID, "job-service", job.DeliveryMode, ack.Sequence)
 		} else {
 			// Stored successfully: publish jobs.stored event
-			_ = p.PublishJobLifecycle(SubjectJobStored, job.JobID, "STORED", 1, "", correlationID, "demo-service", job.DeliveryMode, ack.Sequence)
+			_ = p.PublishJobLifecycle(SubjectJobStored, job.JobID, "STORED", 1, "", correlationID, "job-service", job.DeliveryMode, ack.Sequence)
 		}
 	} else {
 		if err := p.client.Conn.PublishMsg(msg); err != nil {
@@ -100,7 +100,7 @@ var ErrRequestTimeout = fmt.Errorf("request timed out: no response from processo
 
 // RequestJobValidation sends a sync validation request via NATS Request/Reply.
 // correlationID is forwarded as X-Correlation-Id so the interaction can be
-// traced across the demo-service and processor-service logs.
+// traced across the job-service and processor-service logs.
 func (p *Publisher) RequestJobValidation(ctx context.Context, job jobs.Job, correlationID string) (*jobs.JobValidationResponse, error) {
 	payload, err := json.Marshal(job)
 	if err != nil {
@@ -122,7 +122,7 @@ func (p *Publisher) RequestJobValidation(ctx context.Context, job jobs.Job, corr
 	msg := nats.NewMsg(SubjectJobValidate)
 	msg.Header.Set("Content-Type", "application/json")
 	msg.Header.Set("X-Message-Id", fmt.Sprintf("msg-val-%s-%d", job.JobID, time.Now().UnixNano()))
-	msg.Header.Set("X-Source", "demo-service")
+	msg.Header.Set("X-Source", "job-service")
 	if correlationID != "" {
 		msg.Header.Set("X-Correlation-Id", correlationID)
 	}
