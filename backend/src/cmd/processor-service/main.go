@@ -861,9 +861,73 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 		simulateFailureCount = val
 	}
 
+	maxDeliveryAttempts := 3
+	if val, ok := job.Payload["max_delivery_attempts"].(float64); ok && int(val) > 0 {
+		maxDeliveryAttempts = int(val)
+	} else if val, ok := job.Payload["max_delivery_attempts"].(int); ok && val > 0 {
+		maxDeliveryAttempts = val
+	}
+
 	if simulateFailure && (simulateFailureCount == 0 || attemptCount <= simulateFailureCount) {
-		errMsg := fmt.Sprintf("Simulated failure attempt %d of %d", attemptCount, simulateFailureCount)
+		errMsg := fmt.Sprintf("Simulated failure attempt %d of %d", attemptCount, maxDeliveryAttempts)
 		log.Printf("[%s] JetStream Job %s failed: %s", workerName, job.JobID, errMsg)
+
+		// Check if message exhausted maximum delivery attempts -> route to Dead Letter Queue (JOBS_DLQ)
+		if attemptCount >= maxDeliveryAttempts {
+			dlqReason := fmt.Sprintf("Exhausted maximum delivery attempts (%d of %d)", attemptCount, maxDeliveryAttempts)
+			log.Printf("[%s] Job %s reached max delivery attempts (%d). Routing to JOBS_DLQ.", workerName, job.JobID, maxDeliveryAttempts)
+
+			procSpan.RecordError(fmt.Errorf("%s", dlqReason))
+			procSpan.SetStatus(codes.Error, dlqReason)
+			procSpan.SetAttributes(attribute.String("processing.result", "dlq_routed"))
+			procSpan.End()
+
+			telemetry.RecordJobFailed(procCtx, deliveryMode, workerName)
+
+			// 1. Publish failed message to JOBS_DLQ stream on subject jobs.dlq
+			js, jsErr := a.natsClient.Conn.JetStream()
+			if jsErr == nil {
+				dlqPayload, _ := json.Marshal(map[string]any{
+					"job_id":            job.JobID,
+					"type":              job.Type,
+					"original_subject":  messaging.SubjectJobSubmitted,
+					"delivery_attempts": attemptCount,
+					"failure_reason":    dlqReason,
+					"timestamp":         time.Now().UTC().Format(time.RFC3339),
+					"correlation_id":    correlationID,
+					"worker":            workerName,
+					"payload":           job.Payload,
+				})
+				dlqMsg := nats.NewMsg(messaging.SubjectJobDLQ)
+				dlqMsg.Data = dlqPayload
+				dlqMsg.Header.Set("X-Correlation-Id", correlationID)
+				dlqMsg.Header.Set("X-Delivery-Attempts", fmt.Sprintf("%d", attemptCount))
+				dlqMsg.Header.Set("X-Original-Subject", messaging.SubjectJobSubmitted)
+				dlqMsg.Header.Set("Nats-Msg-Id", fmt.Sprintf("dlq-%s-%d", job.JobID, attemptCount))
+				if _, pubErr := js.PublishMsg(dlqMsg); pubErr != nil {
+					log.Printf("[%s] Failed to publish message %s to JOBS_DLQ: %v", workerName, job.JobID, pubErr)
+				}
+			}
+
+			// 2. Publish DLQ_PUBLISHED lifecycle event
+			_ = a.publisher.PublishJobLifecycle(
+				messaging.SubjectJobDLQPublished,
+				job.JobID,
+				"DLQ_PUBLISHED",
+				attemptCount,
+				dlqReason,
+				correlationID,
+				workerName,
+				deliveryMode,
+				sequence,
+			)
+
+			// 3. Acknowledge original message from JOBS stream so it does not redeliver
+			if err := msg.Ack(); err != nil {
+				log.Printf("[%s] Failed to ACK original message %s after DLQ routing: %v", workerName, job.JobID, err)
+			}
+			return
+		}
 
 		// Record error on processing span
 		procSpan.RecordError(fmt.Errorf("%s", errMsg))

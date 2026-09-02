@@ -109,6 +109,40 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
       'A Stream is a persistent message store managed by JetStream. A stream can capture one or many subjects, and every stored message receives a monotonically increasing stream sequence number.',
   },
 
+  'dead-letter-queue': {
+    id: 'dead-letter-queue',
+    title: 'Dead Letter Queue (JOBS_DLQ)',
+    role: 'Persistent JetStream stream used to store messages that have exhausted their processing attempts.',
+    concepts: [
+      'Dead Letter Queue Pattern',
+      'Max Delivery Attempts',
+      'Redelivery',
+      'JetStream Stream',
+      'Failed Message Isolation',
+    ],
+    demoUsage:
+      'Stores jobs that fail processing after the configured maximum delivery attempts.',
+    trivia:
+      'NATS does not require a DLQ to be a special server component. A DLQ can be implemented using a separate JetStream Stream and application-controlled failure routing.',
+  },
+
+  'jobs-dlq': {
+    id: 'dead-letter-queue',
+    title: 'Dead Letter Queue (JOBS_DLQ)',
+    role: 'Persistent JetStream stream used to store messages that have exhausted their processing attempts.',
+    concepts: [
+      'Dead Letter Queue Pattern',
+      'Max Delivery Attempts',
+      'Redelivery',
+      'JetStream Stream',
+      'Failed Message Isolation',
+    ],
+    demoUsage:
+      'Stores jobs that fail processing after the configured maximum delivery attempts.',
+    trivia:
+      'NATS does not require a DLQ to be a special server component. A DLQ can be implemented using a separate JetStream Stream and application-controlled failure routing.',
+  },
+
   'consumer': {
     id: 'consumer',
     title: 'JetStream Consumer',

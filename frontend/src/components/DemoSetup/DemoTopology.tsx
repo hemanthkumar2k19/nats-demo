@@ -1,10 +1,11 @@
 import React from 'react';
-import { ServiceStatus, JetStreamInfo, ConsumerStatus } from '../../api/demoApi';
+import { ServiceStatus, JetStreamInfo, ConsumerStatus, DLQStatus } from '../../api/demoApi';
 
 interface DemoTopologyProps {
   services: ServiceStatus[];
   jetstreamInfo?: JetStreamInfo | null;
   consumerStatus?: ConsumerStatus | null;
+  dlqStatus?: DLQStatus | null;
   onSelectInfo: (componentId: string) => void;
 }
 
@@ -12,6 +13,7 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
   services,
   jetstreamInfo,
   consumerStatus,
+  dlqStatus,
   onSelectInfo,
 }) => {
   const natsService = services.find((s) => s.name.toLowerCase().includes('nats'));
@@ -298,6 +300,63 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
                         Redeliv: {redeliveredCount}
                       </span>
                     )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Resource C: JOBS_DLQ Stream */}
+              <div className="internal-resource-card stream-res-card" style={{ marginTop: '0.5rem', borderLeftColor: '#EF4444' }}>
+                <div className="node-header">
+                  <div className="res-title-group">
+                    <span className="res-type-tag" style={{ color: '#FCA5A5' }}>DLQ STREAM</span>
+                    <span className="res-name">JOBS_DLQ</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="node-info-btn"
+                    onClick={() => onSelectInfo('dead-letter-queue')}
+                    title="Learn about Dead Letter Queue Stream"
+                  >
+                    (i)
+                  </button>
+                </div>
+                <div className="res-body">
+                  <div className="node-meta-row">
+                    <span className="node-badge" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#FCA5A5', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                      {dlqStatus?.messages !== undefined ? `${dlqStatus.messages} Stored` : '0 Stored'}
+                    </span>
+                    <span className="node-subtle font-mono">jobs.dlq</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Downward Connector: DLQ Stream -> DLQ Consumer */}
+              <div className="internal-connector-down">
+                <div className="internal-line-v" style={{ background: 'rgba(239, 68, 68, 0.4)' }} />
+                <span className="internal-arrow-v" style={{ color: '#EF4444' }}>v</span>
+                <span className="internal-connector-label">inspects via</span>
+              </div>
+
+              {/* Resource D: dlq-inspector Consumer */}
+              <div className="internal-resource-card consumer-res-card" style={{ borderLeftColor: '#F59E0B' }}>
+                <div className="node-header">
+                  <div className="res-title-group">
+                    <span className="res-type-tag">DLQ CONSUMER</span>
+                    <span className="res-name">dlq-inspector</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="node-info-btn"
+                    onClick={() => onSelectInfo('dead-letter-queue')}
+                    title="Learn about dlq-inspector Consumer"
+                  >
+                    (i)
+                  </button>
+                </div>
+                <div className="res-body">
+                  <div className="node-meta-row">
+                    <span className="node-badge badge-consumer">DURABLE</span>
+                    <span className="node-detail">Pending: {dlqStatus?.pending ?? 0}</span>
                   </div>
                 </div>
               </div>

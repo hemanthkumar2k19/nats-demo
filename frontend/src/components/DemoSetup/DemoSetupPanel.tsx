@@ -1,5 +1,5 @@
 import React from 'react';
-import { ServiceStatus, JetStreamInfo, ConsumerStatus } from '../../api/demoApi';
+import { ServiceStatus, JetStreamInfo, ConsumerStatus, DLQStatus } from '../../api/demoApi';
 import { DemoTopology } from './DemoTopology';
 import { ConsumerLabPanel } from '../ConsumerLabPanel';
 
@@ -7,6 +7,7 @@ interface DemoSetupPanelProps {
   services: ServiceStatus[];
   jetstreamInfo?: JetStreamInfo | null;
   consumerStatus?: ConsumerStatus | null;
+  dlqStatus?: DLQStatus | null;
   onShowInfo: (key: string) => void;
   onAlert?: (type: 'success' | 'error' | 'warning', message: string) => void;
   onConfigChanged?: (status: ConsumerStatus) => void;
@@ -16,6 +17,7 @@ export const DemoSetupPanel: React.FC<DemoSetupPanelProps> = ({
   services,
   jetstreamInfo,
   consumerStatus,
+  dlqStatus,
   onShowInfo,
   onAlert,
   onConfigChanged,
@@ -46,6 +48,7 @@ export const DemoSetupPanel: React.FC<DemoSetupPanelProps> = ({
             services={services}
             jetstreamInfo={jetstreamInfo}
             consumerStatus={consumerStatus}
+            dlqStatus={dlqStatus}
             onSelectInfo={onShowInfo}
           />
         </div>

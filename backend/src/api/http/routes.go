@@ -27,6 +27,8 @@ func RegisterControlRoutes(router *gin.Engine, h *ControlHandler) {
 	router.PUT("/processor/state", h.PutProcessorState)
 	router.GET("/consumer", h.GetConsumerStatus)
 	router.PUT("/consumer", h.PutConsumerConfig)
+	router.GET("/dlq/status", h.GetDLQStatus)
+	router.GET("/dlq/messages", h.GetDLQMessages)
 }
 
 // RegisterRoutes registers the handlers onto the HTTP router (legacy all-in-one).

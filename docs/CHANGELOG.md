@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-02
 
+### Changed (Refactor Dead Letter Queue UI for Left Column Proportions)
+- **Frontend DLQ Polish (`DLQPanel.tsx`, `index.css`)**:
+  - Replaced unstyled `.info-btn` with standard `.node-info-btn` class, fixing the white button glitch and matching the cyan educational `(i)` badge pattern across all dashboard panels.
+  - Replaced the wide 5-column HTML table that was overflowing the 360px left column with a responsive, scrollable failed-message card list.
+  - Formatted DLQ Stream and Consumer metrics into a clean 2-column grid (`JOBS_DLQ` card + `dlq-inspector` card), eliminating horizontal stretching and wrapping artifacts.
+- **Reason**:
+  - Resolve visual defects where the `(i)` button appeared unstyled white and the component looked forced into the left column width.
+- **Affected Area**:
+  - Frontend (`DLQPanel.tsx`, `index.css`), Documentation (`CHANGELOG.md`).
+
+### Added (JetStream Dead Letter Queue Feature)
+- **Backend DLQ Stream & Consumer Infrastructure (`client.go`, `subjects.go`)**:
+  - Added `SubjectJobDLQ` (`jobs.dlq`) and `SubjectJobDLQPublished` (`jobs.dlq.published`).
+  - Added `EnsureDLQStream` in `internal/natsclient/client.go` to guarantee stream `JOBS_DLQ` (subjects `jobs.dlq`, `jobs.dlq.>`) and durable consumer `dlq-inspector` exist.
+- **Processor Max Delivery Routing (`processor-service/main.go`)**:
+  - Added `max_delivery_attempts` evaluation during simulated failure processing (default: 3).
+  - When failure attempts reach max deliveries, routes the failed message to `JOBS_DLQ` on subject `jobs.dlq`, emits `DLQ_PUBLISHED` lifecycle event, and explicitly ACKs the original message in `JOBS` stream to cease redelivery.
+- **Demo Control Endpoints (`control_handler.go`, `routes.go`, `tracker.go`)**:
+  - Added `GET /dlq/status` returning `JOBS_DLQ` message counts, byte storage, and `dlq-inspector` pending counts.
+  - Added `GET /dlq/messages` returning parsed DLQ messages with job IDs, original subjects, delivery attempts, failure reasons, and timestamps.
+  - Mapped `jobs.dlq` and `jobs.dlq.published` to `DLQ_PUBLISHED` in `activity.Tracker` with status weight 4.
+- **Frontend Dead Letter Queue Dashboard (`DLQPanel.tsx`, `DemoTopology.tsx`, `App.tsx`, `demoApi.ts`, `natsInfo.ts`, `index.css`)**:
+  - Implemented compact `DLQPanel` with `Max Delivery Attempts` control, `Send Failing Job` action, live DLQ status badges, and DLQ messages table.
+  - Extended DemoTopology visualizer inside NATS Server to display `STREAM: JOBS_DLQ` and `CONSUMER: dlq-inspector` alongside the primary pipeline.
+  - Added educational popover entry for `dead-letter-queue`.
+  - Added `.badge-dlq` style for Activity Log tracking.
+- **Reason**:
+  - Fulfill requirements in `docs/feature.md` to demonstrate the application-level Dead Letter Queue pattern on NATS JetStream.
+- **Affected Area**:
+  - Backend (`subjects.go`, `client.go`, `tracker.go`, `processor-service`, `control_handler.go`, `routes.go`), Frontend (`DLQPanel.tsx`, `DemoTopology.tsx`, `App.tsx`, `ActivityPanel.tsx`, `demoApi.ts`, `natsInfo.ts`, `index.css`), Documentation (`CHANGELOG.md`, `DEVELOPER_GUIDE.md`, `api-spec.md`).
+
 ### Changed (Restructure Current Demo Setup Topology in React UI)
 - **Frontend Topology Restructuring (`frontend/src/components/DemoSetup/DemoTopology.tsx`)**:
   - Restructured the runtime visualizer into a two-tier layout: Tier 1 displays `React UI (:5173)` pointing (`->`) to `Demo Control Service (:8080)` via horizontal connector, with inter-tier vertical bridge connectors linking down to Tier 2 (`Job Service (:8081) -> NATS Server (:4222) -> Processor Service`).

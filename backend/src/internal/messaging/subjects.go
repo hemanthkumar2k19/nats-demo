@@ -30,5 +30,9 @@ const (
 
 	// JetStream replay subject
 	SubjectJobReplayed = "jobs.replayed"
+
+	// JetStream Dead Letter Queue subjects
+	SubjectJobDLQ          = "jobs.dlq"
+	SubjectJobDLQPublished = "jobs.dlq.published"
 )
 

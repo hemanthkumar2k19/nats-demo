@@ -83,10 +83,17 @@ nats-demo/
 | **Replay / Rewind** | Replays historical stream events from the `JOBS` stream based on sequence number or time constraints via an ephemeral consumer without modifying stored stream entries. |
 | **Metrics Observability** | OpenTelemetry OTLP metrics exported to Grafana OTEL-LGTM stack alongside NATS Prometheus Exporter infrastructure metrics. |
 | **Distributed Tracing** | End-to-end W3C trace context propagation (`traceparent`) via NATS headers with OpenTelemetry spans visualized in Tempo. |
+| **Dead Letter Queue (DLQ)** | Demonstrates application-level DLQ routing on JetStream: messages failing repeatedly are NAKed until reaching `max_delivery_attempts` (default: 3), then routed to stream `JOBS_DLQ` (`jobs.dlq`), emitting `DLQ_PUBLISHED` and inspected by consumer `dlq-inspector`. |
 
 ---
 
 ## 5. Important Implementation Concepts
+
+### Dead Letter Queue (DLQ) Pattern Flow
+- NATS does not require DLQ to be a special server-side component; DLQ is an application-level architectural pattern built using JetStream primitives (persistence, NAK, redelivery counters, stream routing).
+- When a JetStream job fails processing, the worker issues `msg.Nak()`. JetStream increments `NumDelivered` and redelivers the message.
+- Once `NumDelivered` reaches `max_delivery_attempts` (default: 3), the worker isolates the failed message into stream `JOBS_DLQ` on subject `jobs.dlq`, publishes `jobs.dlq.published` (status `DLQ_PUBLISHED`), and issues `msg.Ack()` on the original `JOBS` stream message to halt redeliveries.
+- Consumer `dlq-inspector` monitors `JOBS_DLQ`, allowing administrators to inspect failed messages without altering the primary business stream.
 
 ### Durable Consumer Lifecycle
 To prevent the client library from deleting the durable consumer on shutdown, the consumer is created explicitly on NATS during initialization (`AddConsumer`), and the subscriber binds to it explicitly using:

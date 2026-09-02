@@ -556,3 +556,112 @@ func (h *ControlHandler) PutConsumerConfig(c *gin.Context) {
 
 	c.JSON(http.StatusOK, resp)
 }
+
+// DLQMessage represents a failed message in the JOBS_DLQ stream.
+type DLQMessage struct {
+	Sequence         uint64         `json:"sequence"`
+	JobID            string         `json:"job_id"`
+	Type             string         `json:"type"`
+	OriginalSubject  string         `json:"original_subject"`
+	DeliveryAttempts int            `json:"delivery_attempts"`
+	FailureReason    string         `json:"failure_reason"`
+	Timestamp        string         `json:"timestamp"`
+	CorrelationID    string         `json:"correlation_id"`
+	Worker           string         `json:"worker,omitempty"`
+	Payload          map[string]any `json:"payload,omitempty"`
+}
+
+// GetDLQStatus returns stream metrics for JOBS_DLQ and consumer stats for dlq-inspector.
+func (h *ControlHandler) GetDLQStatus(c *gin.Context) {
+	if h.natsClient == nil || h.natsClient.Conn == nil || h.natsClient.Conn.Status() != nats.CONNECTED {
+		c.JSON(http.StatusOK, gin.H{
+			"stream":   "JOBS_DLQ",
+			"messages": 0,
+			"bytes":    0,
+			"consumer": "dlq-inspector",
+			"pending":  0,
+		})
+		return
+	}
+
+	js, err := h.natsClient.Conn.JetStream()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JetStream context"})
+		return
+	}
+
+	var totalMsgs uint64
+	var totalBytes uint64
+	var firstSeq, lastSeq uint64
+	sinfo, err := js.StreamInfo("JOBS_DLQ")
+	if err == nil && sinfo != nil {
+		totalMsgs = sinfo.State.Msgs
+		totalBytes = sinfo.State.Bytes
+		firstSeq = sinfo.State.FirstSeq
+		lastSeq = sinfo.State.LastSeq
+	}
+
+	var pending uint64 = totalMsgs
+	var ackPending int
+	cinfo, err := js.ConsumerInfo("JOBS_DLQ", "dlq-inspector")
+	if err == nil && cinfo != nil {
+		pending = cinfo.NumPending
+		ackPending = cinfo.NumAckPending
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"stream":      "JOBS_DLQ",
+		"messages":    totalMsgs,
+		"bytes":       totalBytes,
+		"first_seq":   firstSeq,
+		"last_seq":    lastSeq,
+		"consumer":    "dlq-inspector",
+		"pending":     pending,
+		"ack_pending": ackPending,
+	})
+}
+
+// GetDLQMessages returns all failed messages persisted in JOBS_DLQ.
+func (h *ControlHandler) GetDLQMessages(c *gin.Context) {
+	if h.natsClient == nil || h.natsClient.Conn == nil || h.natsClient.Conn.Status() != nats.CONNECTED {
+		c.JSON(http.StatusOK, []DLQMessage{})
+		return
+	}
+
+	js, err := h.natsClient.Conn.JetStream()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JetStream context"})
+		return
+	}
+
+	sinfo, err := js.StreamInfo("JOBS_DLQ")
+	if err != nil || sinfo == nil || sinfo.State.Msgs == 0 {
+		c.JSON(http.StatusOK, []DLQMessage{})
+		return
+	}
+
+	messages := make([]DLQMessage, 0, sinfo.State.Msgs)
+	for seq := sinfo.State.FirstSeq; seq <= sinfo.State.LastSeq; seq++ {
+		rawMsg, err := js.GetMsg("JOBS_DLQ", seq)
+		if err != nil || rawMsg == nil {
+			continue
+		}
+
+		var item DLQMessage
+		if err := json.Unmarshal(rawMsg.Data, &item); err == nil {
+			item.Sequence = seq
+			if item.Timestamp == "" {
+				item.Timestamp = rawMsg.Time.UTC().Format(time.RFC3339)
+			}
+			if item.OriginalSubject == "" {
+				item.OriginalSubject = rawMsg.Header.Get("X-Original-Subject")
+			}
+			if item.CorrelationID == "" {
+				item.CorrelationID = rawMsg.Header.Get("X-Correlation-Id")
+			}
+			messages = append(messages, item)
+		}
+	}
+
+	c.JSON(http.StatusOK, messages)
+}

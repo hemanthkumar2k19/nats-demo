@@ -8,6 +8,7 @@ import { JobInspectorPanel } from './components/JobInspectorPanel';
 import { AddressingPanel } from './components/AddressingPanel';
 import { RequestReplyPanel } from './components/RequestReplyPanel';
 import { DeduplicationPanel } from './components/DeduplicationPanel';
+import { DLQPanel } from './components/DLQPanel';
 import { DemoSetupPanel } from './components/DemoSetup/DemoSetupPanel';
 import { ObservabilityPanel } from './components/ObservabilityPanel';
 import { InfoPopover } from './components/DemoSetup/InfoPopover';
@@ -32,7 +33,9 @@ import {
   JetStreamInfo,
   updateProcessorState,
   ConsumerStatus,
-  getConsumerStatus
+  getConsumerStatus,
+  DLQStatus,
+  getDLQStatus
 } from './api/demoApi';
 
 const DEFAULT_SERVICES: ServiceStatus[] = [
@@ -46,6 +49,7 @@ export const App: React.FC = () => {
   const [services, setServices] = useState<ServiceStatus[]>(DEFAULT_SERVICES);
   const [jetstreamInfo, setJetstreamInfo] = useState<JetStreamInfo | null>(null);
   const [consumerStatus, setConsumerStatus] = useState<ConsumerStatus | null>(null);
+  const [dlqStatus, setDlqStatus] = useState<DLQStatus | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -98,6 +102,13 @@ export const App: React.FC = () => {
       } catch {
         // Consumer API may be quiet if processor is offline
       }
+
+      try {
+        const dStatus = await getDLQStatus();
+        setDlqStatus(dStatus);
+      } catch {
+        // DLQ API quiet
+      }
     } catch (err: any) {
       if (!silent) {
         setError(err.message || 'Failed to refresh service status');
@@ -108,6 +119,7 @@ export const App: React.FC = () => {
         { name: 'processor-service', status: 'disconnected', details: 'Demo backend is unreachable' },
       ]);
       setJetstreamInfo(null);
+      setDlqStatus(null);
     } finally {
       if (!silent) {
         setIsRefreshingStatus(false);
@@ -289,6 +301,7 @@ export const App: React.FC = () => {
         services={services}
         jetstreamInfo={jetstreamInfo}
         consumerStatus={consumerStatus}
+        dlqStatus={dlqStatus}
         onShowInfo={setActiveInfoKey}
         onAlert={(type, msg) => {
           if (type === 'success') {
@@ -335,6 +348,23 @@ export const App: React.FC = () => {
             onShowInfo={setActiveInfoKey}
             onRefresh={() => refreshStatus(false)}
             isRefreshing={isRefreshingStatus}
+          />
+
+          <DLQPanel
+            onShowInfo={setActiveInfoKey}
+            onAlert={(type, msg) => {
+              if (type === 'success') {
+                setSuccess(msg);
+                refreshStatus(true);
+                refreshActivity(true);
+              } else if (type === 'error') {
+                setError(msg);
+              }
+            }}
+            onRefreshAll={() => {
+              refreshStatus(true);
+              refreshActivity(true);
+            }}
           />
         </div>
 

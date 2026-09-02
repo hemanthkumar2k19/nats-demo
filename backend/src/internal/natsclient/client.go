@@ -81,5 +81,43 @@ func (c *Client) EnsureJobsStream() error {
 		})
 	}
 
+	// Guarantee JOBS_DLQ stream and dlq-inspector consumer also exist
+	_ = c.EnsureDLQStream()
+
+	return nil
+}
+
+// EnsureDLQStream guarantees that the JOBS_DLQ stream and dlq-inspector consumer exist in NATS.
+func (c *Client) EnsureDLQStream() error {
+	js, err := c.Conn.JetStream()
+	if err != nil {
+		return fmt.Errorf("failed to get JetStream context: %w", err)
+	}
+
+	_, err = js.StreamInfo("JOBS_DLQ")
+	if err != nil {
+		_, err = js.AddStream(&nats.StreamConfig{
+			Name:     "JOBS_DLQ",
+			Subjects: []string{"jobs.dlq", "jobs.dlq.>"},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to add JOBS_DLQ stream: %w", err)
+		}
+	}
+
+	// Explicitly create durable consumer "dlq-inspector" on JOBS_DLQ stream
+	_, err = js.ConsumerInfo("JOBS_DLQ", "dlq-inspector")
+	if err != nil {
+		_, err = js.AddConsumer("JOBS_DLQ", &nats.ConsumerConfig{
+			Durable:       "dlq-inspector",
+			DeliverPolicy: nats.DeliverAllPolicy,
+			AckPolicy:     nats.AckExplicitPolicy,
+			FilterSubject: "jobs.dlq",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create durable consumer dlq-inspector: %w", err)
+		}
+	}
+
 	return nil
 }

@@ -374,6 +374,51 @@ Dynamically configure consumer settings (Durable vs Ephemeral, worker pool size,
 
 ---
 
+### 2.9. Get DLQ Status
+Retrieve stream storage metrics for `JOBS_DLQ` and consumer stats for `dlq-inspector`.
+* **Endpoint**: `GET /dlq/status`
+* **Response**: `200 OK`
+* **Response Body**:
+  ```json
+  {
+    "stream": "JOBS_DLQ",
+    "messages": 3,
+    "bytes": 1024,
+    "first_seq": 1,
+    "last_seq": 3,
+    "consumer": "dlq-inspector",
+    "pending": 3,
+    "ack_pending": 0
+  }
+  ```
+
+---
+
+### 2.10. Get DLQ Messages
+Retrieve failed messages stored in the `JOBS_DLQ` stream.
+* **Endpoint**: `GET /dlq/messages`
+* **Response**: `200 OK`
+* **Response Body**:
+  ```json
+  [
+    {
+      "sequence": 1,
+      "job_id": "job-fail-101",
+      "type": "image-processing",
+      "original_subject": "jobs.submitted",
+      "delivery_attempts": 3,
+      "failure_reason": "Exhausted maximum delivery attempts (3 of 3)",
+      "timestamp": "2026-09-02T15:30:00Z",
+      "correlation_id": "corr-job-fail-101",
+      "payload": {
+        "file": "corrupt-image.dat"
+      }
+    }
+  ]
+  ```
+
+---
+
 ## 3. NATS Subjects & Payload Contracts
 
 All NATS message payloads are structured as JSON. Standard metadata is passed via NATS headers to keep the payload clean.
@@ -407,6 +452,8 @@ The following headers are present in messages:
 | `jobs.stored` | Job -> Job/Observability | JetStream message stored ack | `{"job_id": string, "status": "STORED", "sequence": uint64}` |
 | `jobs.deduplicated` | Job -> Job/Observability | JetStream deduplication ack | `{"job_id": string, "status": "DEDUPLICATED", "sequence": uint64}` |
 | `jobs.replayed` | Demo Control -> Observability | Historical message replayed from stream | `{"job_id": string, "status": "REPLAYED", "sequence": uint64}` |
+| `jobs.dlq` | Processor -> DLQ Stream | Permanently failed message routed to DLQ | `{"job_id": string, "type": string, "original_subject": string, "delivery_attempts": int, "failure_reason": string, "timestamp": string, "payload": object}` |
+| `jobs.dlq.published` | Processor -> Observability | DLQ publication lifecycle event | `{"job_id": string, "status": "DLQ_PUBLISHED", "delivery_count": int, "error": string}` |
 | `processor.state.set` | Demo Control <-> Processor | Toggle processor processing state | **Req**: `{"enabled": boolean}`<br>**Rep**: `{"enabled": boolean, "status": string}` |
 | `consumer.config.set` | Demo Control <-> Processor | Dynamic consumer reconfiguration | **Req**: `{"type": string, "workers": int, "ordering": string}`<br>**Rep**: `ConsumerStatusResponse` |
 

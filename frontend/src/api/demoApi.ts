@@ -50,6 +50,30 @@ export interface SystemStatusResponse {
   jetstream?: JetStreamInfo;
 }
 
+export interface DLQStatus {
+  stream: string;
+  messages: number;
+  bytes: number;
+  first_seq: number;
+  last_seq: number;
+  consumer: string;
+  pending: number;
+  ack_pending?: number;
+}
+
+export interface DLQMessage {
+  sequence: number;
+  job_id: string;
+  type: string;
+  original_subject: string;
+  delivery_attempts: number;
+  failure_reason: string;
+  timestamp: string;
+  correlation_id?: string;
+  worker?: string;
+  payload?: Record<string, any>;
+}
+
 const DEMO_CONTROL_URL = 'http://localhost:8080';
 const JOB_SERVICE_URL = 'http://localhost:8081';
 
@@ -380,6 +404,32 @@ export async function updateConsumerConfig(config: ConsumerConfig): Promise<Cons
     throw new Error(`Failed to update consumer config: ${response.status} ${response.statusText}. ${errorText}`);
   }
 
+  return response.json();
+}
+
+/**
+ * Fetches current DLQ stream and consumer status from demo-control-service.
+ * Calls GET /dlq/status.
+ */
+export async function getDLQStatus(): Promise<DLQStatus> {
+  const response = await fetch(`${DEMO_CONTROL_URL}/dlq/status`);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to fetch DLQ status: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Fetches all failed messages persisted in the JOBS_DLQ stream.
+ * Calls GET /dlq/messages.
+ */
+export async function getDLQMessages(): Promise<DLQMessage[]> {
+  const response = await fetch(`${DEMO_CONTROL_URL}/dlq/messages`);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to fetch DLQ messages: ${response.status} ${response.statusText}. ${errorText}`);
+  }
   return response.json();
 }
 
