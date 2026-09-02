@@ -139,30 +139,36 @@ List all jobs currently stored in the Job Service's in-memory store. Essential f
 ---
 
 ### 1.5. Replay Jobs
-Trigger a JetStream replay. The Job Service creates an ephemeral replay consumer to replay historical events from the stream.
+Trigger a JetStream replay. The Job Service creates an ephemeral replay consumer to replay historical events from the stream without modifying stored stream messages.
 
 * **Endpoint**: `POST /jobs/replay`
 * **Content-Type**: `application/json`
 * **Request Body** (Option A: Sequence-based):
   ```json
   {
-    "from_sequence": 100,
-    "to_sequence": 120
+    "replay_from": "sequence",
+    "start_sequence": 1,
+    "end_sequence": 100,
+    "replay_mode": "instant"
   }
   ```
-  *(or Option B: Time-based)*:
+  *(Legacy aliases `from_sequence` and `to_sequence` are also accepted).*
+* **Request Body** (Option B: Time-based):
   ```json
   {
-    "from_time": "2026-08-31T10:00:00Z",
-    "to_time": "2026-08-31T11:00:00Z"
+    "replay_from": "time",
+    "start_time": "2026-08-31T10:00:00Z",
+    "end_time": "2026-08-31T11:00:00Z",
+    "replay_mode": "instant"
   }
   ```
+  *(Legacy aliases `from_time` and `to_time` are also accepted. `replay_mode` accepts `"instant"` or `"original"`).*
 * **Response**: `202 Accepted`
 * **Response Body**:
   ```json
   {
     "status": "REPLAY_STARTED",
-    "consumer": "job-replay-001"
+    "consumer": "replay-839201"
   }
   ```
 
@@ -284,6 +290,10 @@ Retrieve overall service connectivity and JetStream Stream pending stats.
     ],
     "jetstream": {
       "stream": "JOBS",
+      "messages": 42,
+      "bytes": 12480,
+      "first_seq": 1,
+      "last_seq": 42,
       "pending": 0
     }
   }

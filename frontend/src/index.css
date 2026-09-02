@@ -706,6 +706,12 @@ body {
   border: 1px solid rgba(6, 182, 212, 0.2);
 }
 
+.badge-replayed {
+  background: rgba(168, 85, 247, 0.15);
+  color: #C084FC;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
 /* Toast/Alert notification banner */
 .alert-banner {
   display: flex;

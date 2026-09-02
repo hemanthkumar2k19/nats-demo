@@ -412,7 +412,7 @@ Persistent job storage is not required.
 
 # 6.4 Replay Jobs
 
-This API is part of the target design but can be implemented later.
+Trigger an ephemeral JetStream consumer to replay historical stream messages without modifying or deleting original stream entries.
 
 ### Endpoint
 
@@ -422,14 +422,27 @@ POST /jobs/replay
 
 ### Purpose
 
-Start replaying previously stored JetStream messages.
+Start replaying previously stored JetStream messages from the `JOBS` stream. An ephemeral consumer is created on NATS JetStream with delivery settings based on `start_sequence` (or `start_time`) and replay policy (`instant` or `original`). Replayed messages are consumed on a dedicated deliver subject and published as `REPLAYED` lifecycle events to `jobs.replayed` for real-time observability in the Activity Log.
 
-### Request
+### Request (Sequence Mode)
 
 ```json
 {
-  "from_sequence": 100,
-  "to_sequence": 120
+  "replay_from": "sequence",
+  "start_sequence": 1,
+  "end_sequence": 100,
+  "replay_mode": "instant"
+}
+```
+
+### Request (Time Mode)
+
+```json
+{
+  "replay_from": "time",
+  "start_time": "2026-08-31T10:00:00Z",
+  "end_time": "2026-08-31T11:00:00Z",
+  "replay_mode": "instant"
 }
 ```
 
@@ -442,18 +455,7 @@ Start replaying previously stored JetStream messages.
 ```json
 {
   "status": "REPLAY_STARTED",
-  "consumer": "job-replay-001"
-}
-```
-
-The implementation can later support replay based on timestamp.
-
-Example:
-
-```json
-{
-  "from_time": "2026-08-31T10:00:00Z",
-  "to_time": "2026-08-31T11:00:00Z"
+  "consumer": "replay-839201"
 }
 ```
 

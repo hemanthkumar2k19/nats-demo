@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -87,12 +89,25 @@ func (h *Handler) GetStatus(c *gin.Context) {
 		}
 	}
 
-	// Fetch JetStream JOBS stream pending message count
+	// Fetch JetStream JOBS stream metrics and consumer pending count
 	var jsInfo gin.H
 	if natsStatus == "CONNECTED" {
 		js, err := h.natsClient.Conn.JetStream()
 		if err == nil {
+			var totalMsgs uint64
+			var totalBytes uint64
+			var firstSeq, lastSeq uint64
+
+			sinfo, err := js.StreamInfo("JOBS")
+			if err == nil && sinfo != nil {
+				totalMsgs = sinfo.State.Msgs
+				totalBytes = sinfo.State.Bytes
+				firstSeq = sinfo.State.FirstSeq
+				lastSeq = sinfo.State.LastSeq
+			}
+
 			// Query active consumer stats
+			var pending uint64 = totalMsgs
 			cinfo, err := js.ConsumerInfo("JOBS", consumerName)
 			if err != nil && consumerName != "job-processor" {
 				cinfo, err = js.ConsumerInfo("JOBS", "job-processor")
@@ -101,19 +116,16 @@ func (h *Handler) GetStatus(c *gin.Context) {
 				cinfo, err = js.ConsumerInfo("JOBS", "processor-durable")
 			}
 			if err == nil && cinfo != nil {
-				jsInfo = gin.H{
-					"stream":  "JOBS",
-					"pending": cinfo.NumPending,
-				}
-			} else {
-				// Fallback to general stream message count if consumer is not created yet
-				sinfo, err := js.StreamInfo("JOBS")
-				if err == nil {
-					jsInfo = gin.H{
-						"stream":  "JOBS",
-						"pending": sinfo.State.Msgs,
-					}
-				}
+				pending = cinfo.NumPending
+			}
+
+			jsInfo = gin.H{
+				"stream":    "JOBS",
+				"messages":  totalMsgs,
+				"bytes":     totalBytes,
+				"first_seq": firstSeq,
+				"last_seq":  lastSeq,
+				"pending":   pending,
 			}
 		}
 	}
@@ -324,11 +336,211 @@ func (h *Handler) GetActivities(c *gin.Context) {
 	c.JSON(http.StatusOK, h.jobService.GetActivities())
 }
 
-// ReplayJobs triggers a JetStream replay (stubbed/mocked response).
+// ReplayRequest represents the parameters for triggering a JetStream stream replay.
+type ReplayRequest struct {
+	StartSequence uint64 `json:"start_sequence"`
+	EndSequence   uint64 `json:"end_sequence"`
+	FromSequence  uint64 `json:"from_sequence"` // backward-compatible alias
+	ToSequence    uint64 `json:"to_sequence"`   // backward-compatible alias
+	StartTime     string `json:"start_time"`
+	EndTime       string `json:"end_time"`
+	FromTime      string `json:"from_time"` // backward-compatible alias
+	ToTime        string `json:"to_time"`   // backward-compatible alias
+	ReplayMode    string `json:"replay_mode"`
+	ReplayFrom    string `json:"replay_from"` // "sequence" or "time"
+}
+
+// parseReplayTime parses RFC3339 or HTML datetime-local formats.
+func parseReplayTime(val string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, val); err == nil {
+		return t, nil
+	}
+	if t, err := time.Parse("2006-01-02T15:04", val); err == nil {
+		return t, nil
+	}
+	return time.Parse("2006-01-02T15:04:05", val)
+}
+
+// ReplayJobs triggers an actual JetStream replay by configuring an ephemeral consumer.
 func (h *Handler) ReplayJobs(c *gin.Context) {
+	var req ReplayRequest
+	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid replay payload: %v", err)})
+		return
+	}
+
+	// Handle backward-compatible aliases
+	if req.StartSequence == 0 && req.FromSequence > 0 {
+		req.StartSequence = req.FromSequence
+	}
+	if req.EndSequence == 0 && req.ToSequence > 0 {
+		req.EndSequence = req.ToSequence
+	}
+	if req.StartTime == "" && req.FromTime != "" {
+		req.StartTime = req.FromTime
+	}
+	if req.EndTime == "" && req.ToTime != "" {
+		req.EndTime = req.ToTime
+	}
+
+	isTimeMode := req.ReplayFrom == "time" || (req.ReplayFrom == "" && req.StartTime != "")
+	var parsedStartTime, parsedEndTime time.Time
+
+	if isTimeMode {
+		if req.StartTime == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "start_time is required for time-based replay"})
+			return
+		}
+		var err error
+		parsedStartTime, err = parseReplayTime(req.StartTime)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid start_time: %v", err)})
+			return
+		}
+		if req.EndTime != "" {
+			parsedEndTime, err = parseReplayTime(req.EndTime)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid end_time: %v", err)})
+				return
+			}
+			if !parsedStartTime.Before(parsedEndTime) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "start_time must be before end_time"})
+				return
+			}
+		}
+	} else {
+		// Sequence mode validation
+		if req.StartSequence == 0 {
+			req.StartSequence = 1
+		}
+		if req.EndSequence == 0 {
+			req.EndSequence = req.StartSequence + 100
+		}
+		if req.EndSequence < req.StartSequence {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "end_sequence must be greater than or equal to start_sequence"})
+			return
+		}
+	}
+
+	js, err := h.natsClient.Conn.JetStream()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get JetStream context: %v", err)})
+		return
+	}
+
+	// Verify JOBS stream exists
+	_, err = js.StreamInfo("JOBS")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "JOBS stream does not exist in JetStream"})
+		return
+	}
+
+	consumerName := fmt.Sprintf("replay-%d", time.Now().UnixNano()%1000000)
+	inbox := nats.NewInbox()
+
+	consumerCfg := &nats.ConsumerConfig{
+		Name:           consumerName,
+		DeliverSubject: inbox,
+		FilterSubject:  messaging.SubjectJobSubmitted,
+		AckPolicy:      nats.AckNonePolicy,
+	}
+
+	if isTimeMode {
+		consumerCfg.DeliverPolicy = nats.DeliverByStartTimePolicy
+		consumerCfg.OptStartTime = &parsedStartTime
+	} else {
+		consumerCfg.DeliverPolicy = nats.DeliverByStartSequencePolicy
+		consumerCfg.OptStartSeq = req.StartSequence
+	}
+
+	if req.ReplayMode == "original" {
+		consumerCfg.ReplayPolicy = nats.ReplayOriginalPolicy
+	} else {
+		consumerCfg.ReplayPolicy = nats.ReplayInstantPolicy
+	}
+
+	cinfo, err := js.AddConsumer("JOBS", consumerCfg)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to create replay consumer: %v", err)})
+		return
+	}
+
+	// Consume replayed messages from the delivery inbox in a background goroutine
+	go func() {
+		timeout := 30 * time.Second
+		if req.ReplayMode == "original" {
+			timeout = 60 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		defer func() {
+			_ = js.DeleteConsumer("JOBS", cinfo.Name)
+			log.Printf("[Replay] Teardown complete for ephemeral consumer %s", cinfo.Name)
+		}()
+
+		sub, err := h.natsClient.Conn.Subscribe(inbox, func(msg *nats.Msg) {
+			meta, err := msg.Metadata()
+			if err != nil {
+				return
+			}
+
+			// Sequence boundary check
+			if !isTimeMode && req.EndSequence > 0 && meta.Sequence.Stream > req.EndSequence {
+				return
+			}
+
+			// Time boundary check
+			if isTimeMode && !parsedEndTime.IsZero() && meta.Timestamp.After(parsedEndTime) {
+				return
+			}
+
+			var job jobs.Job
+			if err := json.Unmarshal(msg.Data, &job); err != nil {
+				job.JobID = fmt.Sprintf("seq-%d", meta.Sequence.Stream)
+				job.Type = "unknown"
+			}
+
+			correlationID := msg.Header.Get("X-Correlation-Id")
+			if correlationID == "" {
+				correlationID = fmt.Sprintf("corr-replay-%d", meta.Sequence.Stream)
+			}
+
+			eventPayload := map[string]interface{}{
+				"job_id":         job.JobID,
+				"type":           job.Type,
+				"status":         "REPLAYED",
+				"delivery_count": 1,
+				"delivery_mode":  "JETSTREAM",
+				"sequence":       meta.Sequence.Stream,
+				"correlation_id": correlationID,
+				"msg_id":         fmt.Sprintf("replay-seq-%d", meta.Sequence.Stream),
+			}
+			payloadBytes, _ := json.Marshal(eventPayload)
+
+			replayMsg := nats.NewMsg(messaging.SubjectJobReplayed)
+			replayMsg.Data = payloadBytes
+			replayMsg.Header.Set("Content-Type", "application/json")
+			replayMsg.Header.Set("X-Source", "replay-consumer")
+			replayMsg.Header.Set("X-Correlation-Id", correlationID)
+			replayMsg.Header.Set("X-Delivery-Mode", "JETSTREAM")
+			replayMsg.Header.Set("Nats-Msg-Id", fmt.Sprintf("replay-seq-%d", meta.Sequence.Stream))
+
+			_ = h.natsClient.Conn.PublishMsg(replayMsg)
+			log.Printf("[Replay] Replayed sequence #%d (Job: %s) via %s", meta.Sequence.Stream, job.JobID, cinfo.Name)
+		})
+		if err != nil {
+			log.Printf("[Replay] Failed to subscribe to replay inbox: %v", err)
+			return
+		}
+		defer sub.Unsubscribe()
+
+		<-ctx.Done()
+	}()
+
 	c.JSON(http.StatusAccepted, gin.H{
 		"status":   "REPLAY_STARTED",
-		"consumer": "job-replay-001",
+		"consumer": cinfo.Name,
 	})
 }
 

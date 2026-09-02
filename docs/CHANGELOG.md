@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-02
 
+### Fixed (JetStream Stream Metrics Stripping in getServiceStatus)
+- **Frontend (`api/demoApi.ts`)**: Fixed `getServiceStatus()` discarding `messages`, `bytes`, `first_seq`, and `last_seq` returned by backend `GET /status`, restoring live stored message counts and sequence ranges in the UI.
+
+### Added (Stored Message Count Display in JetStream Replay)
+- **Backend Stream Metric Reporting (`api/http/handler.go`)**:
+  - Extended `GET /status` JetStream metadata to query `js.StreamInfo("JOBS")` directly, exposing total stored messages (`messages`), storage size (`bytes`), first sequence (`first_seq`), and last sequence (`last_seq`) alongside consumer pending count.
+- **Frontend JetStream Replay Integration (`ReplayPanel.tsx`, `App.tsx`, `demoApi.ts`)**:
+  - Displayed live stored message badge (`X stored msgs`) and sequence boundary range (`Seq #first - #last` or `Stream Empty`) in the `Stream: JOBS` row.
+  - Added an on-demand `Refresh` button in the panel header to allow immediate status re-query without waiting for background polling.
+  - Added dynamic empty-stream guidance banner if no historical messages are currently stored in `JOBS`.
+  - Added boundary indicators (`First: #X`, `Last: #Y`) directly above Sequence mode inputs.
+  - Displayed live stored message count badge on the `STREAM: JOBS` card in `DemoTopology.tsx`.
+- **Documentation**:
+  - Updated `docs/api-spec.md` and `docs/CHANGELOG.md` with the new schema and feature details.
+
+### Fixed (Unused consumerName Variable in ReplayMessages)
+- **Backend (`api/http/handler.go`)**: Assigned `Name: consumerName` in `consumerCfg := &nats.ConsumerConfig{...}` inside `ReplayMessages`, resolving the Go compiler error `declared and not used: consumerName` while ensuring the ephemeral replay consumer is explicitly named.
+
+### Added (Improve JetStream Replay Controls & Real Backend Replay Engine)
+- **JetStream Replay Controls Panel (`ReplayPanel.tsx`)**:
+  - Added read-only `Stream: JOBS` indicator identifying the target historical stream.
+  - Added `Replay From` selector supporting `Sequence` mode and `Time` mode.
+  - Renamed fields to standard JetStream replay terminology: `Start Sequence` and `End Sequence` with integer range validation (`Start >= 1`, `End >= Start`).
+  - Added `Start Time` and `End Time` inputs in Time mode with chronological ordering validation (`Start Time < End Time`).
+  - Added `Replay Mode` selector supporting `Instant` (as fast as possible) and `Original Timing` (reproducing message emission intervals).
+  - Preserved existing `(i)` educational popover trigger and single-entry-point hierarchy.
+- **Backend JetStream Ephemeral Replay Engine (`api/http/handler.go`)**:
+  - Replaced stubbed mock in `POST /jobs/replay` with actual NATS JetStream ephemeral push consumer creation.
+  - Configured `DeliverByStartSequencePolicy` and `DeliverByStartTimePolicy` based on selection.
+  - Configured native `ReplayInstantPolicy` and `ReplayOriginalPolicy` dynamically on the consumer.
+  - Added background consumer worker delivering historical messages to temporary inboxes and emitting `REPLAYED` events to subject `jobs.replayed`.
+  - Automatically deleted the ephemeral replay consumer upon stream boundary completion or timeout.
+- **Observability & Log Integration**:
+  - Added `SubjectJobReplayed` (`jobs.replayed`) in `subjects.go`.
+  - Added `REPLAYED` event handling in `service.go` and rendered `.badge-replayed` in `ActivityPanel.tsx` and `index.css`.
+
+### Reason
+- Fulfill requirements in `docs/feature.md` to accurately represent JetStream replay semantics, terminology, and controls, while implementing real backend replay capabilities directly over NATS JetStream.
+
+### Affected Area
+- Frontend (`ReplayPanel.tsx`, `demoApi.ts`, `ActivityPanel.tsx`, `index.css`), Backend (`handler.go`, `subjects.go`, `service.go`), Documentation (`DEVELOPER_GUIDE.md`, `frontend.md`, `backend.md`, `api-spec.md`, `CHANGELOG.md`).
+
 ### Added (Standalone Message Deduplication Component)
 - **Extracted Component (`DeduplicationPanel.tsx`)**: Promoted Message Deduplication from an embedded subsection in `JobPanel.tsx` to a full standalone panel under `DEMO ACTIONS`.
 - **Standardized Panel Design**: Matched the exact visual and DOM hierarchy of existing panels (`JobPanel`, `RequestReplyPanel`, `ReplayPanel`), using standard `.panel`, `<h2 className="panel-title">` with SVG shield-check icon, and standard `node-info-btn` for `(i)`.

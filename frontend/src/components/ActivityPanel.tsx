@@ -49,6 +49,8 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
       case 'NO_ACTIVE_CONSUMER':
       case 'REQUEST_TIMEOUT':
         return 'badge-failed';
+      case 'REPLAYED':
+        return 'badge-replayed';
       default:
         return '';
     }

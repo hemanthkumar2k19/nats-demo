@@ -150,7 +150,9 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
                 </div>
                 <div className="res-body">
                   <div className="node-meta-row">
-                    <span className="node-badge badge-stream">Persistent Store</span>
+                    <span className="node-badge badge-stream">
+                      {jetstreamInfo?.messages !== undefined ? `${jetstreamInfo.messages} Stored` : 'Persistent Store'}
+                    </span>
                     <span className="node-subtle font-mono">jobs.submitted</span>
                   </div>
                 </div>

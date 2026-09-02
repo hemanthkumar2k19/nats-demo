@@ -237,7 +237,10 @@ export const App: React.FC = () => {
   };
 
   const handleTriggerReplay = async (req: ReplayRequest) => {
-    return replayJobs(req);
+    const res = await replayJobs(req);
+    setTimeout(() => refreshActivity(false), 400);
+    setTimeout(() => refreshActivity(false), 1500);
+    return res;
   };
 
   const natsConnected = !services.some(
@@ -326,8 +329,11 @@ export const App: React.FC = () => {
           />
           
           <ReplayPanel 
+            jetstreamInfo={jetstreamInfo}
             onTriggerReplay={handleTriggerReplay}
             onShowInfo={setActiveInfoKey}
+            onRefresh={() => refreshStatus(false)}
+            isRefreshing={isRefreshingStatus}
           />
         </div>
 

@@ -423,24 +423,30 @@ This provides a simple visual demonstration of competing consumers.
 
 # 13. Replay Visibility
 
-When replay functionality is added, provide a simple replay control.
+Provide clear controls for replaying historical messages stored in the JetStream `JOBS` stream.
 
-Example:
+Panel Structure:
 
 ```text
-REPLAY
+JETSTREAM REPLAY
 
-From Sequence: [ 100 ]
-To Sequence:   [ 120 ]
+Stream
+JOBS (Read-only)
 
-Consumer:      [ replay-consumer ]
+Replay From
+(*) Sequence   ( ) Time
+
+Start Sequence [ 1   ]
+End Sequence   [ 100 ]
+
+Replay Mode
+(*) Instant    ( ) Original Timing
 
 [ Start Replay ]
 ```
 
-Show replay activity in the same Activity view.
+Replayed messages are observed in the Activity Log with the `REPLAYED` status badge without altering or deleting stored stream messages.
 
-Do not create a complex event-management interface initially.
 
 ---
 

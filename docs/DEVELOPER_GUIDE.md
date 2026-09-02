@@ -73,7 +73,7 @@ nats-demo/
 | **At-Least-Once & Redelivery** | Failure simulation triggers `msg.Nak()`, causing JetStream to redeliver with incremented delivery counts. |
 | **JetStream Deduplication** | Publishes with `Nats-Msg-Id` within the 2-minute deduplication window recognize duplicates (`DEDUPLICATED`). |
 | **Request/Reply** | Sync job validation is processed on the subject `jobs.validate` with a 2-second requester timeout. |
-| **Replay / Rewind** | Replays historical stream events from the `JOBS` stream based on sequence number or time constraints. |
+| **Replay / Rewind** | Replays historical stream events from the `JOBS` stream based on sequence number or time constraints via an ephemeral consumer without modifying stored stream entries. |
 | **Metrics Observability** | OpenTelemetry OTLP metrics exported to Grafana OTEL-LGTM stack alongside NATS Prometheus Exporter infrastructure metrics. |
 | **Distributed Tracing** | End-to-end W3C trace context propagation (`traceparent`) via NATS headers with OpenTelemetry spans visualized in Tempo. |
 
@@ -89,6 +89,12 @@ js.PullSubscribe(subject, "processor-durable", nats.Bind("JOBS", "processor-dura
 
 ### Stable Dashboard Log Ordering
 Events happening within the same second are sorted by logical state sequence (`PUBLISHED` -> `RECEIVED` -> `COMPLETED`) and grouped by `JobID` in the backend before being sent to the UI.
+
+### JetStream Replay Flow
+- The dashboard triggers `POST /jobs/replay` with sequence range (`start_sequence`, `end_sequence`) or time window (`start_time`, `end_time`), and replay mode (`instant` or `original`).
+- `job-service` creates an ephemeral push consumer on the `JOBS` stream configured with `DeliverByStartSequencePolicy` or `DeliverByStartTimePolicy`, and `ReplayInstantPolicy` or `ReplayOriginalPolicy`.
+- Delivered historical messages are published to `jobs.replayed` with status `REPLAYED` so the Activity Log records them.
+- Original stream messages remain immutable and untouched; the ephemeral consumer is cleanly torn down after completion.
 
 ### Request/Reply Lifecycle Flow
 

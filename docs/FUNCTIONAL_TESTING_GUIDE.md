@@ -217,11 +217,14 @@ NATS CONNECTED (Port 4222)
 #### Steps:
 1. Ensure at least 3-5 JetStream jobs have been submitted previously.
 2. In the **JetStream Replay** panel (under `DEMO ACTIONS`):
-   - Leave **Start Sequence** as `1` (or pick a recent sequence).
+   - Verify `Stream: JOBS` is displayed.
+   - Leave **Replay From** as `Sequence` (or switch to `Time`).
+   - Set **Start Sequence** to `1` and **End Sequence** to `100` (or your desired historical range).
+   - Leave **Replay Mode** as `Instant` (or select `Original Timing` to observe pacing).
    - Click **Start Replay**.
 3. **What to Observe**:
-   - The alert banner confirms replay started from sequence 1.
-   - The **Activity Log** receives historical stream messages re-emitted for auditing.
+   - The status banner confirms replay started with the ephemeral consumer ID (e.g. `replay-xxxxxx`).
+   - The **Activity Log** receives historical stream messages with the `REPLAYED` status badge.
    - The original messages in the stream remain untouched.
 
 ---

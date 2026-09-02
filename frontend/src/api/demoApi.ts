@@ -38,6 +38,10 @@ export interface ServiceStatus {
 
 export interface JetStreamInfo {
   stream: string;
+  messages?: number;
+  bytes?: number;
+  first_seq?: number;
+  last_seq?: number;
   pending: number;
 }
 
@@ -157,6 +161,10 @@ export async function getServiceStatus(): Promise<SystemStatusResponse> {
 
   const jetstream = data.jetstream ? {
     stream: data.jetstream.stream,
+    messages: data.jetstream.messages,
+    bytes: data.jetstream.bytes,
+    first_seq: data.jetstream.first_seq,
+    last_seq: data.jetstream.last_seq,
     pending: data.jetstream.pending,
   } : undefined;
 
@@ -191,10 +199,16 @@ export interface JobDetailResponse {
 }
 
 export interface ReplayRequest {
+  start_sequence?: number;
+  end_sequence?: number;
   from_sequence?: number;
   to_sequence?: number;
+  start_time?: string;
+  end_time?: string;
   from_time?: string;
   to_time?: string;
+  replay_mode?: 'instant' | 'original';
+  replay_from?: 'sequence' | 'time';
 }
 
 export interface ReplayResponse {

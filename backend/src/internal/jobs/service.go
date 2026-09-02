@@ -105,7 +105,7 @@ func getStatusWeight(status string) int {
 		return 2
 	case "PROCESSING", "REPLY_SENT":
 		return 3
-	case "COMPLETED", "FAILED", "ACKED", "NO CONSUMER", "REPLY_RECEIVED", "REQUEST_TIMEOUT":
+	case "COMPLETED", "FAILED", "ACKED", "NO CONSUMER", "REPLY_RECEIVED", "REQUEST_TIMEOUT", "REPLAYED":
 		return 4
 	default:
 		return 0
@@ -198,6 +198,8 @@ func (s *Service) ProcessLifecycleEvent(subject string, data []byte, correlation
 		status = "REQUEST_RECEIVED"
 	case "jobs.reply.sent":
 		status = "REPLY_SENT"
+	case "jobs.replayed":
+		status = "REPLAYED"
 	default:
 		status = payload.Status
 	}

@@ -24,4 +24,8 @@ const (
 	// Consumer management and deduplication subjects
 	SubjectConsumerConfigSet = "consumer.config.set"
 	SubjectJobDeduplicated   = "jobs.deduplicated"
+
+	// JetStream replay subject
+	SubjectJobReplayed = "jobs.replayed"
 )
+
