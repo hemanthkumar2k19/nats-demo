@@ -4,6 +4,56 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-02
 
+### Changed (Deprecate Legacy Correlation ID in Favor of W3C Trace Context)
+- **Standardized on W3C Distributed Tracing**:
+  - Deprecated and removed legacy `correlation_id` / `Corr ID` throughout the backend, frontend, and documentation.
+  - The platform now relies entirely on the industry-standard **W3C Trace Context** (`traceparent` header propagated over NATS) and OpenTelemetry `Trace ID` linked to Grafana Tempo, paired with `job_id` for business identity and `Nats-Msg-Id` for JetStream deduplication.
+- **Backend Cleanups**:
+  - Removed `CorrelationID` from domain structs (`Job`, `JobStatusResponse`, `JobDetailResponse`), store methods, publisher methods (`PublishJobSubmitted`, `RequestJobValidation`, `PublishJobLifecycle`), HTTP handlers (`SubmitJob`, `ValidateJob`), activity tracker (`Activity`, `ProcessLifecycleEvent`), and DLQ message model.
+- **Frontend Cleanups**:
+  - Removed `correlation_id` from API contracts in `demoApi.ts`.
+  - Removed the `Corr ID` column and search query matching in `ActivityPanel.tsx`, reclaiming horizontal table width for Subject, Event, and Worker.
+  - Removed Correlation ID from `JobInspectorPanel.tsx`, focusing the inspector on Job ID and the OpenTelemetry Trace ID with its Tempo link.
+- **Documentation**:
+  - Updated `api-spec.md`, `frontend.md`, `DEVELOPER_GUIDE.md`, and `FUNCTIONAL_TESTING_GUIDE.md`.
+- **Reason**:
+  - Eliminate redundant tracing abstractions and declutter the Activity Log table.
+- **Affected Area**:
+  - Backend, Frontend, Documentation.
+
+### Changed (Modal Job Inspector, Event Capping & Observability Switcher)
+- **Modal Job Inspector (`JobInspectorPanel.tsx`, `App.tsx`, `index.css`)**:
+  - Transformed `JobInspectorPanel` into a focused modal pop-up overlay dialog with dark blurred backdrop, keyboard Escape dismiss, and `[X]` close button.
+  - Clicking any row in the Activity Log immediately displays the inspector directly on top of the screen without scrolling down or moving the view.
+- **Event Capping (`ActivityPanel.tsx`, `AddressingPanel.tsx`)**:
+  - Implemented an event display limit selector (`Cap: [ 15 | 30 | 50 | All ]`, default: 15) and a fixed max-height scrollable container (`420px`) on `ActivityPanel`, preventing vertical page runaway.
+  - Capped wildcard match events in `AddressingPanel` to the 10 most recent deliveries with clean scroll overflow.
+- **Top Observability View Switcher (`ObservabilityPanelContainer.tsx`, `App.tsx`, `index.css`)**:
+  - Created `ObservabilityPanelContainer` in the right column featuring a top segmented switcher: `[ Live Activity Log ]` and `[ Subject Addressing & Wildcards ]`.
+  - Restores significant vertical space and eliminates the lower dock, balancing left and right column heights.
+- **Reason**:
+  - Enhance presenter usability by making job inspection instant via modal overlay, preventing page expansion with event capping, and providing convenient top-level switching to wildcard routing.
+- **Affected Area**:
+  - Frontend (`JobInspectorPanel.tsx`, `ActivityPanel.tsx`, `AddressingPanel.tsx`, `ObservabilityPanelContainer.tsx`, `App.tsx`, `index.css`), Documentation (`CHANGELOG.md`, `DEVELOPER_GUIDE.md`).
+
+### Changed (Dashboard Layout: NATS Capability Studio & Observability Dock)
+- **Frontend Capability Studio (`CapabilityStudio.tsx`, `App.tsx`, `index.css`)**:
+  - Replaced the tall vertical stack of 5 action panels on the left with a unified `CapabilityStudio` featuring segmented navigation tabs:
+    1. `Pub/Sub & Stream`: Combines standard job submission with an instant toggle for JetStream deduplication testing.
+    2. `Request / Reply`: Synchronous RPC validation testing and timeout simulation.
+    3. `Dead Letter Queue`: Poison message failure routing and DLQ message inspection.
+    4. `Stream Replay`: Historical time-window and sequence rewind controls.
+- **Frontend Observability Dock (`ObservabilityDock.tsx`, `App.tsx`, `index.css`)**:
+  - Created a coordinated dock directly below `ActivityPanel` housing:
+    1. `Subject Addressing & Routing`: Always accessible for real-time wildcard matching demonstrations (`*` and `>`).
+    2. `Job Inspector`: Automatically surfaces whenever a message row in the Activity Log is clicked, with full headers, payload, and trace IDs.
+- **Layout & Column Balancing (`index.css`)**:
+  - Updated grid column proportions to `minmax(380px, 460px) minmax(0, 1fr)` ensuring comfortable control padding and eliminating vertical scrolling.
+- **Reason**:
+  - Provide an uncluttered, sequential presentation workflow for live demonstrations while keeping PLATFORM STATUS, CURRENT DEMO SETUP, ACTIVITY LOG, and OBSERVABILITY SETUP in their established positions.
+- **Affected Area**:
+  - Frontend (`CapabilityStudio.tsx`, `ObservabilityDock.tsx`, `App.tsx`, `index.css`), Documentation (`CHANGELOG.md`, `DEVELOPER_GUIDE.md`).
+
 ### Changed (Refactor Dead Letter Queue UI for Left Column Proportions)
 - **Frontend DLQ Polish (`DLQPanel.tsx`, `index.css`)**:
   - Replaced unstyled `.info-btn` with standard `.node-info-btn` class, fixing the white button glitch and matching the cyan educational `(i)` badge pattern across all dashboard panels.
@@ -267,7 +317,7 @@ All notable changes to this project will be documented in this file.
 - Promoted Platform Status to a full-width horizontal status bar directly beneath the header/alerts, displaying NATS Server, Demo Service, Processor Service, Processing toggle (ON/OFF), JetStream availability, Stream name, Pending count, Workers count, and Consumer status.
 - Reorganized dashboard into two distinct columns:
   - Left Column (Demo Actions): Submit Job (`JobPanel`), Request / Reply (`RequestReplyPanel`), JetStream Replay (`ReplayPanel`).
-  - Right Column (Live Observability): Activity Log (`ActivityPanel`), Job Details Inspector (`JobInspectorPanel` positioned between Activity and Addressing when opened), Subject Routing & Addressing (`AddressingPanel`).
+  - Right Column (Activity): Activity Log (`ActivityPanel`), Job Details Inspector (`JobInspectorPanel` positioned between Activity and Addressing when opened), Subject Routing & Addressing (`AddressingPanel`).
 - Updated Header status indicator to explicitly display `[ NATS CONNECTED ]` / `[ NATS DISCONNECTED ]`.
 - Cleaned up non-ASCII symbols in UI components to adhere strictly to the repository ASCII-only rule.
 

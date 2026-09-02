@@ -14,10 +14,10 @@ import (
 )
 
 // JobHandler defines the callback function signature for processing a job.
-type JobHandler func(ctx context.Context, job jobs.Job, correlationID string) error
+type JobHandler func(ctx context.Context, job jobs.Job) error
 
 // ValidationHandler defines the callback function signature for validating a job request.
-type ValidationHandler func(ctx context.Context, job jobs.Job, correlationID string) (jobs.JobValidationResponse, error)
+type ValidationHandler func(ctx context.Context, job jobs.Job) (jobs.JobValidationResponse, error)
 
 // Consumer manages NATS subscriptions.
 type Consumer struct {
@@ -32,18 +32,16 @@ func NewConsumer(client *natsclient.Client) *Consumer {
 // SubscribeJobSubmitted registers a subscription to SubjectJobSubmitted and dispatches events to the handler.
 func (c *Consumer) SubscribeJobSubmitted(handler JobHandler) (*nats.Subscription, error) {
 	sub, err := c.client.Conn.Subscribe(SubjectJobSubmitted, func(msg *nats.Msg) {
-		correlationID := msg.Header.Get("X-Correlation-Id")
-
 		var job jobs.Job
 		if err := json.Unmarshal(msg.Data, &job); err != nil {
 			log.Printf("[Consumer] Failed to unmarshal message payload: %v", err)
 			return
 		}
 
-		log.Printf("[Consumer] Received message on subject: %s | Job ID: %s | Correlation ID: %s", msg.Subject, job.JobID, correlationID)
+		log.Printf("[Consumer] Received message on subject: %s | Job ID: %s", msg.Subject, job.JobID)
 
 		parentCtx := telemetry.ExtractTraceContext(context.Background(), msg.Header)
-		if err := handler(parentCtx, job, correlationID); err != nil {
+		if err := handler(parentCtx, job); err != nil {
 			log.Printf("[Consumer] Error handling job %s: %v", job.JobID, err)
 		}
 	})
@@ -58,8 +56,6 @@ func (c *Consumer) SubscribeJobSubmitted(handler JobHandler) (*nats.Subscription
 // SubscribeJobValidate registers a subscription to SubjectJobValidate and replies synchronously using the handler.
 func (c *Consumer) SubscribeJobValidate(handler ValidationHandler) (*nats.Subscription, error) {
 	sub, err := c.client.Conn.Subscribe(SubjectJobValidate, func(msg *nats.Msg) {
-		correlationID := msg.Header.Get("X-Correlation-Id")
-
 		var job jobs.Job
 		if err := json.Unmarshal(msg.Data, &job); err != nil {
 			log.Printf("[Consumer] Failed to unmarshal validation request: %v", err)
@@ -70,7 +66,7 @@ func (c *Consumer) SubscribeJobValidate(handler ValidationHandler) (*nats.Subscr
 		}
 
 		parentCtx := telemetry.ExtractTraceContext(context.Background(), msg.Header)
-		resp, err := handler(parentCtx, job, correlationID)
+		resp, err := handler(parentCtx, job)
 		if err != nil {
 			// ErrProcessorDisabled means the handler deliberately chose not to respond.
 			// Skip msg.Respond so the requester's 2-second timeout fires naturally.

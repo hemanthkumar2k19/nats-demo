@@ -20,6 +20,7 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
   const [selectedEvent, setSelectedEvent] = useState('ALL');
   const [selectedMode, setSelectedMode] = useState('ALL');
   const [selectedWorker, setSelectedWorker] = useState('ALL');
+  const [eventLimit, setEventLimit] = useState<number>(15);
 
   const getBadgeClass = (event: string) => {
     switch (event.toUpperCase()) {
@@ -85,7 +86,6 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
       if (searchQuery.trim() !== '') {
         const q = searchQuery.toLowerCase().trim();
         const matchesJobId = act.job_id.toLowerCase().includes(q);
-        const matchesCorrId = (act.correlation_id || '').toLowerCase().includes(q);
         const matchesMsgId = (act.msg_id || '').toLowerCase().includes(q);
         const matchesJobType = (act.job_type || '').toLowerCase().includes(q);
         const matchesSubject = act.subject.toLowerCase().includes(q);
@@ -93,7 +93,6 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
         const matchesEvent = act.event.toLowerCase().includes(q);
         return (
           matchesJobId ||
-          matchesCorrId ||
           matchesMsgId ||
           matchesJobType ||
           matchesSubject ||
@@ -104,6 +103,12 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
       return true;
     });
   }, [activities, selectedEvent, selectedMode, selectedWorker, searchQuery]);
+
+  // Capped visible activities
+  const displayedActivities = useMemo(() => {
+    if (eventLimit === 0) return filteredActivities;
+    return filteredActivities.slice(0, eventLimit);
+  }, [filteredActivities, eventLimit]);
 
   const hasActiveFilters =
     searchQuery !== '' || selectedEvent !== 'ALL' || selectedMode !== 'ALL' || selectedWorker !== 'ALL';
@@ -226,15 +231,30 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
             </button>
           )}
 
+          <div className="filter-group" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <label className="filter-label">Cap:</label>
+            <select
+              className="filter-select font-mono"
+              value={eventLimit}
+              onChange={(e) => setEventLimit(Number(e.target.value))}
+              title="Cap number of events shown in view"
+            >
+              <option value={15}>15 Events</option>
+              <option value={30}>30 Events</option>
+              <option value={50}>50 Events</option>
+              <option value={0}>All Events</option>
+            </select>
+          </div>
+
           <span className="filter-result-count">
-            {filteredActivities.length === activities.length
-              ? `${activities.length} events`
-              : `Showing ${filteredActivities.length} of ${activities.length}`}
+            {eventLimit > 0 && filteredActivities.length > eventLimit
+              ? `Showing latest ${displayedActivities.length} of ${filteredActivities.length}`
+              : `${filteredActivities.length} events`}
           </span>
         </div>
       </div>
 
-      <div className="activity-table-wrapper">
+      <div className="activity-table-wrapper" style={{ maxHeight: '420px', overflowY: 'auto' }}>
         {activities.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">[ ]</div>
@@ -256,7 +276,6 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
               <tr>
                 <th>Time</th>
                 <th>Job ID</th>
-                <th>Corr ID</th>
                 <th>NATS Msg ID</th>
                 <th>Type</th>
                 <th>Mode</th>
@@ -268,7 +287,7 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
               </tr>
             </thead>
             <tbody>
-              {filteredActivities.map((act, index) => (
+              {displayedActivities.map((act, index) => (
                 <tr key={`${act.job_id}-${act.event}-${index}`}>
                   <td className="mono-cell" style={{ color: 'var(--text-secondary)' }}>
                     {act.timestamp}
@@ -291,21 +310,6 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
                     >
                       {act.job_id}
                     </button>
-                  </td>
-                  <td className="mono-cell">
-                    {act.correlation_id ? (
-                      <div className="hover-legend-wrapper">
-                        <span className="hover-legend-badge">
-                          {formatCompactId(act.correlation_id)}
-                        </span>
-                        <div className="hover-legend-tooltip">
-                          <span className="hover-legend-title">Correlation ID</span>
-                          <span>{act.correlation_id}</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <span style={{ color: 'var(--text-muted)' }}>-</span>
-                    )}
                   </td>
                   <td className="mono-cell">
                     {act.msg_id || act.job_id ? (

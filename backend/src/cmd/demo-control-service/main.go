@@ -94,14 +94,13 @@ func (a *App) Run() error {
 			// Skip Request/Reply messages
 			return
 		}
-		correlationID := msg.Header.Get("X-Correlation-Id")
 		source := msg.Header.Get("X-Source")
 		msgID := msg.Header.Get("Nats-Msg-Id")
 		if msgID == "" {
 			msgID = msg.Header.Get("X-Message-Id")
 		}
 
-		if err := a.activityTracker.ProcessLifecycleEvent(msg.Subject, msg.Data, correlationID, source, msgID); err != nil {
+		if err := a.activityTracker.ProcessLifecycleEvent(msg.Subject, msg.Data, source, msgID); err != nil {
 			log.Printf("[App] Failed to process lifecycle event: %v", err)
 		}
 	})

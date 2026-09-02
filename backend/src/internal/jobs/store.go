@@ -19,26 +19,22 @@ func NewJobStore() *JobStore {
 }
 
 // AddJob registers or updates a job record in the domain store.
-func (s *JobStore) AddJob(job Job, status string, correlationID string) {
+func (s *JobStore) AddJob(job Job, status string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	detail, exists := s.jobs[job.JobID]
 	if !exists {
 		detail = &JobDetailResponse{
-			JobID:         job.JobID,
-			Type:          job.Type,
-			CorrelationID: correlationID,
-			TraceID:       job.TraceID,
-			History:       make([]JobHistoryItem, 0),
+			JobID:   job.JobID,
+			Type:    job.Type,
+			TraceID: job.TraceID,
+			History: make([]JobHistoryItem, 0),
 		}
 		s.jobs[job.JobID] = detail
 	}
 
 	detail.Status = status
-	if correlationID != "" {
-		detail.CorrelationID = correlationID
-	}
 	if job.TraceID != "" {
 		detail.TraceID = job.TraceID
 	}

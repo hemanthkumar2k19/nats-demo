@@ -9,7 +9,6 @@ export interface Job {
 export interface JobStatusResponse {
   job_id: string;
   status: string;
-  correlation_id?: string;
   trace_id?: string;
 }
 
@@ -22,7 +21,6 @@ export interface Activity {
   delivery_count: number;
   delivery_mode?: string;
   sequence?: number;
-  correlation_id?: string;
   msg_id?: string;
   job_type?: string;
   trace_id?: string;
@@ -69,7 +67,6 @@ export interface DLQMessage {
   delivery_attempts: number;
   failure_reason: string;
   timestamp: string;
-  correlation_id?: string;
   worker?: string;
   payload?: Record<string, any>;
 }
@@ -86,7 +83,6 @@ export async function submitJob(job: Job): Promise<JobStatusResponse> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Correlation-Id': `corr-${job.job_id}-${Date.now().toString(36)}`,
     },
     body: JSON.stringify(job),
   });
@@ -104,7 +100,6 @@ export interface ValidationResult {
   message?: string;
   error?: string;
   timedOut?: boolean;
-  correlationId?: string;
 }
 
 /**
@@ -114,12 +109,10 @@ export interface ValidationResult {
  * rather than throwing so the UI can display the timeout scenario cleanly.
  */
 export async function validateJob(job: Job): Promise<ValidationResult> {
-  const correlationId = `corr-val-${job.job_id}-${Date.now().toString(36)}`;
   const response = await fetch(`${JOB_SERVICE_URL}/jobs/validate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Correlation-Id': correlationId,
     },
     body: JSON.stringify(job),
   });
@@ -127,7 +120,7 @@ export async function validateJob(job: Job): Promise<ValidationResult> {
   // 504 means the NATS request timed out - no responder was available.
   // Return a structured result rather than throwing so the UI can display the timeout panel.
   if (response.status === 504) {
-    return { timedOut: true, error: 'No response received from processor service', correlationId };
+    return { timedOut: true, error: 'No response received from processor service' };
   }
 
   if (!response.ok) {
@@ -135,8 +128,7 @@ export async function validateJob(job: Job): Promise<ValidationResult> {
     throw new Error(`Failed to validate job: ${response.status} ${response.statusText}. ${errorText}`);
   }
 
-  const data = await response.json();
-  return { ...data, correlationId };
+  return response.json();
 }
 
 /**
@@ -232,8 +224,10 @@ export interface JobDetailResponse {
   job_id: string;
   status: string;
   delivery_count: number;
-  correlation_id: string;
   trace_id?: string;
+  type?: string;
+  delivery_mode?: string;
+  worker?: string;
   history: JobHistoryItem[];
 }
 

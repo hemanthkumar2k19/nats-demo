@@ -16,8 +16,6 @@ Submit a job for processing. This is a **fire-and-forget** operation. The Job Se
 
 * **Endpoint**: `POST /jobs`
 * **Content-Type**: `application/json`
-* **Request Headers**:
-  * `X-Correlation-Id`: (Optional) A unique string for tracing. If not provided, the Job Service will generate one.
 * **Request Body**:
   ```json
   {
@@ -38,7 +36,6 @@ Submit a job for processing. This is a **fire-and-forget** operation. The Job Se
   {
     "job_id": "job-101",
     "status": "SUBMITTED",
-    "correlation_id": "8f32a1c2",
     "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
   }
   ```
@@ -51,8 +48,6 @@ Synchronously validates a job configuration using NATS **Request/Reply**. The Jo
 
 * **Endpoint**: `POST /jobs/validate`
 * **Content-Type**: `application/json`
-* **Request Headers**:
-  * `X-Correlation-Id`: (Optional) Custom correlation ID string for tracing.
 * **Request Body**:
   ```json
   {
@@ -95,7 +90,6 @@ Retrieve the status of a specific job. Initially, this status is tracked in-memo
     "job_id": "job-101",
     "status": "COMPLETED",
     "delivery_count": 1,
-    "correlation_id": "8f32a1c2",
     "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
     "history": [
       {
@@ -252,7 +246,6 @@ Retrieve flat chronological NATS activity logs for the dashboard.
       "worker": "job-service",
       "delivery_count": 1,
       "delivery_mode": "CORE",
-      "correlation_id": "corr-job-772",
       "msg_id": "job-772",
       "job_type": "image-processing",
       "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
@@ -265,7 +258,6 @@ Retrieve flat chronological NATS activity logs for the dashboard.
       "worker": "processor-1",
       "delivery_count": 1,
       "delivery_mode": "CORE",
-      "correlation_id": "corr-job-772",
       "msg_id": "job-772",
       "job_type": "image-processing",
       "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
@@ -409,7 +401,6 @@ Retrieve failed messages stored in the `JOBS_DLQ` stream.
       "delivery_attempts": 3,
       "failure_reason": "Exhausted maximum delivery attempts (3 of 3)",
       "timestamp": "2026-09-02T15:30:00Z",
-      "correlation_id": "corr-job-fail-101",
       "payload": {
         "file": "corrupt-image.dat"
       }
@@ -427,7 +418,6 @@ All NATS message payloads are structured as JSON. Standard metadata is passed vi
 The following headers are present in messages:
 * `Content-Type`: `application/json`
 * `Nats-Msg-Id`: Unique message ID (used for JetStream message deduplication).
-* `X-Correlation-Id`: Correlation ID passed down from the client.
 * `X-Source`: Identifier of the sending service (e.g., `job-service` or `processor-service`).
 * `traceparent`: Standard W3C distributed tracing header (`00-<trace_id>-<span_id>-01`) for OpenTelemetry context propagation.
 
@@ -482,7 +472,7 @@ sequenceDiagram
     PS->>NATS: ACK message
 
     Note over Client, PS: Request/Reply Workflow (Success Path)
-    Client->>JS: POST /jobs/validate (X-Correlation-Id)
+    Client->>JS: POST /jobs/validate
     JS->>NATS: Request jobs.validate
     NATS->>PS: Deliver validation request
     PS->>NATS: Publish jobs.request.received

@@ -338,11 +338,6 @@ func (h *ControlHandler) ReplayJobs(c *gin.Context) {
 				job.Type = "unknown"
 			}
 
-			correlationID := msg.Header.Get("X-Correlation-Id")
-			if correlationID == "" {
-				correlationID = fmt.Sprintf("corr-replay-%d", meta.Sequence.Stream)
-			}
-
 			eventPayload := map[string]interface{}{
 				"job_id":         job.JobID,
 				"type":           job.Type,
@@ -350,7 +345,6 @@ func (h *ControlHandler) ReplayJobs(c *gin.Context) {
 				"delivery_count": 1,
 				"delivery_mode":  "JETSTREAM",
 				"sequence":       meta.Sequence.Stream,
-				"correlation_id": correlationID,
 				"msg_id":         fmt.Sprintf("replay-seq-%d", meta.Sequence.Stream),
 			}
 			payloadBytes, _ := json.Marshal(eventPayload)
@@ -359,7 +353,6 @@ func (h *ControlHandler) ReplayJobs(c *gin.Context) {
 			replayMsg.Data = payloadBytes
 			replayMsg.Header.Set("Content-Type", "application/json")
 			replayMsg.Header.Set("X-Source", "replay-consumer")
-			replayMsg.Header.Set("X-Correlation-Id", correlationID)
 			replayMsg.Header.Set("X-Delivery-Mode", "JETSTREAM")
 			replayMsg.Header.Set("Nats-Msg-Id", fmt.Sprintf("replay-seq-%d", meta.Sequence.Stream))
 
@@ -566,7 +559,6 @@ type DLQMessage struct {
 	DeliveryAttempts int            `json:"delivery_attempts"`
 	FailureReason    string         `json:"failure_reason"`
 	Timestamp        string         `json:"timestamp"`
-	CorrelationID    string         `json:"correlation_id"`
 	Worker           string         `json:"worker,omitempty"`
 	Payload          map[string]any `json:"payload,omitempty"`
 }
@@ -655,9 +647,6 @@ func (h *ControlHandler) GetDLQMessages(c *gin.Context) {
 			}
 			if item.OriginalSubject == "" {
 				item.OriginalSubject = rawMsg.Header.Get("X-Original-Subject")
-			}
-			if item.CorrelationID == "" {
-				item.CorrelationID = rawMsg.Header.Get("X-Correlation-Id")
 			}
 			messages = append(messages, item)
 		}

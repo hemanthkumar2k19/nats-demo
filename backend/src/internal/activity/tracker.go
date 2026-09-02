@@ -18,7 +18,6 @@ type Activity struct {
 	DeliveryCount int    `json:"delivery_count"`
 	DeliveryMode  string `json:"delivery_mode,omitempty"`
 	Sequence      uint64 `json:"sequence,omitempty"`
-	CorrelationID string `json:"correlation_id,omitempty"`
 	MsgID         string `json:"msg_id,omitempty"`
 	JobType       string `json:"job_type,omitempty"`
 	TraceID       string `json:"trace_id,omitempty"`
@@ -53,7 +52,7 @@ func getStatusWeight(status string) int {
 }
 
 // AddEvent records a lifecycle event in the in-memory buffer.
-func (t *Tracker) AddEvent(jobID string, status string, deliveryCount int, correlationID string, subject string, worker string, deliveryMode string, sequence uint64, msgID string, jobType string) {
+func (t *Tracker) AddEvent(jobID string, status string, deliveryCount int, subject string, worker string, deliveryMode string, sequence uint64, msgID string, jobType string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -67,7 +66,6 @@ func (t *Tracker) AddEvent(jobID string, status string, deliveryCount int, corre
 		DeliveryCount: deliveryCount,
 		DeliveryMode:  deliveryMode,
 		Sequence:      sequence,
-		CorrelationID: correlationID,
 		MsgID:         msgID,
 		JobType:       jobType,
 	}}, t.activities...)
@@ -100,7 +98,7 @@ func (t *Tracker) GetActivities() []Activity {
 }
 
 // ProcessLifecycleEvent parses an incoming NATS lifecycle message and appends it to the activity log.
-func (t *Tracker) ProcessLifecycleEvent(subject string, data []byte, correlationID string, source string, msgID string) error {
+func (t *Tracker) ProcessLifecycleEvent(subject string, data []byte, source string, msgID string) error {
 	var payload struct {
 		JobID         string `json:"job_id"`
 		Type          string `json:"type,omitempty"`
@@ -109,7 +107,6 @@ func (t *Tracker) ProcessLifecycleEvent(subject string, data []byte, correlation
 		Error         string `json:"error,omitempty"`
 		DeliveryMode  string `json:"delivery_mode,omitempty"`
 		Sequence      uint64 `json:"sequence,omitempty"`
-		CorrelationID string `json:"correlation_id,omitempty"`
 		MsgID         string `json:"msg_id,omitempty"`
 	}
 	if err := json.Unmarshal(data, &payload); err != nil {
@@ -120,9 +117,6 @@ func (t *Tracker) ProcessLifecycleEvent(subject string, data []byte, correlation
 		return fmt.Errorf("lifecycle event payload missing job_id")
 	}
 
-	if correlationID == "" && payload.CorrelationID != "" {
-		correlationID = payload.CorrelationID
-	}
 	if msgID == "" && payload.MsgID != "" {
 		msgID = payload.MsgID
 	}
@@ -171,6 +165,6 @@ func (t *Tracker) ProcessLifecycleEvent(subject string, data []byte, correlation
 		payload.DeliveryCount = 1
 	}
 
-	t.AddEvent(payload.JobID, status, payload.DeliveryCount, correlationID, subject, source, payload.DeliveryMode, payload.Sequence, msgID, payload.Type)
+	t.AddEvent(payload.JobID, status, payload.DeliveryCount, subject, source, payload.DeliveryMode, payload.Sequence, msgID, payload.Type)
 	return nil
 }

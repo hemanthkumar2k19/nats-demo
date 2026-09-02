@@ -291,10 +291,10 @@ NATS CONNECTED (Port 4222)
 
 ---
 
-### Scenario 11: Activity Log Search, Filters & Correlation Tooltips
+### Scenario 11: Activity Log Search, Filters & Identifier Tooltips
 
 #### What NATS Feature Is Demonstrated?
-* **Full-text search, multi-criteria filtering, and distributed tracing correlation**.
+* **Full-text search, multi-criteria filtering, and message deduplication identifier tooltips**.
 
 #### Steps:
 1. **Search Bar**:
@@ -306,11 +306,10 @@ NATS CONNECTED (Port 4222)
    - Notice only completion events appear.
    - The result counter displays: `Showing X of Y events`.
 3. **Hover Legend Tooltips**:
-   - Look at the **Corr ID** (Correlation ID) column.
-   - Notice long correlation strings are formatted as clean compact badges: `corr-...8812`.
+   - Look at the **NATS Msg ID** column.
+   - Notice long message IDs are formatted as clean compact badges.
    - Hover your mouse cursor over the badge:
-     - A floating dark tooltip legend appears showing the full correlation string.
-   - Hover over **NATS Msg ID** to see the full deduplication header.
+     - A floating dark tooltip legend appears showing the full `Nats-Msg-Id` header string used by JetStream deduplication.
 4. Click **Clear** to reset all filters.
 
 ---

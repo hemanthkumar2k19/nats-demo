@@ -113,7 +113,7 @@ Use a single primary screen initially.
 | NATS Server       [ Connected ]     Job Service       [ Active ]     Processor Service   [ Active ]     Processing [ ON ]           |
 | JetStream         [ Available ]     Stream: JOBS     Pending: 0     Workers: 1            Consumer: Active                           |
 +=======================================================================================================================================+
-| LEFT: DEMO ACTIONS                                      | RIGHT: LIVE OBSERVABILITY                                                   |
+| LEFT: NATS CAPABILITY STUDIO                            | RIGHT: ACTIVITY                                                             |
 +---------------------------------------------------------+-----------------------------------------------------------------------------+
 | [JobPanel]                                              | [ActivityPanel]                                                             |
 | +-----------------------------------------------------+ | +-------------------------------------------------------------------------+ |
@@ -129,7 +129,7 @@ Use a single primary screen initially.
 | [DeduplicationPanel]                                   | +-------------------------------------------------------------------------+ |
 | +-----------------------------------------------------+ | | Job Details                                      [Close]              | |
 | | Message Deduplication                               | | | Job ID: job-101        Status: COMPLETED                              | |
-| | Window: 2m | Header: Nats-Msg-Id                    | | | Correlation ID: abc-123    Delivery Count: 1                          | |
+| | Window: 2m | Header: Nats-Msg-Id                    | | | Trace ID: 4bf92...         Delivery Count: 1                          | |
 | | [ Publish 1st ]        [ Publish Duplicate ]        | | | Status History: SUBMITTED -> PROCESSING -> COMPLETED                  | |
 | +-----------------------------------------------------+ | | Raw Payload: { ... }                                                  | |
 |                                                         | +-------------------------------------------------------------------------+ |

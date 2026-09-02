@@ -298,7 +298,7 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
       'Event Observation',
       'NATS Subject Subscriptions',
       'Wildcard Subscriptions',
-      'Correlation IDs',
+      'W3C Trace Context',
       'Message Delivery Events',
     ],
     demoUsage:
@@ -315,7 +315,7 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
       'Message Metadata',
       'Delivery Attempts',
       'Acknowledgement State',
-      'Correlation',
+      'Distributed Tracing',
       'Processing Lifecycle',
     ],
     demoUsage:

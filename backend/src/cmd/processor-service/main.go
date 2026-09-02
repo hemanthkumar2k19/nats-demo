@@ -99,7 +99,7 @@ func (a *App) Run() error {
 	var coreWorkerCounter uint64
 
 	// Core NATS job processing handler
-	jobHandler := func(ctx context.Context, job jobs.Job, correlationID string) error {
+	jobHandler := func(ctx context.Context, job jobs.Job) error {
 		deliveryMode := job.DeliveryMode
 		if deliveryMode == "" {
 			deliveryMode = "CORE"
@@ -125,7 +125,7 @@ func (a *App) Run() error {
 		attemptCount := attempts[job.JobID]
 		attemptsMu.Unlock()
 
-		log.Printf("[%s] Received Core NATS job %s | Attempt: %d | Correlation: %s", assignedWorkerName, job.JobID, attemptCount, correlationID)
+		log.Printf("[%s] Received Core NATS job %s | Attempt: %d", assignedWorkerName, job.JobID, attemptCount)
 
 		// Start Consumer Receive Span
 		recvCtx, recvSpan := telemetry.StartSpan(ctx, "Consumer Receive",
@@ -153,7 +153,6 @@ func (a *App) Run() error {
 			"RECEIVED",
 			attemptCount,
 			"",
-			correlationID,
 			assignedWorkerName,
 			deliveryMode,
 			0,
@@ -177,7 +176,6 @@ func (a *App) Run() error {
 			"PROCESSING",
 			attemptCount,
 			"",
-			correlationID,
 			assignedWorkerName,
 			deliveryMode,
 			0,
@@ -220,7 +218,6 @@ func (a *App) Run() error {
 				"FAILED",
 				attemptCount,
 				errMsg,
-				correlationID,
 				assignedWorkerName,
 				deliveryMode,
 				0,
@@ -232,7 +229,6 @@ func (a *App) Run() error {
 				"FAILED",
 				attemptCount,
 				errMsg,
-				correlationID,
 				assignedWorkerName,
 				deliveryMode,
 				0,
@@ -258,7 +254,6 @@ func (a *App) Run() error {
 			"COMPLETED",
 			attemptCount,
 			"",
-			correlationID,
 			assignedWorkerName,
 			deliveryMode,
 			0,
@@ -481,7 +476,7 @@ func (a *App) subscribeValidation(workerName string) error {
 		return nil
 	}
 
-	validationHandler := func(ctx context.Context, job jobs.Job, correlationID string) (jobs.JobValidationResponse, error) {
+	validationHandler := func(ctx context.Context, job jobs.Job) (jobs.JobValidationResponse, error) {
 		// Check the processing flag before doing anything.
 		// If the processor is OFF, return a sentinel error that tells
 		// consumer.SubscribeJobValidate to skip Respond, letting the
@@ -518,7 +513,6 @@ func (a *App) subscribeValidation(workerName string) error {
 			"REQUEST_RECEIVED",
 			1,
 			"",
-			correlationID,
 			workerName,
 			"",
 			0,
@@ -554,7 +548,6 @@ func (a *App) subscribeValidation(workerName string) error {
 			"REPLY_SENT",
 			1,
 			"",
-			correlationID,
 			workerName,
 			"",
 			0,
@@ -731,7 +724,6 @@ func (a *App) jsPullLoop(ctx context.Context, workerName string, attempts map[st
 
 // handleJetStreamMsg processes a pulled JetStream message
 func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[string]int, attemptsMu *sync.Mutex) {
-	correlationID := msg.Header.Get("X-Correlation-Id")
 	deliveryMode := msg.Header.Get("X-Delivery-Mode")
 	if deliveryMode == "" {
 		deliveryMode = "CORE"
@@ -792,27 +784,25 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 
 	if numDelivered > 1 {
 		telemetry.RecordMessageRedelivered(recvCtx, deliveryMode, workerName)
-		log.Printf("[%s] JetStream job %s REDELIVERED (delivery #%d) | Correlation: %s", workerName, job.JobID, attemptCount, correlationID)
+		log.Printf("[%s] JetStream job %s REDELIVERED (delivery #%d)", workerName, job.JobID, attemptCount)
 		_ = a.publisher.PublishJobLifecycle(
 			messaging.SubjectJobDelivered,
 			job.JobID,
 			"REDELIVERED",
 			attemptCount,
 			fmt.Sprintf("Message redelivered by JetStream (delivery #%d)", attemptCount),
-			correlationID,
 			workerName,
 			deliveryMode,
 			sequence,
 		)
 	} else {
-		log.Printf("[%s] Received JetStream job %s | Attempt: %d | Correlation: %s", workerName, job.JobID, attemptCount, correlationID)
+		log.Printf("[%s] Received JetStream job %s | Attempt: %d", workerName, job.JobID, attemptCount)
 		_ = a.publisher.PublishJobLifecycle(
 			messaging.SubjectJobDelivered,
 			job.JobID,
 			"DELIVERED",
 			attemptCount,
 			"",
-			correlationID,
 			workerName,
 			deliveryMode,
 			sequence,
@@ -837,7 +827,6 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 		"PROCESSING",
 		attemptCount,
 		"",
-		correlationID,
 		workerName,
 		deliveryMode,
 		sequence,
@@ -894,13 +883,11 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 					"delivery_attempts": attemptCount,
 					"failure_reason":    dlqReason,
 					"timestamp":         time.Now().UTC().Format(time.RFC3339),
-					"correlation_id":    correlationID,
 					"worker":            workerName,
 					"payload":           job.Payload,
 				})
 				dlqMsg := nats.NewMsg(messaging.SubjectJobDLQ)
 				dlqMsg.Data = dlqPayload
-				dlqMsg.Header.Set("X-Correlation-Id", correlationID)
 				dlqMsg.Header.Set("X-Delivery-Attempts", fmt.Sprintf("%d", attemptCount))
 				dlqMsg.Header.Set("X-Original-Subject", messaging.SubjectJobSubmitted)
 				dlqMsg.Header.Set("Nats-Msg-Id", fmt.Sprintf("dlq-%s-%d", job.JobID, attemptCount))
@@ -916,7 +903,6 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 				"DLQ_PUBLISHED",
 				attemptCount,
 				dlqReason,
-				correlationID,
 				workerName,
 				deliveryMode,
 				sequence,
@@ -949,7 +935,6 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 			"FAILED",
 			attemptCount,
 			errMsg,
-			correlationID,
 			workerName,
 			deliveryMode,
 			sequence,
@@ -961,7 +946,6 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 			"FAILED",
 			attemptCount,
 			errMsg,
-			correlationID,
 			workerName,
 			deliveryMode,
 			sequence,
@@ -991,7 +975,6 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 		"ACKED",
 		attemptCount,
 		"",
-		correlationID,
 		workerName,
 		deliveryMode,
 		sequence,

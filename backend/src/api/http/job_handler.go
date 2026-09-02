@@ -3,7 +3,6 @@ package http
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -19,8 +18,8 @@ import (
 
 // JobServiceDomain defines domain operations required by JobHandler.
 type JobServiceDomain interface {
-	SubmitJob(ctx context.Context, job jobs.Job, correlationID string) (*jobs.JobStatusResponse, error)
-	ValidateJob(ctx context.Context, job jobs.Job, correlationID string) (*jobs.JobValidationResponse, error)
+	SubmitJob(ctx context.Context, job jobs.Job) (*jobs.JobStatusResponse, error)
+	ValidateJob(ctx context.Context, job jobs.Job) (*jobs.JobValidationResponse, error)
 	ListJobs() []*jobs.JobDetailResponse
 	GetJob(jobID string) (*jobs.JobDetailResponse, bool)
 }
@@ -76,17 +75,11 @@ func (h *JobHandler) SubmitJob(c *gin.Context) {
 		return
 	}
 
-	correlationID := c.GetHeader("X-Correlation-Id")
-	if correlationID == "" {
-		correlationID = fmt.Sprintf("corr-%s-%d", job.JobID, time.Now().UnixNano())
-	}
-	span.SetAttributes(attribute.String("correlation_id", correlationID))
-
 	if span.SpanContext().HasTraceID() {
 		job.TraceID = span.SpanContext().TraceID().String()
 	}
 
-	resp, err := h.jobService.SubmitJob(spanCtx, job, correlationID)
+	resp, err := h.jobService.SubmitJob(spanCtx, job)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -135,17 +128,11 @@ func (h *JobHandler) ValidateJob(c *gin.Context) {
 		return
 	}
 
-	correlationID := c.GetHeader("X-Correlation-Id")
-	if correlationID == "" {
-		correlationID = fmt.Sprintf("corr-val-%s-%d", job.JobID, time.Now().UnixNano())
-	}
-	span.SetAttributes(attribute.String("correlation_id", correlationID))
-
 	if span.SpanContext().HasTraceID() {
 		job.TraceID = span.SpanContext().TraceID().String()
 	}
 
-	resp, err := h.jobService.ValidateJob(spanCtx, job, correlationID)
+	resp, err := h.jobService.ValidateJob(spanCtx, job)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -153,14 +140,12 @@ func (h *JobHandler) ValidateJob(c *gin.Context) {
 
 		if errors.Is(err, messaging.ErrRequestTimeout) {
 			c.JSON(http.StatusGatewayTimeout, gin.H{
-				"error":          "validation request timed out: no processor replied within 2s",
-				"correlation_id": correlationID,
+				"error": "validation request timed out: no processor replied within 2s",
 			})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":          "Failed to validate job: " + err.Error(),
-			"correlation_id": correlationID,
+			"error": "Failed to validate job: " + err.Error(),
 		})
 		return
 	}

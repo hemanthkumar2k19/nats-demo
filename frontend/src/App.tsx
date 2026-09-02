@@ -1,14 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { StatusPanel } from './components/StatusPanel';
-import { JobPanel } from './components/JobPanel';
-import { ActivityPanel } from './components/ActivityPanel';
-import { ReplayPanel } from './components/ReplayPanel';
+import { CapabilityStudio } from './components/CapabilityStudio';
+import { ObservabilityPanelContainer } from './components/ObservabilityPanelContainer';
 import { JobInspectorPanel } from './components/JobInspectorPanel';
-import { AddressingPanel } from './components/AddressingPanel';
-import { RequestReplyPanel } from './components/RequestReplyPanel';
-import { DeduplicationPanel } from './components/DeduplicationPanel';
-import { DLQPanel } from './components/DLQPanel';
 import { DemoSetupPanel } from './components/DemoSetup/DemoSetupPanel';
 import { ObservabilityPanel } from './components/ObservabilityPanel';
 import { InfoPopover } from './components/DemoSetup/InfoPopover';
@@ -316,41 +311,23 @@ export const App: React.FC = () => {
       />
 
       <main className="dashboard-grid">
-        {/* Left Column: DEMO ACTIONS */}
+        {/* Left Column: NATS CAPABILITY STUDIO */}
         <div className="left-column">
           <div className="column-section-header">
-            <span>DEMO ACTIONS</span>
+            <span>NATS CAPABILITY STUDIO</span>
           </div>
 
-          <JobPanel 
-            onSubmitJob={handleJobSubmit} 
-            onValidateJob={handleJobValidate} 
+          <CapabilityStudio
+            onSubmitJob={handleJobSubmit}
+            onValidateJob={handleJobValidate}
             isSubmitting={isSubmitting}
             isValidating={isValidating}
-            onShowInfo={setActiveInfoKey}
-          />
-
-          <DeduplicationPanel
-            onSubmitJob={handleJobSubmit}
-            isSubmitting={isSubmitting}
-            onShowInfo={setActiveInfoKey}
-          />
-
-          <RequestReplyPanel
-            activities={activities}
-            onValidated={() => refreshActivity(true)}
-            onShowInfo={setActiveInfoKey}
-          />
-          
-          <ReplayPanel 
             jetstreamInfo={jetstreamInfo}
             onTriggerReplay={handleTriggerReplay}
-            onShowInfo={setActiveInfoKey}
-            onRefresh={() => refreshStatus(false)}
-            isRefreshing={isRefreshingStatus}
-          />
-
-          <DLQPanel
+            onRefreshStatus={() => refreshStatus(false)}
+            isRefreshingStatus={isRefreshingStatus}
+            activities={activities}
+            onRefreshActivity={() => refreshActivity(true)}
             onShowInfo={setActiveInfoKey}
             onAlert={(type, msg) => {
               if (type === 'success') {
@@ -368,35 +345,21 @@ export const App: React.FC = () => {
           />
         </div>
 
-        {/* Right Column: LIVE OBSERVABILITY */}
+        {/* Right Column: ACTIVITY */}
         <div className="right-column">
           <div className="column-section-header">
-            <span>LIVE OBSERVABILITY</span>
+            <span>ACTIVITY</span>
           </div>
 
-          <ActivityPanel 
-            activities={activities} 
-            onRefresh={() => refreshActivity(false)} 
-            isLoading={isRefreshingActivity}
+          <ObservabilityPanelContainer
+            activities={activities}
+            onRefreshActivity={() => refreshActivity(false)}
+            isLoadingActivity={isRefreshingActivity}
             onSelectJob={handleSelectJob}
-            onShowInfo={setActiveInfoKey}
-          />
-
-          {(selectedJobId || isLoadingInspector || inspectorError) && (
-            <JobInspectorPanel 
-              job={selectedJobDetail}
-              isLoading={isLoadingInspector}
-              error={inspectorError}
-              onClose={() => setSelectedJobId(null)}
-              onShowInfo={setActiveInfoKey}
-            />
-          )}
-
-          <AddressingPanel 
             subscriptions={subscriptions}
-            events={addressingEvents}
-            onRefresh={() => refreshAddressing(false)}
-            isLoading={isRefreshingAddressing}
+            addressingEvents={addressingEvents}
+            onRefreshAddressing={() => refreshAddressing(false)}
+            isLoadingAddressing={isRefreshingAddressing}
             onShowInfo={setActiveInfoKey}
           />
         </div>
@@ -410,6 +373,17 @@ export const App: React.FC = () => {
         info={activeInfoKey ? NATS_COMPONENTS_INFO[activeInfoKey] : null}
         onClose={() => setActiveInfoKey(null)}
       />
+
+      {/* Job Details Inspector Modal Pop-up */}
+      {(selectedJobId || isLoadingInspector || inspectorError) && (
+        <JobInspectorPanel 
+          job={selectedJobDetail}
+          isLoading={isLoadingInspector}
+          error={inspectorError}
+          onClose={() => setSelectedJobId(null)}
+          onShowInfo={setActiveInfoKey}
+        />
+      )}
     </div>
   );
 };

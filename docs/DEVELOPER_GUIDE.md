@@ -56,14 +56,15 @@ nats-demo/
 ### Frontend
 - **React SPA Dashboard (`frontend`)**:
    - Displays interactive **Current Demo Setup** pairing runtime topology on the left with embedded **Consumer Lab** controls and live metrics on the right.
-   - Accurately visualizes a two-tier architecture: Tier 1 with **React UI** and **Demo Control Service** connected to Tier 2 with **Job Service**, **NATS Server**, and **Processor Service**, clearly distinguishing deployed runtime components from internal NATS/JetStream resources (`JOBS Stream`, `job-processor Consumer`) and worker pool routines (`processor-1`, `processor-2`).
-   - Provides contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
-   - Provides controls to publish jobs in Core NATS or JetStream mode (`JobPanel` - Pub Sub).
-   - Provides a dedicated Message Deduplication panel (`DeduplicationPanel`) displaying stream deduplication parameters (`2m` window, `Nats-Msg-Id`), NATS docs knowledge, and live duplicate testing.
-   - Provides a dedicated Request/Reply panel to send validation requests and observe responses.
-   - Configures JetStream consumers (Durable vs Ephemeral, 1 or 2 Workers, Normal vs Ordered) directly within Demo Setup.
-   - Toggles the processor ON/OFF directly from the global status bar.
-   - Inspects job histories, wildcard events, and subject addressing logs.
+   - Accurately visualizes a two-tier architecture: Tier 1 with **React UI** and **Demo Control Service** connected to Tier 2 with **Job Service**, **NATS Server**, and **Processor Service**, clearly distinguishing deployed runtime components from internal NATS/JetStream resources (`JOBS Stream`, `JOBS_DLQ Stream`, `job-processor Consumer`, `dlq-inspector Consumer`).
+   - Features the **NATS Capability Studio** (`CapabilityStudio.tsx`) unifying all demo action triggers into segmented tabs:
+     1. `Pub/Sub & Stream`: Standard job submissions with instant switch to JetStream deduplication test bench.
+     2. `Request / Reply`: Synchronous RPC validation testing and timeout simulation.
+     3. `Dead Letter Queue`: Poison message failure routing and DLQ message inspection.
+     4. `Stream Replay`: Historical time-window and sequence rewind controls.
+   - Features the **Observability Panel Container** (`ObservabilityPanelContainer.tsx`) with a top-level switcher between `Live Activity Log` and `Subject Addressing & Wildcards`.
+   - Features the **Modal Job Inspector** (`JobInspectorPanel.tsx`) opening directly as a focused pop-up overlay upon clicking any row in the Activity Log, with event display limits (15, 30, 50, all) keeping the view clean and compact.
+   - Contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
 
 ---
 
@@ -132,11 +133,10 @@ UI                 job-service           NATS          processor-service
 |<----------------------|                 |                    |
 ```
 
-**Correlation ID propagation**:
-- The HTTP client sends (or the backend generates) a `X-Correlation-Id` header.
-- `job-service` includes it in the NATS `RequestMsg` headers.
-- `processor-service` extracts it and forwards it in the `jobs.request.received` and `jobs.reply.sent` lifecycle events.
-- All activity log entries carry the same correlation ID so the full flow can be traced.
+**W3C Trace Context propagation**:
+- OpenTelemetry injects standard W3C `traceparent` headers into outgoing NATS messages.
+- `processor-service` extracts this context to link internal spans in Grafana Tempo.
+- All requests and lifecycle events share the same OpenTelemetry `Trace ID` for end-to-end distributed tracing.
 
 **Natural timeout when Processor is OFF**:
 - When the processor state is toggled to `OFF`, it calls `unsubscribeValidation()`, which removes the `jobs.validate` subscriber.

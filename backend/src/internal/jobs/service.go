@@ -8,8 +8,8 @@ import (
 
 // Publisher interface abstracts the messaging layer to decouple the domain layer from NATS.
 type Publisher interface {
-	PublishJobSubmitted(ctx context.Context, job Job, correlationID string) error
-	RequestJobValidation(ctx context.Context, job Job, correlationID string) (*JobValidationResponse, error)
+	PublishJobSubmitted(ctx context.Context, job Job) error
+	RequestJobValidation(ctx context.Context, job Job) (*JobValidationResponse, error)
 }
 
 // Service manages the business workflows for jobs.
@@ -27,7 +27,7 @@ func NewService(publisher Publisher) *Service {
 }
 
 // SubmitJob processes and submits a job to the publisher.
-func (s *Service) SubmitJob(ctx context.Context, job Job, correlationID string) (*JobStatusResponse, error) {
+func (s *Service) SubmitJob(ctx context.Context, job Job) (*JobStatusResponse, error) {
 	if job.JobID == "" {
 		return nil, errors.New("job_id is required")
 	}
@@ -36,29 +36,28 @@ func (s *Service) SubmitJob(ctx context.Context, job Job, correlationID string) 
 	}
 
 	// Publish to NATS
-	if err := s.publisher.PublishJobSubmitted(ctx, job, correlationID); err != nil {
+	if err := s.publisher.PublishJobSubmitted(ctx, job); err != nil {
 		return nil, fmt.Errorf("failed to publish job: %w", err)
 	}
 
-	s.store.AddJob(job, "SUBMITTED", correlationID)
+	s.store.AddJob(job, "SUBMITTED")
 
 	return &JobStatusResponse{
-		JobID:         job.JobID,
-		Status:        "SUBMITTED",
-		CorrelationID: correlationID,
-		TraceID:       job.TraceID,
+		JobID:   job.JobID,
+		Status:  "SUBMITTED",
+		TraceID: job.TraceID,
 	}, nil
 }
 
 // ValidateJob validates a job payload by sending a Request/Reply call over NATS.
-func (s *Service) ValidateJob(ctx context.Context, job Job, correlationID string) (*JobValidationResponse, error) {
+func (s *Service) ValidateJob(ctx context.Context, job Job) (*JobValidationResponse, error) {
 	if job.TraceID != "" {
 		s.store.SetTraceID(job.JobID, job.TraceID)
 	}
 
-	resp, err := s.publisher.RequestJobValidation(ctx, job, correlationID)
+	resp, err := s.publisher.RequestJobValidation(ctx, job)
 	if err != nil {
-		s.store.AddJob(job, "VALIDATION_FAILED", correlationID)
+		s.store.AddJob(job, "VALIDATION_FAILED")
 		return nil, err
 	}
 
@@ -66,7 +65,7 @@ func (s *Service) ValidateJob(ctx context.Context, job Job, correlationID string
 	if resp.Valid {
 		status = "VALID"
 	}
-	s.store.AddJob(job, status, correlationID)
+	s.store.AddJob(job, status)
 
 	return resp, nil
 }

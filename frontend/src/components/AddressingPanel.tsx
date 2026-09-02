@@ -90,12 +90,17 @@ export const AddressingPanel: React.FC<AddressingPanelProps> = ({
       {/* 2. Observed Message Activity Section */}
       <div>
         <div className="panel-header" style={{ marginBottom: '0.75rem' }}>
-          <h2 className="panel-title">
-            <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10a2 2 0 01-2 2h-2a2 2 0 01-2-2zm9-4a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-            Subject Routing Activity
-          </h2>
+          <div>
+            <h2 className="panel-title">
+              <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10a2 2 0 01-2 2h-2a2 2 0 01-2-2zm9-4a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+              Subject Routing Activity
+            </h2>
+            <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+              Showing latest {Math.min(10, events.length)} of {events.length} events (capped for demo clarity)
+            </span>
+          </div>
           <button 
             className="btn btn-secondary" 
             onClick={onRefresh} 
@@ -106,7 +111,7 @@ export const AddressingPanel: React.FC<AddressingPanelProps> = ({
           </button>
         </div>
 
-        <div className="activity-table-wrapper">
+        <div className="activity-table-wrapper" style={{ maxHeight: '300px', overflowY: 'auto' }}>
           {events.length === 0 ? (
             <div className="empty-state" style={{ padding: '1.5rem 1rem' }}>
               <p style={{ fontWeight: 500, marginBottom: '0.25rem' }}>No routing activity observed yet</p>
@@ -125,7 +130,7 @@ export const AddressingPanel: React.FC<AddressingPanelProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {events.map((evt, idx) => {
+                {events.slice(0, 10).map((evt, idx) => {
                   const tokenCount = evt.subject.split('.').length;
                   const isMultiTokenOnly = hasReceived(evt, 'multi-level') && !hasReceived(evt, 'single-level');
 

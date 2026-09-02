@@ -26,7 +26,7 @@ func NewPublisher(client *natsclient.Client) *Publisher {
 }
 
 // PublishJobSubmitted marshals the job to JSON and publishes it to the jobs.submitted subject using the selected delivery mode.
-func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job, correlationID string) error {
+func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job) error {
 	payload, err := json.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("failed to marshal job payload: %w", err)
@@ -49,9 +49,6 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job, corre
 	msg.Header.Set("Content-Type", "application/json")
 	msg.Header.Set("Nats-Msg-Id", job.JobID)
 	msg.Header.Set("X-Message-Id", fmt.Sprintf("msg-sub-%s-%d", job.JobID, time.Now().UnixNano()))
-	if correlationID != "" {
-		msg.Header.Set("X-Correlation-Id", correlationID)
-	}
 	msg.Header.Set("X-Source", "job-service")
 	msg.Header.Set("X-Delivery-Mode", job.DeliveryMode)
 	msg.Data = payload
@@ -77,10 +74,10 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job, corre
 		if ack.Duplicate {
 			pubSpan.SetAttributes(attribute.Bool("jetstream.duplicate", true))
 			// Duplicate publish recognized by JetStream deduplication window
-			_ = p.PublishJobLifecycle(SubjectJobDeduplicated, job.JobID, "DEDUPLICATED", 1, "Duplicate message recognized by JetStream deduplication window", correlationID, "job-service", job.DeliveryMode, ack.Sequence)
+			_ = p.PublishJobLifecycle(SubjectJobDeduplicated, job.JobID, "DEDUPLICATED", 1, "Duplicate message recognized by JetStream deduplication window", "job-service", job.DeliveryMode, ack.Sequence)
 		} else {
 			// Stored successfully: publish jobs.stored event
-			_ = p.PublishJobLifecycle(SubjectJobStored, job.JobID, "STORED", 1, "", correlationID, "job-service", job.DeliveryMode, ack.Sequence)
+			_ = p.PublishJobLifecycle(SubjectJobStored, job.JobID, "STORED", 1, "", "job-service", job.DeliveryMode, ack.Sequence)
 		}
 	} else {
 		if err := p.client.Conn.PublishMsg(msg); err != nil {
@@ -99,9 +96,7 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job, corre
 var ErrRequestTimeout = fmt.Errorf("request timed out: no response from processor service")
 
 // RequestJobValidation sends a sync validation request via NATS Request/Reply.
-// correlationID is forwarded as X-Correlation-Id so the interaction can be
-// traced across the job-service and processor-service logs.
-func (p *Publisher) RequestJobValidation(ctx context.Context, job jobs.Job, correlationID string) (*jobs.JobValidationResponse, error) {
+func (p *Publisher) RequestJobValidation(ctx context.Context, job jobs.Job) (*jobs.JobValidationResponse, error) {
 	payload, err := json.Marshal(job)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal validation payload: %w", err)
@@ -123,9 +118,6 @@ func (p *Publisher) RequestJobValidation(ctx context.Context, job jobs.Job, corr
 	msg.Header.Set("Content-Type", "application/json")
 	msg.Header.Set("X-Message-Id", fmt.Sprintf("msg-val-%s-%d", job.JobID, time.Now().UnixNano()))
 	msg.Header.Set("X-Source", "job-service")
-	if correlationID != "" {
-		msg.Header.Set("X-Correlation-Id", correlationID)
-	}
 	msg.Data = payload
 
 	// Inject W3C traceparent into NATS message headers
@@ -137,12 +129,10 @@ func (p *Publisher) RequestJobValidation(ctx context.Context, job jobs.Job, corr
 		"type":           job.Type,
 		"status":         "REQUEST_SENT",
 		"delivery_count": 1,
-		"correlation_id": correlationID,
 	})
 	reqEvtMsg := nats.NewMsg(SubjectJobRequestSent)
 	reqEvtMsg.Data = reqEvtData
 	reqEvtMsg.Header.Set("X-Source", "job-service")
-	reqEvtMsg.Header.Set("X-Correlation-Id", correlationID)
 	_ = p.client.Conn.PublishMsg(reqEvtMsg)
 
 	reply, err := p.client.Conn.RequestMsg(msg, 2*time.Second)
@@ -155,12 +145,10 @@ func (p *Publisher) RequestJobValidation(ctx context.Context, job jobs.Job, corr
 			"type":           job.Type,
 			"status":         "REQUEST_TIMEOUT",
 			"delivery_count": 1,
-			"correlation_id": correlationID,
 		})
 		timeoutEvtMsg := nats.NewMsg(SubjectJobRequestTimeout)
 		timeoutEvtMsg.Data = timeoutEvtData
 		timeoutEvtMsg.Header.Set("X-Source", "job-service")
-		timeoutEvtMsg.Header.Set("X-Correlation-Id", correlationID)
 		_ = p.client.Conn.PublishMsg(timeoutEvtMsg)
 
 		// Surface timeout and no-responder as a typed sentinel so the caller
@@ -183,12 +171,10 @@ func (p *Publisher) RequestJobValidation(ctx context.Context, job jobs.Job, corr
 		"type":           job.Type,
 		"status":         "REPLY_RECEIVED",
 		"delivery_count": 1,
-		"correlation_id": correlationID,
 	})
 	replyEvtMsg := nats.NewMsg(SubjectJobReplyReceived)
 	replyEvtMsg.Data = replyEvtData
 	replyEvtMsg.Header.Set("X-Source", "job-service")
-	replyEvtMsg.Header.Set("X-Correlation-Id", correlationID)
 	_ = p.client.Conn.PublishMsg(replyEvtMsg)
 
 	reqSpan.SetStatus(codes.Ok, "validated")
@@ -206,7 +192,7 @@ type JobLifecycleEvent struct {
 }
 
 // PublishJobLifecycle publishes a job lifecycle transition event.
-func (p *Publisher) PublishJobLifecycle(subject string, jobID string, status string, deliveryCount int, errMsg string, correlationID string, workerName string, deliveryMode string, sequence uint64) error {
+func (p *Publisher) PublishJobLifecycle(subject string, jobID string, status string, deliveryCount int, errMsg string, workerName string, deliveryMode string, sequence uint64) error {
 	event := JobLifecycleEvent{
 		JobID:         jobID,
 		Status:        status,
@@ -225,9 +211,6 @@ func (p *Publisher) PublishJobLifecycle(subject string, jobID string, status str
 	msg.Header.Set("Content-Type", "application/json")
 	msg.Header.Set("Nats-Msg-Id", jobID)
 	msg.Header.Set("X-Message-Id", fmt.Sprintf("msg-lf-%s-%s-%d", jobID, status, time.Now().UnixNano()))
-	if correlationID != "" {
-		msg.Header.Set("X-Correlation-Id", correlationID)
-	}
 	msg.Header.Set("X-Source", workerName)
 	msg.Data = payload
 
