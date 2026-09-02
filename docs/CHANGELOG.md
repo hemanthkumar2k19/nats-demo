@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-02
 
+### Changed (Rework Frontend Component Educational Information Content)
+- **Standardized Educational Hierarchy**: Restructured all component information modals in `natsInfo.ts` into a cohesive 4-part hierarchy: Role (*What is this?*), Concepts (*What technical concepts does it represent?*), Demo Usage (*How is this demonstrated here?*), and Trivia (*What useful NATS fact or terminology should I remember?*).
+- **Correct Conceptual Boundaries**:
+  - Reinforced that **Streams** persist messages while **Consumers** maintain delivery state and progress cursors.
+  - Clarified that **Durable vs. Ephemeral** defines the consumer lifecycle across client sessions, not message persistence.
+  - Distinctly separated **Core NATS** (transient pub/sub & req/reply) from **JetStream** (persistence, streams, consumers, acknowledgements, replay).
+  - Clarified that `Nats-Msg-Id` serves JetStream server-side duplicate message detection rather than acting merely as an application identifier.
+- **Single Entry Point Preserved**: Maintained exactly one `(i)` trigger button per component and panel with no added fields or UI overhead.
+
+### Reason
+- Ensure every `(i)` educational popover across the demo has a clear, accurate, and consistent pedagogical purpose, teaching genuine NATS concepts and architectural models rather than generic UI descriptions.
+
+### Affected Area
+- Frontend educational content (`frontend/src/content/natsInfo.ts`), documentation (`docs/CHANGELOG.md`).
+
 ### Changed (Service Renaming: demo-service to job-service)
 - **Backend Service Renaming**: Renamed the primary API and publisher service from `demo-service` to `job-service`. Created entry point `backend/src/cmd/job-service/main.go`, updated OpenTelemetry service registration to `"job-service"`, and updated log output prefixes.
 - **Header Attribution & Event Metadata**: Updated `X-Source` header and in-memory event tracking to identify `"job-service"` as the source for `PUBLISHED`, `STORED`, `DEDUPLICATED`, `REQUEST_SENT`, and `REPLY_RECEIVED` transitions.
