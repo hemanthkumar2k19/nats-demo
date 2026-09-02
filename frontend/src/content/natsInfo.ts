@@ -156,6 +156,24 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
       'Core NATS is transient: messages are delivered to active subscribers but are not persisted for future delivery. JetStream can persist published messages and make them available to consumers later.',
   },
 
+  'message-deduplication': {
+    id: 'message-deduplication',
+    title: 'Message Deduplication',
+    role: 'JetStream provides server-side, Stream-scoped, time-windowed deduplication based on an optional Nats-Msg-Id; it is not a global exactly-once mechanism.',
+    concepts: [
+      'Stream-Level Feature: Belongs to the Stream, not the Consumer',
+      'Deduplication Window: Default 2m (configured via duplicate_window; no universal maximum)',
+      'Optional Header: Triggered by Nats-Msg-Id (absent header opts out; payload is never inspected)',
+      'Scope & Clustering: Scoped to the Stream (replicated across stream replicas; not global across regions)',
+      'Server Overhead: Lightweight in-memory ID tracking and lookup on publish (no second pipeline)',
+      'PubAck Response: Duplicate publish returns PubAck { duplicate: true, sequence: originalSeq }',
+    ],
+    demoUsage:
+      'The JOBS stream tracks Nats-Msg-Id within the configured 2-minute window. Publishing an identical ID within 120s causes JetStream to suppress duplicate storage and emit a DEDUPLICATED event without re-delivering to workers.',
+    trivia:
+      'Architecture Summary (Stream vs Global):\n- Default Window: 2 minutes (server can set maximum limits)\n- Scope: Per-Stream only (follows stream replicas; not global cross-region)\n- Header: Optional (omit Nats-Msg-Id to opt out)\n- Overhead: In-memory sliding window ID lookup; keep window sized to publisher retry needs',
+  },
+
   'consumer-lab': {
     id: 'consumer-lab',
     title: 'Consumer Lab',

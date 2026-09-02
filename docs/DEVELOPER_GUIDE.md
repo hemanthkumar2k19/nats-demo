@@ -52,8 +52,9 @@ nats-demo/
    - Accurately distinguishes **Deployed Runtime Components** (`Job Service`, `NATS Server`, `Processor Service`) from **Internal NATS/JetStream Resources** (`JOBS Stream`, `job-processor Consumer`) and worker pool routines (`processor-1`, `processor-2`).
    - Provides contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
    - Provides controls to publish jobs in Core NATS or JetStream mode (`JobPanel` - Pub Sub).
-   - Configures JetStream consumers (Durable vs Ephemeral, 1 or 2 Workers, Normal vs Ordered) directly within Demo Setup.
+   - Provides a dedicated Message Deduplication panel (`DeduplicationPanel`) displaying stream deduplication parameters (`2m` window, `Nats-Msg-Id`), NATS docs knowledge, and live duplicate testing.
    - Provides a dedicated Request/Reply panel to send validation requests and observe responses.
+   - Configures JetStream consumers (Durable vs Ephemeral, 1 or 2 Workers, Normal vs Ordered) directly within Demo Setup.
    - Toggles the processor ON/OFF directly from the global status bar.
    - Inspects job histories, wildcard events, and subject addressing logs.
 

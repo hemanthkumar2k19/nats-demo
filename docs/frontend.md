@@ -117,7 +117,7 @@ Use a single primary screen initially.
 +---------------------------------------------------------+-----------------------------------------------------------------------------+
 | [JobPanel]                                              | [ActivityPanel]                                                             |
 | +-----------------------------------------------------+ | +-------------------------------------------------------------------------+ |
-| | Submit Job                                          | | Activity Log                                                [Refresh] | |
+| | Pub Sub                                             | | Activity Log                                                [Refresh] | |
 | |                                                     | | Time     Job ID    Mode       Event        Subject      Worker  Dlv  | |
 | | Delivery Mode: (o) Core NATS  ( ) JetStream         | | ----------------------------------------------------------------------- | |
 | | Job ID:    [ job-101                 ]              | | 10:30:01 job-101   CORE       PUBLISHED    jobs.sub...  -       1    | |
@@ -126,21 +126,28 @@ Use a single primary screen initially.
 | | [ Submit Job ]                    [ Validate ]      | +-------------------------------------------------------------------------+ |
 | +-----------------------------------------------------+                                                                               |
 |                                                         | [JobInspectorPanel] (When Job ID is clicked)                                |
-| [RequestReplyPanel]                                     | +-------------------------------------------------------------------------+ |
+| [DeduplicationPanel]                                   | +-------------------------------------------------------------------------+ |
 | +-----------------------------------------------------+ | | Job Details                                      [Close]              | |
-| | Request / Reply                                    | | | Job ID: job-101        Status: COMPLETED                              | |
-| | Subject: jobs.validate                             | | | Correlation ID: abc-123    Delivery Count: 1                          | |
-| | Job ID:    [ job-val-101 ]                          | | | Status History: SUBMITTED -> PROCESSING -> COMPLETED                  | |
-| | [ Send Request ]                                    | | | Raw Payload: { ... }                                                  | |
-| | Status: [ SUCCESS / TIMEOUT ]                       | | +-------------------------------------------------------------------------+ |
+| | Message Deduplication                               | | | Job ID: job-101        Status: COMPLETED                              | |
+| | Window: 2m | Header: Nats-Msg-Id                    | | | Correlation ID: abc-123    Delivery Count: 1                          | |
+| | [ Publish 1st ]        [ Publish Duplicate ]        | | | Status History: SUBMITTED -> PROCESSING -> COMPLETED                  | |
+| +-----------------------------------------------------+ | | Raw Payload: { ... }                                                  | |
+|                                                         | +-------------------------------------------------------------------------+ |
+| [RequestReplyPanel]                                     |                                                                             |
+| +-----------------------------------------------------+ | [AddressingPanel]                                                          |
+| | Request / Reply                                     | +-------------------------------------------------------------------------+ |
+| | Subject: jobs.validate                              | | NATS Subject Addressing                                                 | |
+| | Job ID:    [ job-val-101 ]                          | | Exact, Single (*), Multi (>) active subscriptions                     | |
+| | [ Send Request ]                                    | | Subject Routing Activity matrix                                       | |
+| | Status: [ SUCCESS / TIMEOUT ]                       | +-------------------------------------------------------------------------+ |
 | +-----------------------------------------------------+                                                                               |
-|                                                         | [AddressingPanel]                                                          |
-| [ReplayPanel]                                           | +-------------------------------------------------------------------------+ |
-| +-----------------------------------------------------+ | | NATS Subject Addressing                                                 | |
-| | JetStream Replay                                    | | | Exact, Single (*), Multi (>) active subscriptions                     | |
-| | From Sequence: [ 100 ]   To Sequence: [ 120 ]       | | | Subject Routing Activity matrix                                       | |
-| | [ Start Replay ]                                     | | +-------------------------------------------------------------------------+ |
-| +-----------------------------------------------------+                                                                               |
+|                                                         |                                                                             |
+| [ReplayPanel]                                           |                                                                             |
+| +-----------------------------------------------------+ |                                                                             |
+| | JetStream Replay                                    | |                                                                             |
+| | From Sequence: [ 100 ]   To Sequence: [ 120 ]       | |                                                                             |
+| | [ Start Replay ]                                     | |                                                                             |
+| +-----------------------------------------------------+ |                                                                             |
 +=======================================================================================================================================+
 ```
 

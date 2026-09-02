@@ -23,29 +23,6 @@ export const JobPanel: React.FC<JobPanelProps> = ({
     JSON.stringify({ file: 'image-101.jpg', simulate_failure: false, simulate_failure_count: 0 }, null, 2)
   );
   const [jsonError, setJsonError] = useState<string | null>(null);
-  const [dupMsgId, setDupMsgId] = useState<string>(`job-dup-101`);
-
-  const handlePublishDup = async (isDuplicate: boolean) => {
-    setJsonError(null);
-    if (!dupMsgId.trim()) {
-      setJsonError('Message ID is required for deduplication demo');
-      return;
-    }
-    try {
-      const job: Job = {
-        job_id: dupMsgId.trim(),
-        type: 'deduplication-test',
-        payload: { file: 'dedup-sample.dat', simulate_failure: false },
-        delivery_mode: 'JETSTREAM',
-      };
-      await onSubmitJob(job);
-      if (!isDuplicate) {
-        // keep same dupMsgId so clicking Publish Duplicate uses the exact same ID
-      }
-    } catch (err: any) {
-      setJsonError(err.message || 'Publish failed');
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,47 +198,6 @@ export const JobPanel: React.FC<JobPanelProps> = ({
         </div>
       </form>
 
-      <div className="deduplication-section" style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-          <label className="form-label" style={{ marginBottom: 0, fontWeight: 600 }}>
-            MESSAGE DEDUPLICATION
-          </label>
-          <span className="badge badge-subtle" style={{ fontSize: '0.6875rem' }}>Nats-Msg-Id</span>
-        </div>
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.625rem', lineHeight: 1.4 }}>
-          Publishing with an identical Message ID within the deduplication window causes JetStream to recognize and discard duplicates.
-        </p>
-        <div className="form-group" style={{ marginBottom: '0.625rem' }}>
-          <input
-            type="text"
-            className="form-input font-mono"
-            value={dupMsgId}
-            onChange={(e) => setDupMsgId(e.target.value)}
-            placeholder="e.g. job-dup-101"
-            disabled={isSubmitting}
-          />
-        </div>
-        <div className="btn-group">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={isSubmitting}
-            onClick={() => handlePublishDup(false)}
-            style={{ flex: 1, fontSize: '0.75rem' }}
-          >
-            Publish (1st)
-          </button>
-          <button
-            type="button"
-            className="btn btn-outline-warning"
-            disabled={isSubmitting}
-            onClick={() => handlePublishDup(true)}
-            style={{ flex: 1, fontSize: '0.75rem' }}
-          >
-            Publish Duplicate
-          </button>
-        </div>
-      </div>
     </div>
   );
 };

@@ -7,6 +7,7 @@ import { ReplayPanel } from './components/ReplayPanel';
 import { JobInspectorPanel } from './components/JobInspectorPanel';
 import { AddressingPanel } from './components/AddressingPanel';
 import { RequestReplyPanel } from './components/RequestReplyPanel';
+import { DeduplicationPanel } from './components/DeduplicationPanel';
 import { DemoSetupPanel } from './components/DemoSetup/DemoSetupPanel';
 import { ObservabilityPanel } from './components/ObservabilityPanel';
 import { InfoPopover } from './components/DemoSetup/InfoPopover';
@@ -309,6 +310,12 @@ export const App: React.FC = () => {
             onValidateJob={handleJobValidate} 
             isSubmitting={isSubmitting}
             isValidating={isValidating}
+            onShowInfo={setActiveInfoKey}
+          />
+
+          <DeduplicationPanel
+            onSubmitJob={handleJobSubmit}
+            isSubmitting={isSubmitting}
             onShowInfo={setActiveInfoKey}
           />
 

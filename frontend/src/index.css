@@ -1913,6 +1913,10 @@ body {
   padding: 0.75rem;
 }
 
+.info-trivia-box .info-text {
+  white-space: pre-line;
+}
+
 .info-modal-footer {
   padding: 0.875rem 1.25rem;
   border-top: 1px solid var(--border-color);

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-02
 
+### Added (Standalone Message Deduplication Component)
+- **Extracted Component (`DeduplicationPanel.tsx`)**: Promoted Message Deduplication from an embedded subsection in `JobPanel.tsx` to a full standalone panel under `DEMO ACTIONS`.
+- **Standardized Panel Design**: Matched the exact visual and DOM hierarchy of existing panels (`JobPanel`, `RequestReplyPanel`, `ReplayPanel`), using standard `.panel`, `<h2 className="panel-title">` with SVG shield-check icon, and standard `node-info-btn` for `(i)`.
+- **Non-Editable Config Parameters**: Displayed the current active stream parameters directly in the panel: `Stream Config: Duplicates = 2m 0s (120s window)`, `Message ID Header: Nats-Msg-Id`, and `Target Stream: JOBS (Subject: jobs.submitted)`.
+- **Educational Popover Encapsulation**: Distilled official NATS/JetStream deduplication architecture into a compact 4-part preview in `natsInfo.ts` covering stream-level ownership, default vs configurable window limits, opt-in `Nats-Msg-Id` semantics, cluster replication vs multi-region boundaries, and server-side memory lookup overhead.
+- **Interactive Duplicate Testing**: Streamlined form containing `Message ID (Nats-Msg-Id)` input with `Publish (1st)` and `Publish Duplicate` action buttons and standard inline status feedback.
+
+### Reason
+- Ensure Message Deduplication possesses identical visual design, interaction patterns, and educational encapsulation as all other demo action panels.
+
+### Affected Area
+- Frontend (`DeduplicationPanel.tsx`, `JobPanel.tsx`, `App.tsx`, `natsInfo.ts`, `index.css`), documentation (`DEVELOPER_GUIDE.md`, `frontend.md`, `CHANGELOG.md`).
+
 ### Changed (Rework Frontend Component Educational Information Content)
 - **Standardized Educational Hierarchy**: Restructured all component information modals in `natsInfo.ts` into a cohesive 4-part hierarchy: Role (*What is this?*), Concepts (*What technical concepts does it represent?*), Demo Usage (*How is this demonstrated here?*), and Trivia (*What useful NATS fact or terminology should I remember?*).
 - **Correct Conceptual Boundaries**:
