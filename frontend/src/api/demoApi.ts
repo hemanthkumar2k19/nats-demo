@@ -95,6 +95,44 @@ export async function submitJob(job: Job): Promise<JobStatusResponse> {
   return response.json();
 }
 
+export interface ScheduleJobRequest {
+  job_id: string;
+  type: string;
+  payload?: Record<string, any>;
+  delivery_mode?: string;
+  deliver_after_seconds?: number;
+  deliver_at?: string;
+}
+
+export interface ScheduleJobResponse {
+  job_id: string;
+  status: string;
+  scheduled_for: string;
+  delay_seconds: number;
+  trace_id?: string;
+}
+
+/**
+ * Schedules a job for future release on the job-service API.
+ * Calls POST /jobs/schedule on :8081.
+ */
+export async function scheduleJob(req: ScheduleJobRequest): Promise<ScheduleJobResponse> {
+  const response = await fetch(`${JOB_SERVICE_URL}/jobs/schedule`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(req),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to schedule job: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+
+  return response.json();
+}
+
 export interface ValidationResult {
   valid?: boolean;
   message?: string;
@@ -213,6 +251,16 @@ export async function getActivity(): Promise<Activity[]> {
     throw new Error(`Failed to fetch activity logs: ${response.status} ${response.statusText}. ${errorText}`);
   }
   return response.json();
+}
+
+export async function clearActivity(): Promise<void> {
+  const response = await fetch(`${DEMO_CONTROL_URL}/activities`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to clear activity logs: ${response.status} ${response.statusText}. ${errorText}`);
+  }
 }
 
 export interface JobHistoryItem {

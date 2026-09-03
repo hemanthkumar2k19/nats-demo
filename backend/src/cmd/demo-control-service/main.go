@@ -14,6 +14,7 @@ import (
 	apihttp "nats-demo/api/http"
 	"nats-demo/internal/activity"
 	"nats-demo/internal/config"
+	"nats-demo/internal/events"
 	"nats-demo/internal/messaging"
 	"nats-demo/internal/natsclient"
 	"nats-demo/internal/telemetry"
@@ -24,15 +25,16 @@ import (
 
 // App manages the lifecycle of the demo-control-service.
 type App struct {
-	cfg             *config.Config
-	natsClient      *natsclient.Client
-	httpServer      *http.Server
-	activityTracker *activity.Tracker
-	observer        *messaging.Observer
-	lifecycleSub    *nats.Subscription
-	observerSubs    []*nats.Subscription
-	jobServiceURL   string
-	otelShutdown    func(context.Context) error
+	cfg              *config.Config
+	natsClient       *natsclient.Client
+	httpServer       *http.Server
+	activityTracker  *activity.Tracker
+	observer         *messaging.Observer
+	lifecycleSub     *nats.Subscription
+	observerSubs     []*nats.Subscription
+	advisoryListener *events.AdvisoryListener
+	jobServiceURL    string
+	otelShutdown     func(context.Context) error
 }
 
 // Init loads configuration, establishes connections, and configures routing.
@@ -143,6 +145,14 @@ func (a *App) Run() error {
 		log.Printf("[Run] Subscribed observer: %s (%s)", subName, subSubject)
 	}
 
+	// Start NATS operational events and JetStream advisory listener (shipping to Loki)
+	a.advisoryListener = events.NewAdvisoryListener(a.natsClient.Conn)
+	if err := a.advisoryListener.Start(); err != nil {
+		log.Printf("[Run] Warning: failed to start advisory listener: %v", err)
+	} else {
+		log.Println("[Run] Started NATS advisory listener ($SYS and $JS.EVENT.ADVISORY.>)")
+	}
+
 	serverErrors := make(chan error, 1)
 	go func() {
 		log.Printf("[Run] Demo Control Service HTTP server listening on %s", a.httpServer.Addr)
@@ -169,6 +179,10 @@ func (a *App) Stop() error {
 	defer cancel()
 
 	var firstErr error
+
+	if a.advisoryListener != nil {
+		a.advisoryListener.Close()
+	}
 
 	if a.lifecycleSub != nil {
 		if err := a.lifecycleSub.Unsubscribe(); err != nil && firstErr == nil {

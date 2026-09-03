@@ -17,6 +17,7 @@ import {
   validateJob, 
   getServiceStatus, 
   getActivity,
+  clearActivity,
   getJobDetail,
   replayJobs,
   JobDetailResponse,
@@ -147,6 +148,15 @@ export const App: React.FC = () => {
       }
     } finally {
       if (!silent) setIsRefreshingActivity(false);
+    }
+  };
+
+  const handleClearActivity = async () => {
+    try {
+      await clearActivity();
+      setActivities([]);
+    } catch (err: any) {
+      setError(err.message || 'Failed to clear activity logs');
     }
   };
 
@@ -303,7 +313,7 @@ export const App: React.FC = () => {
         onShowInfo={setActiveInfoKey}
       />
 
-      {/* Current Demo Setup & NATS Information Topology & Consumer Lab */}
+      {/* Current Demo Setup & NATS Information Topology */}
       <DemoSetupPanel
         services={services}
         jetstreamInfo={jetstreamInfo}
@@ -311,22 +321,6 @@ export const App: React.FC = () => {
         dlqStatus={dlqStatus}
         queueGroupStatus={queueGroupStatus}
         onShowInfo={setActiveInfoKey}
-        onAlert={(type, msg) => {
-          if (type === 'success') {
-            setSuccess(msg);
-            refreshStatus(true);
-            refreshActivity(true);
-          } else if (type === 'error') {
-            setError(msg);
-          }
-        }}
-        onActivityUpdated={() => {
-          refreshActivity(true);
-          setTimeout(() => refreshActivity(true), 600);
-          setTimeout(() => refreshActivity(true), 1500);
-        }}
-        onConfigChanged={setConsumerStatus}
-        onQueueGroupConfigChanged={setQueueGroupStatus}
       />
 
       <main className="dashboard-grid">
@@ -361,6 +355,13 @@ export const App: React.FC = () => {
               refreshStatus(true);
               refreshActivity(true);
             }}
+            onConfigChanged={setConsumerStatus}
+            onActivityUpdated={() => {
+              refreshActivity(true);
+              setTimeout(() => refreshActivity(true), 600);
+              setTimeout(() => refreshActivity(true), 1500);
+            }}
+            isProcessing={services.find((s) => s.name.toLowerCase().includes('processor'))?.processing ?? false}
           />
         </div>
 
@@ -373,6 +374,7 @@ export const App: React.FC = () => {
           <ObservabilityPanelContainer
             activities={activities}
             onRefreshActivity={() => refreshActivity(false)}
+            onClearActivity={handleClearActivity}
             isLoadingActivity={isRefreshingActivity}
             onSelectJob={handleSelectJob}
             subscriptions={subscriptions}

@@ -43,7 +43,39 @@ Submit a job for processing. This is a **fire-and-forget** operation. The Job Se
 
 ---
 
-### 1.2. Validate Job
+### 1.2. Schedule Job (Application-Level Deferred Publishing)
+Registers a job to be published to NATS after an application timer expires.
+
+* **Endpoint**: `POST /jobs/schedule`
+* **Content-Type**: `application/json`
+* **Request Body**:
+  ```json
+  {
+    "job_id": "sched-job-101",
+    "type": "email-alert",
+    "payload": {
+      "recipient": "user@example.com"
+    },
+    "delivery_mode": "JETSTREAM",
+    "deliver_after_seconds": 5
+  }
+  ```
+* **Response**: `202 Accepted`
+* **Response Body**:
+  ```json
+  {
+    "job_id": "sched-job-101",
+    "status": "SCHEDULED",
+    "scheduled_for": "2026-09-03T12:00:05Z",
+    "delay_seconds": 5,
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+  }
+  ```
+* **NATS Action**: Emits `jobs.scheduled` immediately, then publishes to `jobs.submitted` when the timer expires.
+
+---
+
+### 1.3. Validate Job
 Synchronously validates a job configuration using NATS **Request/Reply**. The Job Service blocks waiting for the Processor Service's response.
 
 * **Endpoint**: `POST /jobs/validate`

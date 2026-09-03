@@ -54,7 +54,7 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
         </div>
         <div className="topology-tier-row">
           {/* Component: React UI */}
-          <div className="topology-col deployed-col">
+          <div className="topology-col deployed-col" style={{ width: '220px', minWidth: '220px', maxWidth: '220px' }}>
             <div className="deployed-boundary-label">DEMO DASHBOARD</div>
             <div className="topology-node deployed-card node-active">
               <div className="node-header">
@@ -77,21 +77,32 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
           </div>
 
           {/* Connector: React UI -> Demo Control Service */}
-          <div className="topology-connector horizontal connector-active" style={{ flex: 1, padding: '1.8rem 0.5rem 0 0.5rem' }}>
-            <div className="connector-flow-group">
-              <span className="connector-flow-label">UI Gateway HTTP REST (:8080)</span>
-              <div className="connector-line-with-arrow">
-                <div className="connector-line" style={{ width: '40px' }} />
-                <span className="connector-arrow">-&gt;</span>
+          <div className={`topology-connector-card horizontal ${isDemoControlActive ? 'connector-active' : 'connector-inactive'}`} style={{ width: '180px', minWidth: '160px', maxWidth: '200px' }}>
+            <div className="connector-card-header">
+              <span className="connector-card-title">UI GATEWAY (:8080)</span>
+              <div className="connector-h-arrow-group">
+                <div className="connector-h-line" />
+                <span className="connector-h-arrow">-&gt;</span>
               </div>
-              <span className="connector-flow-desc" style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
-                Activity Polling, Config Relay, Remote Controls
-              </span>
+            </div>
+            <div className="connector-card-body">
+              <div className="connector-card-item">
+                <span className="connector-tag tag-rest">REST</span>
+                <span className="connector-item-text">GET /activities • /status</span>
+              </div>
+              <div className="connector-card-item">
+                <span className="connector-tag tag-ctrl">CTRL</span>
+                <span className="connector-item-text">PUT /consumer • /queue-group</span>
+              </div>
+              <div className="connector-card-item">
+                <span className="connector-tag tag-act">DATA</span>
+                <span className="connector-item-text">Activity Polling &amp; DLQ Reprocess</span>
+              </div>
             </div>
           </div>
 
           {/* Component: Demo Control Service */}
-          <div className="topology-col deployed-col">
+          <div className="topology-col deployed-col" style={{ width: '240px', minWidth: '240px', maxWidth: '240px' }}>
             <div className="deployed-boundary-label">CONTROL GATEWAY</div>
             <div className={`topology-node deployed-card ${isDemoControlActive ? 'node-active' : 'node-inactive'}`}>
               <div className="node-header">
@@ -122,26 +133,37 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
       {/* ========================================================================= */}
       {/* INTER-TIER VERTICAL CONNECTORS (Tier 1 -> Tier 2)                         */}
       {/* ========================================================================= */}
-      <div className="topology-vertical-bridge">
-        <div className="v-bridge-col v-bridge-col-left">
-          <div className="v-bridge-flow">
-            <div className="v-bridge-line" />
-            <span className="v-bridge-arrow">v</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <span className="v-bridge-label">HTTP REST (:8081)</span>
-            <span className="v-bridge-sublabel">POST /jobs, /validate, /queue, /stream</span>
+      <div className="topology-intertier-bridge-row">
+        {/* Connection 1: React UI -> Job Service */}
+        <div className={`topology-connector vertical ${isJobActive ? 'connector-active' : 'connector-inactive'}`} style={{ width: '220px', minWidth: '220px', maxWidth: '220px' }}>
+          <div className="connector-v-flow">
+            <div className="connector-v-arrow-group">
+              <div className="connector-v-line" />
+              <span className="connector-v-arrow">v</span>
+            </div>
+            <div className="connector-v-details">
+              <span className="connector-v-title">HTTP REST Ingress (:8081)</span>
+              <span className="connector-v-sub">POST /jobs, /schedule, /validate</span>
+            </div>
           </div>
         </div>
 
-        <div className="v-bridge-col v-bridge-col-right" style={{ justifyContent: 'flex-end' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', textAlign: 'right' }}>
-            <span className="v-bridge-label">NATS TCP Client (:4222)</span>
-            <span className="v-bridge-sublabel">jobs.&gt; Wildcard Tap, Ephemeral Replay, Control RPC</span>
-          </div>
-          <div className="v-bridge-flow">
-            <div className="v-bridge-line" />
-            <span className="v-bridge-arrow">v</span>
+        {/* Center Spacer matching the 180px horizontal connector column */}
+        <div style={{ width: '180px', minWidth: '160px', maxWidth: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontSize: '0.625rem', color: 'var(--border-color)', fontFamily: 'var(--font-mono)' }}>|</span>
+        </div>
+
+        {/* Connection 2: Demo Control Service -> NATS Server */}
+        <div className={`topology-connector vertical ${isDemoControlActive && isNatsConnected ? 'connector-active' : 'connector-inactive'}`} style={{ width: '240px', minWidth: '240px', maxWidth: '240px' }}>
+          <div className="connector-v-flow">
+            <div className="connector-v-arrow-group">
+              <div className="connector-v-line" />
+              <span className="connector-v-arrow">v</span>
+            </div>
+            <div className="connector-v-details">
+              <span className="connector-v-title">NATS TCP Client (:4222)</span>
+              <span className="connector-v-sub">jobs.&gt; Tap • Replay • Control RPC</span>
+            </div>
           </div>
         </div>
       </div>
@@ -155,7 +177,7 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
 
       <div className="topology-ingress-broker-layout">
         {/* Component 1: Job Service */}
-        <div className="topology-col deployed-col">
+        <div className="topology-col deployed-col" style={{ width: '220px', minWidth: '220px', maxWidth: '220px' }}>
           <div className="deployed-boundary-label">BUSINESS INGRESS</div>
           <div className={`topology-node deployed-card job-service-card ${isJobActive ? 'node-active' : 'node-inactive'}`}>
             <div className="node-header">
@@ -183,16 +205,27 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
         </div>
 
         {/* Connector: Job Service -> NATS Server */}
-        <div className={`topology-connector horizontal ${isJobActive && isNatsConnected ? 'connector-active' : 'connector-inactive'}`} style={{ padding: '3.5rem 0.25rem 0 0.25rem' }}>
-          <div className="connector-flow-group">
-            <span className="connector-flow-label">Publish / RPC</span>
-            <div className="connector-line-with-arrow">
-              <div className="connector-line" style={{ width: '24px' }} />
-              <span className="connector-arrow">-&gt;</span>
+        <div className={`topology-connector-card horizontal ${isJobActive && isNatsConnected ? 'connector-active' : 'connector-inactive'}`} style={{ width: '180px', minWidth: '160px', maxWidth: '200px' }}>
+          <div className="connector-card-header">
+            <span className="connector-card-title">NATS TCP INGRESS (:4222)</span>
+            <div className="connector-h-arrow-group">
+              <div className="connector-h-line" />
+              <span className="connector-h-arrow">-&gt;</span>
             </div>
-            <span className="connector-flow-desc" style={{ fontSize: '0.5rem', color: 'var(--text-muted)', textAlign: 'center', whiteSpace: 'nowrap' }}>
-              NATS TCP :4222
-            </span>
+          </div>
+          <div className="connector-card-body">
+            <div className="connector-card-item">
+              <span className="connector-tag tag-pub">PUB</span>
+              <span className="connector-item-text">jobs.submitted • jobs.queue</span>
+            </div>
+            <div className="connector-card-item">
+              <span className="connector-tag tag-rpc">RPC</span>
+              <span className="connector-item-text">jobs.validate (Request)</span>
+            </div>
+            <div className="connector-card-item">
+              <span className="connector-tag tag-hdr">HDR</span>
+              <span className="connector-item-text">W3C traceparent • Msg-Id</span>
+            </div>
           </div>
         </div>
 
@@ -396,24 +429,67 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* INTER-TIER DELIVERY BRIDGE (Tier 2 NATS -> Tier 3 Processor Service)     */}
+      {/* INTER-TIER DELIVERY & FEEDBACK BRIDGE (Tier 2 NATS -> Tier 3 Processor)  */}
       {/* ========================================================================= */}
-      <div className="topology-delivery-bridge">
-        <div className="delivery-bridge-item">
-          <span className="bridge-arrow-down">v</span>
-          <span className="bridge-text">
-            {isProcessing && isProcessorOnline 
-              ? 'Deliver Messages (JetStream Pull Batches • Core Queue Distribution • RPC Dispatch)'
-              : '[ DELIVERY PAUSED ] Worker goroutines idle'}
-          </span>
-          <span className="bridge-arrow-down">v</span>
+      <div className="topology-delivery-bridge-grid">
+        {/* Card 1: Downstream Message Delivery & Pull Dispatch */}
+        <div className={`delivery-bridge-card downstream ${isProcessing && isProcessorOnline ? '' : 'paused'}`}>
+          <div className="delivery-card-header">
+            <div className="delivery-card-title-group">
+              <span className={`delivery-card-arrow down ${isProcessing && isProcessorOnline ? '' : 'paused'}`}>v</span>
+              <span className="delivery-card-title">Downstream Message Delivery (NATS -&gt; Processor)</span>
+            </div>
+            <span className={`delivery-card-badge ${isProcessing && isProcessorOnline ? 'badge-active' : 'badge-paused'}`}>
+              {isProcessing && isProcessorOnline ? 'DELIVERY ACTIVE' : 'DELIVERY PAUSED'}
+            </span>
+          </div>
+          <div className="delivery-card-body">
+            <div className="delivery-card-item">
+              <span className="delivery-card-label label-pull">PULL</span>
+              <span className="delivery-card-text">Stream JOBS -&gt; Consumer '{consumerName}' ({consumerType})</span>
+            </div>
+            <div className="delivery-card-item">
+              <span className="delivery-card-label label-queue">QUEUE</span>
+              <span className="delivery-card-text">Core NATS 1-of-N -&gt; Group 'job-workers' on jobs.queue</span>
+            </div>
+            <div className="delivery-card-item">
+              <span className="delivery-card-label label-rpc">RPC</span>
+              <span className="delivery-card-text">Sync Request Dispatch -&gt; Responder jobs.validate</span>
+            </div>
+            <div className="delivery-card-item">
+              <span className="delivery-card-label label-timing">POLICY</span>
+              <span className="delivery-card-text">AckWait: 5s • NakWithDelay Backoff • Ordering: {ordering}</span>
+            </div>
+          </div>
         </div>
-        <div className="delivery-bridge-item">
-          <span className="bridge-arrow-up">^</span>
-          <span className="bridge-text">
-            Lifecycle Feedback (Ack / Nak • jobs.received • jobs.completed • jobs.failed • jobs.dlq)
-          </span>
-          <span className="bridge-arrow-up">^</span>
+
+        {/* Card 2: Upstream Acknowledgment & Lifecycle Feedback */}
+        <div className="delivery-bridge-card upstream">
+          <div className="delivery-card-header">
+            <div className="delivery-card-title-group">
+              <span className="delivery-card-arrow up">^</span>
+              <span className="delivery-card-title">Upstream Protocol Acks &amp; Lifecycle Feedback</span>
+            </div>
+            <span className="delivery-card-badge badge-feedback">BIDIRECTIONAL FEEDBACK</span>
+          </div>
+          <div className="delivery-card-body">
+            <div className="delivery-card-item">
+              <span className="delivery-card-label label-ack">ACKS</span>
+              <span className="delivery-card-text">Explicit msg.Ack() • msg.NakWithDelay(d) • msg.Term()</span>
+            </div>
+            <div className="delivery-card-item">
+              <span className="delivery-card-label label-evt">EVENTS</span>
+              <span className="delivery-card-text">jobs.received • jobs.processing • jobs.completed • jobs.failed</span>
+            </div>
+            <div className="delivery-card-item">
+              <span className="delivery-card-label label-dlq">POISON</span>
+              <span className="delivery-card-text">Max Deliveries (3) Routing -&gt; Stream JOBS_DLQ (jobs.dlq)</span>
+            </div>
+            <div className="delivery-card-item">
+              <span className="delivery-card-label label-meta">METRICS</span>
+              <span className="delivery-card-text">Delivery Counts • Stream Sequence • Worker Attribution</span>
+            </div>
+          </div>
         </div>
       </div>
 

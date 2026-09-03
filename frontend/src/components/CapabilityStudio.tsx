@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Job, JetStreamInfo, ReplayRequest, ReplayResponse, Activity } from '../api/demoApi';
+import { Job, JetStreamInfo, ReplayRequest, ReplayResponse, Activity, ConsumerStatus } from '../api/demoApi';
 import { JobPanel } from './JobPanel';
 import { DeduplicationPanel } from './DeduplicationPanel';
 import { RequestReplyPanel } from './RequestReplyPanel';
 import { DLQPanel } from './DLQPanel';
 import { ReplayPanel } from './ReplayPanel';
 import { QueueGroupPanel } from './QueueGroupPanel';
+import { ConsumerLabPanel } from './ConsumerLabPanel';
+import { DelayedRetryPanel } from './DelayedRetryPanel';
 
-export type StudioTab = 'pubsub' | 'queue-group' | 'request-reply' | 'dlq' | 'replay';
+export type StudioTab = 'pubsub' | 'delayed-retry' | 'queue-group' | 'consumer-lab' | 'request-reply' | 'dlq' | 'replay';
 
 interface CapabilityStudioProps {
   // Job Actions
@@ -27,6 +29,10 @@ interface CapabilityStudioProps {
   onShowInfo: (key: string) => void;
   onAlert?: (type: 'success' | 'error' | 'warning', message: string) => void;
   onRefreshAll?: () => void;
+  // Consumer Lab
+  onConfigChanged?: (status: ConsumerStatus) => void;
+  onActivityUpdated?: () => void;
+  isProcessing?: boolean;
 }
 
 export const CapabilityStudio: React.FC<CapabilityStudioProps> = ({
@@ -43,6 +49,9 @@ export const CapabilityStudio: React.FC<CapabilityStudioProps> = ({
   onShowInfo,
   onAlert,
   onRefreshAll,
+  onConfigChanged,
+  onActivityUpdated,
+  isProcessing,
 }) => {
   const [activeTab, setActiveTab] = useState<StudioTab>('pubsub');
   const [pubsubSubMode, setPubsubSubMode] = useState<'standard' | 'dedup'>('standard');
@@ -61,10 +70,26 @@ export const CapabilityStudio: React.FC<CapabilityStudioProps> = ({
 
         <button
           type="button"
+          className={`studio-tab-btn ${activeTab === 'delayed-retry' ? 'active' : ''}`}
+          onClick={() => setActiveTab('delayed-retry')}
+        >
+          <span className="tab-label">Delayed &amp; Retry</span>
+        </button>
+
+        <button
+          type="button"
           className={`studio-tab-btn ${activeTab === 'queue-group' ? 'active' : ''}`}
           onClick={() => setActiveTab('queue-group')}
         >
           <span className="tab-label">Queue Groups</span>
+        </button>
+
+        <button
+          type="button"
+          className={`studio-tab-btn ${activeTab === 'consumer-lab' ? 'active' : ''}`}
+          onClick={() => setActiveTab('consumer-lab')}
+        >
+          <span className="tab-label">Consumer Lab</span>
         </button>
 
         <button
@@ -131,11 +156,31 @@ export const CapabilityStudio: React.FC<CapabilityStudioProps> = ({
           </div>
         )}
 
+        {activeTab === 'delayed-retry' && (
+          <DelayedRetryPanel
+            onSubmitJob={onSubmitJob}
+            isSubmitting={isSubmitting}
+            onShowInfo={onShowInfo}
+            onAlert={onAlert}
+          />
+        )}
+
         {activeTab === 'queue-group' && (
           <QueueGroupPanel
             onShowInfo={onShowInfo}
             onAlert={onAlert}
             onMessagesSent={onRefreshActivity}
+            onActivityUpdated={onActivityUpdated}
+          />
+        )}
+
+        {activeTab === 'consumer-lab' && (
+          <ConsumerLabPanel
+            onAlert={onAlert}
+            onConfigChanged={onConfigChanged}
+            onShowInfo={onShowInfo}
+            onActivityUpdated={onActivityUpdated}
+            isProcessing={isProcessing}
           />
         )}
 

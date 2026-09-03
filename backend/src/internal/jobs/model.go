@@ -97,3 +97,22 @@ type QueuePublishResponse struct {
 	Jobs      []string `json:"jobs"`
 }
 
+// ScheduleJobRequest represents the payload for scheduling a job for future delivery.
+type ScheduleJobRequest struct {
+	JobID              string                 `json:"job_id"`
+	Type               string                 `json:"type"`
+	Payload            map[string]interface{} `json:"payload,omitempty"`
+	DeliveryMode       string                 `json:"delivery_mode,omitempty"`
+	DeliverAfterSec    int                    `json:"deliver_after_seconds,omitempty"`
+	DeliverAt          string                 `json:"deliver_at,omitempty"`
+}
+
+// ScheduleJobResponse represents the HTTP response returned when a job is scheduled.
+type ScheduleJobResponse struct {
+	JobID        string `json:"job_id"`
+	Status       string `json:"status"`
+	ScheduledFor string `json:"scheduled_for"`
+	DelaySeconds int    `json:"delay_seconds"`
+	TraceID      string `json:"trace_id,omitempty"`
+}
+

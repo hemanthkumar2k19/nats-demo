@@ -385,6 +385,61 @@ NATS CONNECTED (Port 4222)
 
 ---
 
+### Scenario 14: JetStream NAK with Delay (Explicit Backoff)
+
+#### What NATS Feature Is Demonstrated?
+* **Explicit Negative Acknowledgement with Backoff (`msg.NakWithDelay`)**:
+  - The worker explicitly fails processing and instructs JetStream to delay redelivery by 5 seconds.
+  - JetStream respects the quiet window and holds the message until the delay expires before redelivering.
+
+#### Steps:
+1. In the **Capability Studio**, select the **Delayed & Retry** tab.
+2. In the **NAK with Delay** card:
+   - Verify Job ID (e.g. `nak-job-101`).
+   - Select **Retry Delay: 5 Seconds**.
+   - Click **Trigger NAK with 5s Delay**.
+3. Observe the **Live Activity Log**:
+   - `t=0s`: `DELIVERED (Attempt 1)` -> `NAK_WITH_DELAY (Attempt 1)` -> `FAILED (Attempt 1)`.
+   - `t=0s - 5s`: JetStream holds the message; no worker activity.
+   - `t=5s`: `REDELIVERED (Attempt 2)` -> `PROCESSING` -> `COMPLETED`.
+
+---
+
+### Scenario 15: JetStream AckWait Timeout (Missing ACK Recovery)
+
+#### What NATS Feature Is Demonstrated?
+* **Automatic Redelivery on Missing ACK (`AckWait`)**:
+  - When a worker experiences a crash, hang, or unhandled exception without calling `msg.Ack()`, JetStream's consumer `AckWait` timer (5s) automatically expires.
+  - JetStream redelivers the unacknowledged message to another competing worker instance (`processor-2`).
+
+#### Steps:
+1. In the **Delayed & Retry** tab, find the **AckWait Timeout** card.
+2. Click **Trigger Missing ACK (5s AckWait)**.
+3. Observe the **Live Activity Log**:
+   - `t=0s`: Delivered to worker `processor-1` (`ACK_TIMEOUT_SIMULATED`). Worker intentionally does not ACK.
+   - `t=0s - 5s`: Message remains in AckPending state on the consumer.
+   - `t=5s`: JetStream AckWait timer expires, message is redelivered to `processor-2` (`REDELIVERED`) and successfully `COMPLETED`.
+
+---
+
+### Scenario 16: Application-Level Scheduled Delivery
+
+#### What NATS Feature Is Demonstrated?
+* **Deferred Publishing Pattern (Application Timer)**:
+  - JetStream does not include a general-purpose native scheduler ("publish at 10:30").
+  - The application scheduler holds a timer before publishing to the NATS subject.
+
+#### Steps:
+1. In the **Delayed & Retry** tab, find the **Scheduled Delivery** card.
+2. Set **Schedule Delay** to **5 Seconds**.
+3. Click **Schedule Job (5s Delay)**.
+4. Observe the **Live Activity Log**:
+   - `t=0s`: `SCHEDULED` lifecycle event emitted. Job is not yet published to JetStream.
+   - `t=5s`: Application timer fires, publishing to `jobs.submitted` (`PUBLISHED`).
+   - `t=5s+`: JetStream receives the message, worker pulls it (`DELIVERED`) and completes processing (`COMPLETED`).
+
+---
+
 ## Troubleshooting & Verification Checklist
 
 | Symptom | Likely Cause | Solution |

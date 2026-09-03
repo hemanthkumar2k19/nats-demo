@@ -911,6 +911,7 @@ func (a *App) subscribeJetStream() error {
 			Name:          a.consumerName,
 			DeliverPolicy: nats.DeliverNewPolicy,
 			AckPolicy:     nats.AckExplicitPolicy,
+			AckWait:       5 * time.Second,
 			FilterSubject: messaging.SubjectJobSubmitted,
 		})
 		if err != nil {
@@ -933,11 +934,20 @@ func (a *App) subscribeJetStream() error {
 			Durable:       a.consumerName,
 			DeliverPolicy: nats.DeliverAllPolicy,
 			AckPolicy:     nats.AckExplicitPolicy,
+			AckWait:       5 * time.Second,
 			FilterSubject: messaging.SubjectJobSubmitted,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create durable consumer %s: %w", a.consumerName, err)
 		}
+	} else {
+		_, _ = js.UpdateConsumer("JOBS", &nats.ConsumerConfig{
+			Durable:       a.consumerName,
+			DeliverPolicy: nats.DeliverAllPolicy,
+			AckPolicy:     nats.AckExplicitPolicy,
+			AckWait:       5 * time.Second,
+			FilterSubject: messaging.SubjectJobSubmitted,
+		})
 	}
 
 	sub, err := js.PullSubscribe(messaging.SubjectJobSubmitted, a.consumerName, nats.Bind("JOBS", a.consumerName))
@@ -1144,7 +1154,38 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 	time.Sleep(1 * time.Second)
 	procDuration := time.Since(procStart)
 
-	// 3. Evaluate failure simulation
+	// 3. Evaluate simulated worker crash / missing ACK (AckWait timeout)
+	simulateNoAck := false
+	if val, ok := job.Payload["simulate_no_ack"].(bool); ok && val {
+		simulateNoAck = true
+	}
+
+	if simulateNoAck && attemptCount == 1 {
+		noAckReason := "Simulating worker hang / missing ACK. JetStream AckWait (5s) will trigger redelivery."
+		log.Printf("[%s] JetStream Job %s: %s", workerName, job.JobID, noAckReason)
+
+		procSpan.SetStatus(codes.Error, noAckReason)
+		procSpan.SetAttributes(attribute.String("processing.result", "no_ack_simulated"))
+		procSpan.End()
+
+		telemetry.RecordJobFailed(procCtx, deliveryMode, workerName)
+
+		_ = a.publisher.PublishJobLifecycle(
+			messaging.SubjectJobAckTimeout,
+			job.JobID,
+			"ACK_TIMEOUT_SIMULATED",
+			attemptCount,
+			noAckReason,
+			workerName,
+			deliveryMode,
+			sequence,
+		)
+
+		// Intentionally skip msg.Ack() and msg.Nak() so JetStream AckWait timer expires and triggers redelivery
+		return
+	}
+
+	// 4. Evaluate failure simulation
 	simulateFailure := false
 	if val, ok := job.Payload["simulate_failure"].(bool); ok && val {
 		simulateFailure = true
@@ -1162,6 +1203,13 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 		maxDeliveryAttempts = int(val)
 	} else if val, ok := job.Payload["max_delivery_attempts"].(int); ok && val > 0 {
 		maxDeliveryAttempts = val
+	}
+
+	nakDelaySec := 0
+	if val, ok := job.Payload["nak_delay_seconds"].(float64); ok && int(val) > 0 {
+		nakDelaySec = int(val)
+	} else if val, ok := job.Payload["nak_delay_seconds"].(int); ok && val > 0 {
+		nakDelaySec = val
 	}
 
 	if simulateFailure && (simulateFailureCount == 0 || attemptCount <= simulateFailureCount) {
@@ -1233,7 +1281,37 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 		// Record failure metric
 		telemetry.RecordJobFailed(procCtx, deliveryMode, workerName)
 
-		// Nak for redelivery
+		// Check for NAK with Delay vs standard NAK
+		if nakDelaySec > 0 {
+			log.Printf("[%s] JetStream Job %s NAK with delay: %ds", workerName, job.JobID, nakDelaySec)
+			_ = msg.NakWithDelay(time.Duration(nakDelaySec) * time.Second)
+
+			nakReason := fmt.Sprintf("Worker requested explicit retry delay of %d seconds", nakDelaySec)
+			_ = a.publisher.PublishJobLifecycle(
+				messaging.SubjectJobNakDelayed,
+				job.JobID,
+				"NAK_WITH_DELAY",
+				attemptCount,
+				nakReason,
+				workerName,
+				deliveryMode,
+				sequence,
+			)
+
+			_ = a.publisher.PublishJobLifecycle(
+				messaging.SubjectJobProcessingFailed,
+				job.JobID,
+				"FAILED",
+				attemptCount,
+				errMsg,
+				workerName,
+				deliveryMode,
+				sequence,
+			)
+			return
+		}
+
+		// Standard Nak for immediate redelivery
 		_ = msg.Nak()
 
 		_ = a.publisher.PublishJobLifecycle(

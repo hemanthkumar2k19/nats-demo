@@ -38,11 +38,11 @@ func NewTracker() *Tracker {
 
 func getStatusWeight(status string) int {
 	switch status {
-	case "PUBLISHED", "STORED", "REQUEST_SENT", "DEDUPLICATED", "REPROCESSED":
+	case "SCHEDULED", "PUBLISHED", "STORED", "REQUEST_SENT", "DEDUPLICATED", "REPROCESSED":
 		return 1
 	case "RECEIVED", "DELIVERED", "REQUEST_RECEIVED", "REDELIVERED":
 		return 2
-	case "PROCESSING", "REPLY_SENT":
+	case "PROCESSING", "REPLY_SENT", "NAK_WITH_DELAY", "ACK_TIMEOUT_SIMULATED":
 		return 3
 	case "COMPLETED", "FAILED", "ACKED", "NO CONSUMER", "REPLY_RECEIVED", "REQUEST_TIMEOUT", "REPLAYED", "DLQ_PUBLISHED":
 		return 4
@@ -74,6 +74,14 @@ func (t *Tracker) AddEvent(jobID string, status string, deliveryCount int, subje
 	if len(t.activities) > 200 {
 		t.activities = t.activities[:200]
 	}
+}
+
+// ClearActivities resets the activity buffer to empty.
+// Useful for clearing the log between demo scenarios.
+func (t *Tracker) ClearActivities() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.activities = make([]Activity, 0)
 }
 
 // GetActivities returns a copy of the activity buffer sorted by timestamp and status weight.
@@ -129,6 +137,12 @@ func (t *Tracker) ProcessLifecycleEvent(subject string, data []byte, source stri
 	case "jobs.validate":
 		// Outgoing request message to jobs.validate is a Job payload, not a lifecycle event.
 		return nil
+	case "jobs.scheduled":
+		status = "SCHEDULED"
+	case "jobs.nak.delayed":
+		status = "NAK_WITH_DELAY"
+	case "jobs.ack.timeout":
+		status = "ACK_TIMEOUT_SIMULATED"
 	case "jobs.submitted":
 		status = "PUBLISHED"
 	case "jobs.stored":

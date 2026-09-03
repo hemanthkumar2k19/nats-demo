@@ -4,6 +4,7 @@ import { Activity } from '../api/demoApi';
 interface ActivityPanelProps {
   activities: Activity[];
   onRefresh: () => void;
+  onClearActivity: () => void;
   isLoading: boolean;
   onSelectJob: (jobId: string) => void;
   onShowInfo?: (key: string) => void;
@@ -12,6 +13,7 @@ interface ActivityPanelProps {
 export const ActivityPanel: React.FC<ActivityPanelProps> = ({
   activities,
   onRefresh,
+  onClearActivity,
   isLoading,
   onSelectJob,
   onShowInfo,
@@ -149,14 +151,26 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
             </button>
           )}
         </div>
-        <button 
-          className="btn btn-secondary" 
-          onClick={onRefresh} 
-          disabled={isLoading}
-          style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
-        >
-          {isLoading ? 'Loading...' : 'Refresh'}
-        </button>
+        <div style={{ display: 'flex', gap: '0.35rem' }}>
+          {activities.length > 0 && (
+            <button
+              className="btn btn-secondary"
+              onClick={onClearActivity}
+              style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
+              title="Clear all activity logs to start a fresh demo"
+            >
+              Clear Log
+            </button>
+          )}
+          <button 
+            className="btn btn-secondary" 
+            onClick={onRefresh} 
+            disabled={isLoading}
+            style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
+          >
+            {isLoading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Search and Filter Toolbar */}

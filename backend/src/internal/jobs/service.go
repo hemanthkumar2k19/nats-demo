@@ -13,6 +13,7 @@ type Publisher interface {
 	PublishJobSubmitted(ctx context.Context, job Job) error
 	RequestJobValidation(ctx context.Context, job Job) (*JobValidationResponse, error)
 	PublishJobQueue(ctx context.Context, job Job) error
+	PublishJobLifecycle(subject string, jobID string, status string, deliveryCount int, errMsg string, workerName string, deliveryMode string, sequence uint64) error
 }
 
 // Service manages the business workflows for jobs.
@@ -49,6 +50,70 @@ func (s *Service) SubmitJob(ctx context.Context, job Job) (*JobStatusResponse, e
 		JobID:   job.JobID,
 		Status:  "SUBMITTED",
 		TraceID: job.TraceID,
+	}, nil
+}
+
+// ScheduleJob registers a job with a scheduled delay before publishing it to NATS.
+func (s *Service) ScheduleJob(ctx context.Context, req ScheduleJobRequest) (*ScheduleJobResponse, error) {
+	if req.JobID == "" {
+		return nil, errors.New("job_id is required")
+	}
+	if req.Type == "" {
+		req.Type = "image-processing"
+	}
+	if req.DeliveryMode == "" {
+		req.DeliveryMode = "JETSTREAM"
+	}
+
+	delay := time.Duration(req.DeliverAfterSec) * time.Second
+	if req.DeliverAt != "" {
+		if targetTime, err := time.Parse(time.RFC3339, req.DeliverAt); err == nil {
+			computed := time.Until(targetTime)
+			if computed > 0 {
+				delay = computed
+			}
+		}
+	}
+	if delay <= 0 {
+		delay = 5 * time.Second
+	}
+	delaySec := int(delay.Seconds())
+	scheduledFor := time.Now().Add(delay).Format(time.RFC3339)
+
+	job := Job{
+		JobID:        req.JobID,
+		Type:         req.Type,
+		Payload:      req.Payload,
+		DeliveryMode: req.DeliveryMode,
+	}
+
+	// 1. Record in store as SCHEDULED
+	s.store.AddJob(job, "SCHEDULED")
+
+	// 2. Publish SCHEDULED lifecycle event immediately so observability and activity log see it
+	_ = s.publisher.PublishJobLifecycle(
+		"jobs.scheduled",
+		job.JobID,
+		"SCHEDULED",
+		1,
+		fmt.Sprintf("Application scheduler will publish in %d seconds (at %s)", delaySec, scheduledFor),
+		"job-service",
+		req.DeliveryMode,
+		0,
+	)
+
+	// 3. Launch background timer goroutine
+	go func(j Job, waitDuration time.Duration) {
+		time.Sleep(waitDuration)
+		_, _ = s.SubmitJob(context.Background(), j)
+	}(job, delay)
+
+	return &ScheduleJobResponse{
+		JobID:        job.JobID,
+		Status:       "SCHEDULED",
+		ScheduledFor: scheduledFor,
+		DelaySeconds: delaySec,
+		TraceID:      job.TraceID,
 	}, nil
 }
 

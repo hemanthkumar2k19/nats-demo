@@ -56,18 +56,27 @@ func (c *Client) EnsureJobsStream() error {
 		})
 	}
 
-	// Explicitly create durable consumer "job-processor" on the JOBS stream
+	// Explicitly create durable consumer "job-processor" on the JOBS stream with AckWait: 5s
 	_, err = js.ConsumerInfo("JOBS", "job-processor")
 	if err != nil {
 		_, err = js.AddConsumer("JOBS", &nats.ConsumerConfig{
 			Durable:       "job-processor",
 			DeliverPolicy: nats.DeliverAllPolicy,
 			AckPolicy:     nats.AckExplicitPolicy,
+			AckWait:       5 * time.Second,
 			FilterSubject: "jobs.submitted",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create durable consumer job-processor: %w", err)
 		}
+	} else {
+		_, _ = js.UpdateConsumer("JOBS", &nats.ConsumerConfig{
+			Durable:       "job-processor",
+			DeliverPolicy: nats.DeliverAllPolicy,
+			AckPolicy:     nats.AckExplicitPolicy,
+			AckWait:       5 * time.Second,
+			FilterSubject: "jobs.submitted",
+		})
 	}
 
 	// Also ensure processor-durable for backward compatibility
@@ -77,6 +86,7 @@ func (c *Client) EnsureJobsStream() error {
 			Durable:       "processor-durable",
 			DeliverPolicy: nats.DeliverAllPolicy,
 			AckPolicy:     nats.AckExplicitPolicy,
+			AckWait:       5 * time.Second,
 			FilterSubject: "jobs.submitted",
 		})
 	}

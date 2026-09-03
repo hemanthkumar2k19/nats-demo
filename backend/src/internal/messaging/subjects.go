@@ -46,5 +46,9 @@ const (
 	SubjectQueueGroupConfigSet = "queuegroup.config.set"
 	SubjectQueueGroupStatus    = "queuegroup.status"
 	SubjectQueueGroupReset     = "queuegroup.reset"
-)
 
+	// Delayed and Retry Delivery subjects
+	SubjectJobScheduled  = "jobs.scheduled"
+	SubjectJobNakDelayed = "jobs.nak.delayed"
+	SubjectJobAckTimeout = "jobs.ack.timeout"
+)

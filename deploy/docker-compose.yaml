@@ -20,9 +20,16 @@ services:
     image: docker.io/natsio/prometheus-nats-exporter:latest
     container_name: nats-exporter
     command:
-      - "-connz"
-      - "-subz"
       - "-varz"
+      - "-connz"
+      - "-connz_detailed"
+      - "-subz"
+      - "-routez"
+      - "-gatewayz"
+      - "-leafz"
+      - "-accountz"
+      - "-accstatz"
+      - "-healthz"
       - "-jsz=all"
       - "http://nats:8222"
     ports:
@@ -32,11 +39,24 @@ services:
     networks:
       - nats-net
 
+  nats-log-collector:
+    image: docker.io/fluent/fluent-bit:latest
+    container_name: nats-log-collector
+    volumes:
+      - nats-data:/data:ro
+      - ./lgtm/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+    depends_on:
+      - nats
+      - otel-lgtm
+    networks:
+      - nats-net
+
   otel-lgtm:
     image: docker.io/grafana/otel-lgtm:latest
     container_name: otel-lgtm
     ports:
       - "3000:3000"
+      - "3100:3100"
       - "4317:4317"
       - "4318:4318"
       - "9090:9090"

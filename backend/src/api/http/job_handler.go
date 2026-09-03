@@ -19,6 +19,7 @@ import (
 // JobServiceDomain defines domain operations required by JobHandler.
 type JobServiceDomain interface {
 	SubmitJob(ctx context.Context, job jobs.Job) (*jobs.JobStatusResponse, error)
+	ScheduleJob(ctx context.Context, req jobs.ScheduleJobRequest) (*jobs.ScheduleJobResponse, error)
 	ValidateJob(ctx context.Context, job jobs.Job) (*jobs.JobValidationResponse, error)
 	ListJobs() []*jobs.JobDetailResponse
 	GetJob(jobID string) (*jobs.JobDetailResponse, bool)
@@ -255,4 +256,49 @@ func (h *JobHandler) SubmitStreamJobs(c *gin.Context) {
 	telemetry.RecordJobSubmission(spanCtx, "JETSTREAM", "SUCCESS", time.Since(start))
 	c.JSON(http.StatusAccepted, resp)
 }
+
+// ScheduleJob handles scheduled job submission HTTP POST requests.
+func (h *JobHandler) ScheduleJob(c *gin.Context) {
+	start := time.Now()
+	spanCtx, span := telemetry.StartSpan(c.Request.Context(), "POST /jobs/schedule",
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("http.method", "POST"),
+			attribute.String("http.route", "/jobs/schedule"),
+		),
+	)
+	defer span.End()
+
+	var req jobs.ScheduleJobRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload: " + err.Error()})
+		return
+	}
+
+	if req.JobID == "" {
+		span.SetStatus(codes.Error, "missing job_id")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "job_id is required"})
+		return
+	}
+
+	span.SetAttributes(
+		attribute.String("job.id", req.JobID),
+		attribute.String("job.type", req.Type),
+		attribute.Int("delay.seconds", req.DeliverAfterSec),
+	)
+
+	resp, err := h.jobService.ScheduleJob(spanCtx, req)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to schedule job: " + err.Error()})
+		return
+	}
+
+	telemetry.RecordJobSubmission(spanCtx, req.DeliveryMode, "SCHEDULED", time.Since(start))
+	c.JSON(http.StatusAccepted, resp)
+}
+
 

@@ -167,6 +167,14 @@ func (h *ControlHandler) GetActivities(c *gin.Context) {
 	c.JSON(http.StatusOK, activities)
 }
 
+// ClearActivities resets the in-memory activity log.
+// Useful for clearing the log between demo scenarios.
+func (h *ControlHandler) ClearActivities(c *gin.Context) {
+	h.activityTracker.ClearActivities()
+	log.Println("[Control] Activity log cleared")
+	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
+}
+
 // parseReplayTime attempts to parse a time string using common ISO-8601 layouts.
 func parseReplayTime(val string) (time.Time, error) {
 	if val == "" {

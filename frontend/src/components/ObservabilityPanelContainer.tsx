@@ -9,6 +9,7 @@ interface ObservabilityPanelContainerProps {
   // Activity Log props
   activities: Activity[];
   onRefreshActivity: () => void;
+  onClearActivity: () => void;
   isLoadingActivity: boolean;
   onSelectJob: (jobId: string) => void;
   // Addressing props
@@ -23,6 +24,7 @@ interface ObservabilityPanelContainerProps {
 export const ObservabilityPanelContainer: React.FC<ObservabilityPanelContainerProps> = ({
   activities,
   onRefreshActivity,
+  onClearActivity,
   isLoadingActivity,
   onSelectJob,
   subscriptions,
@@ -68,6 +70,7 @@ export const ObservabilityPanelContainer: React.FC<ObservabilityPanelContainerPr
           <ActivityPanel
             activities={activities}
             onRefresh={onRefreshActivity}
+            onClearActivity={onClearActivity}
             isLoading={isLoadingActivity}
             onSelectJob={onSelectJob}
             onShowInfo={onShowInfo}

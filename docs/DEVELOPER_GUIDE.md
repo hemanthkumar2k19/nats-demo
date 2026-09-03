@@ -59,10 +59,11 @@ nats-demo/
    - Accurately visualizes a three-tier architecture: Tier 1 with **React UI** and **Demo Control Service**, Tier 2 with **Job Service** and a wide dual-engine **NATS Server** (side-by-side **Core NATS** and **JetStream** engines), and Tier 3 with **Processor Service** worker pool directly beneath NATS, clearly distinguishing deployed services from internal broker resources (`JOBS Stream`, `JOBS_DLQ Stream`, `job-processor Consumer`, `dlq-inspector Consumer`).
    - Features the **NATS Capability Studio** (`CapabilityStudio.tsx`) unifying all demo action triggers into segmented tabs:
      1. `Pub/Sub & Stream`: Standard job submissions with instant switch to JetStream deduplication test bench.
-     2. `Queue Groups`: Core NATS server-side load balancing and worker distribution without JetStream.
-     3. `Request / Reply`: Synchronous RPC validation testing and timeout simulation.
-     4. `Dead Letter Queue`: Poison message failure routing and DLQ message inspection.
-     5. `Stream Replay`: Historical time-window and sequence rewind controls.
+     2. `Delayed & Retry`: Dedicated test lab for NAK with Delay, AckWait missing ACK timeout, and Application Scheduled Delivery.
+     3. `Queue Groups`: Core NATS server-side load balancing and worker distribution without JetStream.
+     4. `Request / Reply`: Synchronous RPC validation testing and timeout simulation.
+     5. `Dead Letter Queue`: Poison message failure routing and DLQ message inspection.
+     6. `Stream Replay`: Historical time-window and sequence rewind controls.
    - Features the **Observability Panel Container** (`ObservabilityPanelContainer.tsx`) with a top-level switcher between `Live Activity Log` and `Subject Addressing & Wildcards`.
    - Features the **Modal Job Inspector** (`JobInspectorPanel.tsx`) opening directly as a focused pop-up overlay upon clicking any row in the Activity Log, with event display limits (15, 30, 50, all) keeping the view clean and compact.
    - Contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
@@ -81,16 +82,73 @@ nats-demo/
 | **Durable vs Ephemeral Consumers** | Supports durable (`job-processor`) and dynamic ephemeral pull consumers configured via Consumer Lab. |
 | **Ordering** | Ordered consumer demonstration ensuring message delivery order follows stream sequence. |
 | **At-Least-Once & Redelivery** | Failure simulation triggers `msg.Nak()`, causing JetStream to redeliver with incremented delivery counts. |
+| **NAK with Delay (`msg.NakWithDelay`)** | Worker requests explicit retry backoff (e.g. 5s); JetStream holds redelivery until the backoff window elapses. |
+| **AckWait Timeout** | JetStream automatically redelivers messages to competing workers when a consumer fails to ACK within `AckWait` (5s). |
+| **Scheduled / Delayed Delivery** | Demonstrates application timer pattern for future releases, illustrating that JetStream relies on application scheduling for timestamp-based releases. |
 | **JetStream Deduplication** | Publishes with `Nats-Msg-Id` within the 2-minute deduplication window recognize duplicates (`DEDUPLICATED`). |
 | **Request/Reply** | Sync job validation is processed on the subject `jobs.validate` with a 2-second requester timeout. |
 | **Replay / Rewind** | Replays historical stream events from the `JOBS` stream based on sequence number or time constraints via an ephemeral consumer without modifying stored stream entries. |
-| **Metrics Observability** | OpenTelemetry OTLP metrics exported to Grafana OTEL-LGTM stack alongside NATS Prometheus Exporter infrastructure metrics. |
-| **Distributed Tracing** | End-to-end W3C trace context propagation (`traceparent`) via NATS headers with OpenTelemetry spans visualized in Tempo. |
+| **Observability (LGTM Stack)** | Complete NATS metrics surface (Prometheus), centralized NATS server logs (Fluent Bit -> Loki), NATS operational events/advisories ($SYS & JetStream -> Loki), and application distributed tracing (Tempo). |
 | **Dead Letter Queue (DLQ)** | Demonstrates application-level DLQ routing on JetStream: messages failing repeatedly are NAKed until reaching `max_delivery_attempts` (default: 3), then routed to stream `JOBS_DLQ` (`jobs.dlq`), emitting `DLQ_PUBLISHED` and inspected by consumer `dlq-inspector`. |
 
 ---
 
 ## 5. Important Implementation Concepts
+
+### NATS Observability Architecture (LGTM Stack)
+
+The demo integrates a comprehensive Grafana LGTM pipeline (Prometheus, Loki, Tempo, Grafana):
+
+```text
+                         NATS Server
+                              |
+             +----------------+----------------+
+             |                |                |
+          Metrics           Logs            Events
+             |                |                |
+             v                v                v
+       NATS Exporter     Fluent Bit      Advisory Listener
+         (:7777)          (tail)           (Go Service)
+             |                |                |
+             v                v                v
+         Prometheus          Loki             Loki
+          (:9090)          (:3100)          (:3100)
+             |                |                |
+             +----------------+----------------+
+                              |
+                              v
+                           Grafana
+                           (:3000)
+
+         Application Tracing: Go Apps -> OTLP (:4317) -> Tempo
+         NATS Server Tracing: Diagnostic only (NOT an OTLP producer)
+```
+
+1. **Metrics (Prometheus)**:
+   `prometheus-nats-exporter` exposes the complete NATS monitoring surface with zero filtering:
+   - `-varz` (General runtime & memory)
+   - `-connz` & `-connz_detailed` (Client connections & per-client rate metrics)
+   - `-subz` (Subscription count & match cache)
+   - `-routez`, `-gatewayz`, `-leafz` (Clustering & routing topology)
+   - `-accountz` & `-accstatz` (Account limits & resource statistics)
+   - `-healthz` (Server health check status)
+   - `-jsz=all` (JetStream accounts, streams, consumers)
+
+2. **Centralized Logs (Loki)**:
+   NATS Server logs are written to `/data/nats.log` in the shared `nats-data` volume. A lightweight Fluent Bit forwarder container tails the log file and ships structured records to Loki (`http://otel-lgtm:3100/loki/api/v1/push`) with labels:
+   `service="nats"`, `server="nats"`, `cluster="nats-demo"`, `environment="demo"`.
+
+3. **Operational Events & Advisories ($SYS / JetStream -> Loki)**:
+   NATS generates operational events that are distinct from metrics. An `AdvisoryListener` in `demo-control-service` subscribes to:
+   - `$SYS.ACCOUNT.*.CONNECT` & `$SYS.ACCOUNT.*.DISCONNECT` (Client lifecycle)
+   - `$JS.EVENT.ADVISORY.STREAM.>` (Stream creation, deletion, election)
+   - `$JS.EVENT.ADVISORY.CONSUMER.>` (Consumer creation, deletion, pause)
+   - `$JS.EVENT.ADVISORY.MAX_DELIVERIES.>` (Redelivery attempt limits)
+   Incoming advisories are normalized into structured JSON records and shipped to Loki (`service="nats-events"`).
+
+4. **Distributed Tracing Boundary Clarification**:
+   - **NATS Server**: Does **not** produce native OTLP spans directly to Tempo. NATS Server internal tracing is diagnostic only.
+   - **Application Layer**: Application services (`job-service` and `processor-service`) implement OpenTelemetry instrumentation and inject/extract standard W3C `traceparent` headers across NATS messages, creating end-to-end trace waterfalls in Tempo.
 
 ### Core NATS Queue Groups vs JetStream Competing Consumers
 

@@ -4,6 +4,132 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-03
 
+### Added (Complete NATS Observability Setup: Metrics, Logs, Events, Tracing - docs/fix.md)
+- **Complete NATS Prometheus Metrics Surface (`docker-compose.yaml`)**:
+  - Expanded `nats-exporter` flags to include all required NATS monitoring categories without filtering: `-varz`, `-connz`, `-connz_detailed`, `-subz`, `-routez`, `-gatewayz`, `-leafz`, `-accountz`, `-accstatz`, `-healthz`, `-jsz=all`.
+- **NATS Server Logging to Loki (`nats.conf`, `fluent-bit.conf`, `docker-compose.yaml`)**:
+  - Configured NATS Server to write structured logs with timestamps to `/data/nats.log` in shared `nats-data` volume.
+  - Added lightweight `nats-log-collector` (Fluent Bit) container tailing `/data/nats.log` and pushing to Loki (`http://otel-lgtm:3100/loki/api/v1/push`) with labels `service="nats"`, `server="nats"`, `cluster="nats-demo"`.
+  - Exposed Loki port `3100:3100` on `otel-lgtm` in `docker-compose.yaml`.
+- **NATS Operational Events & JetStream Advisories Pipeline (`advisory_listener.go`, `main.go`)**:
+  - Built `AdvisoryListener` background component subscribing to `$SYS.ACCOUNT.*.CONNECT`, `$SYS.ACCOUNT.*.DISCONNECT`, and `$JS.EVENT.ADVISORY.>`.
+  - Normalized raw NATS advisories into structured JSON event records (timestamp, subject, event_type, stream, consumer, server, account, payload) and pushed to Loki (`service="nats-events"`).
+- **Grafana LGTM Dashboard & UI Updates (`nats-demo-dashboard.json`, `ObservabilityPanel.tsx`, `index.css`)**:
+  - Re-implemented the **Observability Setup Panel** into a 3-column **T-Shape Architecture Layout with Inner LGTM Boxes**:
+    - **Source Columns**: Left column displays App Services (`Job Service :8081` & `Processor Service`); Right column displays NATS Infrastructure (`NATS Server :4222/:8222` & Exporter/Daemons).
+    - **Coloured Conduit Bridges**: In between the sources and central stack, embedded directional colored tracks for MELT signals:
+      - Left bridge: Green `M • METRICS` and Indigo `T • TRACES` with OTLP gRPC protocol badges.
+      - Right bridge: Green `M • SCRAPE`, Amber `L • LOGS`, and Magenta `E • EVENTS` with capture details.
+    - **Central LGTM Box with Inner Boxes**: Main `GRAFANA OTEL-LGTM` container containing the `OpenTelemetry Collector Gateway (:4317/:4318)` on top and an interactive 2x2 grid of all 4 inner engine boxes (Loki `:3100`, Grafana `:3000`, Tempo `:3200`, Prometheus `:9090`).
+    - Cut down all verbose paragraph text and long descriptions while preserving high-density component cards and tags.
+  - Added dedicated Loki log panels to Grafana dashboard for NATS Server Centralized Logs and NATS Operational Advisories.
+  - Added `otel-collector` (`localhost:8889`) scrape target to `deploy/lgtm/prometheus.yaml` so Prometheus ingests application-level OTLP metrics (`jobs_submitted_total`, `jobs_processed_total`, etc.) emitted by Go services.
+  - Added explicit Grafana datasource provisioning (`deploy/lgtm/grafana/provisioning/datasources/datasources.yaml`) for Prometheus, Tempo, and Loki with persistent UIDs (`prometheus`, `tempo`, `loki`).
+  - Updated React `ObservabilityPanel` header tabs with dedicated actions: `NATS Logs`, `NATS Events`, `NATS Metrics`, `Application Traces`, and `Open Grafana`.
+  - Removed the bottom URL endpoint cards layer to streamline the panel layout.
+- **Tracing Scope Boundary Clarification (`DEVELOPER_GUIDE.md`, `DEPLOYMENT_GUIDE.md`, `fix.md`)**:
+  - Explicitly documented that NATS Server is diagnostic-only and not a native OTLP span producer.
+  - Clarified that end-to-end distributed tracing is application-level via W3C `traceparent` context injection across NATS messages.
+- **Reason**:
+  - Implement all backlog items in `docs/fix.md` to establish complete local LGTM observability.
+- **Affected Area**:
+  - Infrastructure (`deploy/docker-compose.yaml`, `deploy/nats/nats.conf`, `deploy/lgtm/fluent-bit/fluent-bit.conf`, `deploy/lgtm/grafana/dashboards/nats-demo-dashboard.json`).
+  - Backend (`internal/events/advisory_listener.go`, `cmd/demo-control-service/main.go`).
+  - Frontend (`ObservabilityPanel.tsx`).
+  - Documentation (`docs/fix.md`, `docs/DEVELOPER_GUIDE.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/CHANGELOG.md`).
+
+### Fixed
+- **Assignment Mismatch in Scheduled Job Dispatch (`service.go`)**:
+  - Fixed assignment mismatch in background goroutine of `ScheduleJob` by unpacking both return values `(*JobStatusResponse, error)` with `_, _ = s.SubmitJob(context.Background(), j)`.
+  - Resolved compiler error `assignment mismatch: 1 variable but s.SubmitJob returns 2 values`.
+- **Affected Area**:
+  - `backend/src/internal/jobs/service.go`
+
+### Added (Activity Log Clear Button)
+- **Backend (`tracker.go`, `control_handler.go`, `routes.go`)**:
+  - Added `ClearActivities()` method to `activity.Tracker` that resets the in-memory activity buffer.
+  - Added `ClearActivities` handler on `ControlHandler` returning `{"status": "cleared"}`.
+  - Registered `DELETE /activities` route on demo-control-service.
+- **Frontend (`demoApi.ts`, `ActivityPanel.tsx`, `ObservabilityPanelContainer.tsx`, `App.tsx`)**:
+  - Added `clearActivity()` API function calling `DELETE /activities`.
+  - Added "Clear Log" button in the Activity Log panel header (visible when events exist).
+  - Threaded `onClearActivity` callback through `ObservabilityPanelContainer` to `App.tsx`.
+- **Reason**:
+  - Allow presenters to reset the activity log between demo scenarios for a clean starting point.
+- **Affected Area**:
+  - Backend (`internal/activity/tracker.go`, `api/http/control_handler.go`, `api/http/routes.go`), Frontend (`demoApi.ts`, `ActivityPanel.tsx`, `ObservabilityPanelContainer.tsx`, `App.tsx`).
+
+### Changed (Move Queue Group & Consumer Lab into Capability Studio)
+- **Frontend Layout Refactor (`CapabilityStudio.tsx`, `DemoSetupPanel.tsx`, `App.tsx`)**:
+  - Moved "Core NATS Queue Group" and "JetStream Consumer Lab" from the `DemoSetupPanel` side-by-side switcher into the NATS Capability Studio as dedicated tabs ("Queue Groups" and "Consumer Lab").
+  - Simplified `DemoSetupPanel` to display only the architecture topology visualizer.
+  - Threaded `onConfigChanged`, `onActivityUpdated`, and `isProcessing` props through `CapabilityStudio` to `ConsumerLabPanel`.
+- **Reason**:
+  - Consolidate all interactive NATS capability demos under the unified Capability Studio for a cleaner presentation workflow.
+- **CSS Full-Width Topology Expansion (`index.css`)**:
+  - Changed `.demo-topology-container` from `width: fit-content` to `width: 100%` so the topology fills the full panel width.
+  - Removed `max-width: 210px` cap from `.deployed-card` and added `flex: 1` so service cards expand into available space.
+  - Reduced `.nats-server-col-wide` `min-width` from `520px` to `420px` for better responsive behavior.
+  - Cleaned up unused `.demo-consumer-lab-wrapper` and `.consumer-lab-embedded` CSS rules from the old two-column layout.
+- **Affected Area**:
+  - Frontend (`CapabilityStudio.tsx`, `DemoSetupPanel.tsx`, `App.tsx`, `index.css`).
+
+### Changed (High-Visibility Inter-Tier Topology Connectors & Grid Alignment)
+- **Grid Alignment & Connector Symmetry (`DemoTopology.tsx`, `index.css`)**:
+  - Aligned Tier 1, Inter-tier Bridge, and Tier 2 into a clean 3-column topology grid:
+    - Column 1 (width: 220px): `React UI` -> `Vertical Connector (HTTP REST Ingress :8081)` -> `Job Service`.
+    - Column 2 (width: 120px): Horizontal connector `UI Gateway (:8080)` in Tier 1 -> spacer in Bridge -> horizontal connector `Publish / RPC (:4222)` in Tier 2.
+    - Column 3: `Demo Control Service` (width: 240px) -> `Vertical Connector (NATS TCP Client :4222)` -> `NATS Server` (expanding via `flex: 1`).
+  - Upgraded vertical inter-tier connectors (`UI -> Job Service` and `Demo Service -> NATS`) to prominent, high-visibility connector cards matching horizontal connector styling:
+    - Active green state (`#10B981`) with vertical line and arrow (`v`).
+    - Prominent uppercase monospace labels (`HTTP REST Ingress (:8081)` and `NATS TCP Client (:4222)`).
+    - Clear endpoint listings (`POST /jobs, /schedule, /validate` and `jobs.> Tap • Replay • Control RPC`).
+- **Reason**:
+  - Fix misaligned and faint vertical inter-tier connections so `UI -> Job Service` and `Demo Service -> NATS` are prominently visible and structurally aligned with the rest of the topology.
+- **Affected Area**:
+  - Frontend (`DemoTopology.tsx`, `index.css`), Documentation (`CHANGELOG.md`).
+
+### Added (Rich Architecture Connector Boxes for Job Service -> NATS and NATS -> Processor)
+- **Job Service -> NATS Ingress Box (`DemoTopology.tsx`, `index.css`)**:
+  - Upgraded horizontal connector between Job Service and NATS Server into a prominent, data-rich card box (`NATS TCP INGRESS (:4222)`).
+  - Included color-coded tag badges and exact subjects: `PUB: jobs.submitted • jobs.queue`, `RPC: jobs.validate (Request)`, `HDR: W3C traceparent • Msg-Id`.
+  - Added matching rich UI Gateway box in Tier 1 (`UI GATEWAY (:8080)`) with endpoints `REST: GET /activities • /status`, `CTRL: PUT /consumer • /queue-group`, `DATA: Activity Polling & DLQ Reprocess`.
+- **NATS -> Processor Service Delivery Bridge Grid (`DemoTopology.tsx`, `index.css`)**:
+  - Replaced generic text bridge between NATS Server and Processor Service with a dual-card rich architecture grid:
+    1. **Downstream Message Delivery (NATS -> Processor)**:
+       - Displays live delivery status badge (`DELIVERY ACTIVE` vs `DELIVERY PAUSED`).
+       - Details `PULL`: `Stream JOBS -> Consumer 'job-processor' (Batch: 5)`.
+       - Details `QUEUE`: `Core NATS 1-of-N -> Group 'job-workers' on jobs.queue`.
+       - Details `RPC`: `Sync Request Dispatch -> Responder jobs.validate`.
+       - Details `POLICY`: `AckWait: 5s • NakWithDelay Backoff • Ordering`.
+    2. **Upstream Protocol Acks & Lifecycle Feedback (Processor -> NATS)**:
+       - Displays `BIDIRECTIONAL FEEDBACK` badge in cyan.
+       - Details `ACKS`: `Explicit msg.Ack() • msg.NakWithDelay(d) • msg.Term()`.
+       - Details `EVENTS`: `jobs.received • jobs.processing • jobs.completed • jobs.failed`.
+       - Details `POISON`: `Max Deliveries (3) Routing -> Stream JOBS_DLQ (jobs.dlq)`.
+       - Details `METRICS`: `Delivery Counts • Stream Sequence • Worker Attribution`.
+- **Reason**:
+  - Provide comprehensive architectural and operational context directly on all connectors in the topology visualizer.
+- **Affected Area**:
+  - Frontend (`DemoTopology.tsx`, `index.css`), Documentation (`CHANGELOG.md`).
+
+### Added (NATS Delayed & Retry Delivery Demo)
+- **NAK with Delay (`processor-service/main.go`, `subjects.go`, `tracker.go`)**:
+  - Implemented explicit negative acknowledgement with retry backoff using `msg.NakWithDelay(d)`.
+  - Added subject `jobs.nak.delayed` with `NAK_WITH_DELAY` lifecycle event status.
+  - Demonstrated explicit worker-driven retry delay preventing immediate worker thrashing.
+- **AckWait Missing ACK Recovery (`processor-service/main.go`, `natsclient/client.go`, `subjects.go`)**:
+  - Configured JetStream durable consumer `job-processor` with `AckWait: 5 * time.Second`.
+  - Added `simulate_no_ack` failure payload flag and `jobs.ack.timeout` lifecycle event (`ACK_TIMEOUT_SIMULATED`).
+  - Demonstrated broker-level redelivery across competing workers when a worker hangs or crashes without acknowledging.
+- **Application-Level Scheduled Delivery (`job-service/main.go`, `service.go`, `routes.go`, `demoApi.ts`)**:
+  - Implemented `POST /jobs/schedule` with application timer holding message before publishing to NATS.
+  - Added `jobs.scheduled` lifecycle event (`SCHEDULED`) emitted immediately on schedule request.
+  - Demonstrated that timestamp scheduling is handled by application schedulers rather than native JetStream timers.
+- **Delayed & Retry Delivery Studio Tab (`DelayedRetryPanel.tsx`, `CapabilityStudio.tsx`, `natsInfo.ts`)**:
+  - Added dedicated **"Delayed & Retry"** tab in Capability Studio featuring 3 interactive demo cards with real-time feedback and educational callouts.
+  - Added `delayed-retry-delivery` info modal content with concepts, demo scenarios, and trivia.
+
 ### Added (DLQ Message Reprocessing, Purging & Activity Log Recovery)
 - **DLQ Reprocessing & Purge API (`control_handler.go`, `routes.go`, `demoApi.ts`)**:
   - Implemented `POST /dlq/reprocess` supporting batch or single job reprocessing from `JOBS_DLQ` back into the active `JOBS` stream on `jobs.submitted` with failure simulation flags cleared.
