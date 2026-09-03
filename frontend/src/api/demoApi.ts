@@ -365,6 +365,7 @@ export interface ConsumerStatus {
   pending: number;
   ack_pending: number;
   redelivered: number;
+  distribution?: Record<string, number>;
 }
 
 /**
@@ -426,5 +427,182 @@ export async function getDLQMessages(): Promise<DLQMessage[]> {
   }
   return response.json();
 }
+
+/**
+ * Reprocesses failed messages from JOBS_DLQ back into the active JOBS stream.
+ * Calls POST /dlq/reprocess on demo-control-service.
+ */
+export async function reprocessDLQMessages(jobId?: string): Promise<{ reprocessed: number; jobs: string[]; message: string }> {
+  const response = await fetch(`${DEMO_CONTROL_URL}/dlq/reprocess`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(jobId ? { job_id: jobId } : {}),
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to reprocess DLQ messages: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Purges all messages from the JOBS_DLQ stream.
+ * Calls POST /dlq/purge on demo-control-service.
+ */
+export async function purgeDLQ(): Promise<{ purged: boolean; stream: string; message: string }> {
+  const response = await fetch(`${DEMO_CONTROL_URL}/dlq/purge`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to purge DLQ stream: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+export interface QueueGroupStatus {
+  subject: string;
+  queue_group: string;
+  workers: number;
+  distribution: Record<string, number>;
+}
+
+export interface QueuePublishResponse {
+  published: number;
+  subject: string;
+  jobs: string[];
+}
+
+/**
+ * Fetches current Core NATS Queue Group status and message distribution.
+ * Calls GET /queue-group on demo-control-service.
+ */
+export async function getQueueGroupStatus(): Promise<QueueGroupStatus> {
+  const response = await fetch(`${DEMO_CONTROL_URL}/queue-group`);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to fetch queue group status: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Updates Core NATS Queue Group active workers (1 or 2).
+ * Calls PUT /queue-group on demo-control-service.
+ */
+export async function updateQueueGroupWorkers(workers: number): Promise<QueueGroupStatus> {
+  const response = await fetch(`${DEMO_CONTROL_URL}/queue-group`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ workers }),
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to update queue group workers: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Publishes a batch of test messages to jobs.queue for Core NATS Queue Group distribution.
+ * Calls POST /jobs/queue on job-service.
+ */
+export async function sendQueueTestMessages(count: number = 10): Promise<QueuePublishResponse> {
+  const response = await fetch(`${JOB_SERVICE_URL}/jobs/queue`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ count, type: 'queue-job' }),
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to send queue test messages: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Resets the worker distribution counters for the Core NATS Queue Group.
+ * Calls POST /queue-group/reset on demo-control-service.
+ */
+export async function resetQueueGroupDistribution(): Promise<QueueGroupStatus> {
+  const response = await fetch(`${DEMO_CONTROL_URL}/queue-group/reset`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to reset queue group distribution: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Resets the worker distribution counters for the JetStream Consumer.
+ * Calls POST /consumer/reset on demo-control-service.
+ */
+export async function resetConsumerDistribution(): Promise<ConsumerStatus> {
+  const response = await fetch(`${DEMO_CONTROL_URL}/consumer/reset`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to reset consumer distribution: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Publishes a batch of test messages to the JOBS stream via Job Service POST /jobs with delivery_mode=JETSTREAM.
+ */
+export async function sendJetStreamTestMessages(count: number = 10): Promise<{ published: number; jobs: string[] }> {
+  try {
+    const response = await fetch(`${DEMO_CONTROL_URL}/jobs/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ count, type: 'image-processing' }),
+    });
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch {
+    // Fallback to individual submitJob if endpoint temporarily unavailable
+  }
+
+  const jobIds: string[] = [];
+  const baseNum = Math.floor(100 + Math.random() * 900);
+  for (let i = 0; i < count; i++) {
+    const jId = `job-js-${baseNum + i}`;
+    jobIds.push(jId);
+    await submitJob({
+      job_id: jId,
+      type: 'image-processing',
+      delivery_mode: 'JETSTREAM',
+      payload: { file: `img-${baseNum + i}.jpg`, batch: true },
+    });
+  }
+  return { published: count, jobs: jobIds };
+}
+
+
+
 
 

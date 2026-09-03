@@ -1,11 +1,12 @@
 import React from 'react';
-import { ServiceStatus, JetStreamInfo, ConsumerStatus, DLQStatus } from '../../api/demoApi';
+import { ServiceStatus, JetStreamInfo, ConsumerStatus, DLQStatus, QueueGroupStatus } from '../../api/demoApi';
 
 interface DemoTopologyProps {
   services: ServiceStatus[];
   jetstreamInfo?: JetStreamInfo | null;
   consumerStatus?: ConsumerStatus | null;
   dlqStatus?: DLQStatus | null;
+  queueGroupStatus?: QueueGroupStatus | null;
   onSelectInfo: (componentId: string) => void;
 }
 
@@ -14,6 +15,7 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
   jetstreamInfo,
   consumerStatus,
   dlqStatus,
+  queueGroupStatus,
   onSelectInfo,
 }) => {
   const natsService = services.find((s) => s.name.toLowerCase().includes('nats'));
@@ -28,21 +30,18 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
   const isProcessing = processorService?.processing ?? false;
 
   const streamName = jetstreamInfo?.stream || 'JOBS';
-  const pendingCount = consumerStatus?.pending ?? jetstreamInfo?.pending ?? 0;
-  const ackPendingCount = consumerStatus?.ack_pending ?? 0;
-  const redeliveredCount = consumerStatus?.redelivered ?? 0;
-
   const consumerType = consumerStatus?.type ? consumerStatus.type.toUpperCase() : 'DURABLE';
   const consumerName = consumerStatus?.name || 'job-processor';
   const ordering = consumerStatus?.ordering ? consumerStatus.ordering.toUpperCase() : 'NORMAL';
   const workerCount = consumerStatus?.workers ?? processorService?.workers ?? (isProcessorOnline ? 1 : 0);
+  const queueWorkers = queueGroupStatus?.workers ?? 1;
 
   return (
     <div className="demo-topology-container">
       <div className="topology-runtime-header">
         <span className="topology-legend-tag">DEPLOYED RUNTIME ARCHITECTURE</span>
         <span className="topology-legend-note">
-          UI &amp; Demo Gateway Tier decoupled from Business Messaging Pipeline
+          Three-Tier decoupled architecture: Client Gateway -&gt; Ingress &amp; NATS Server -&gt; Worker Daemon
         </span>
       </div>
 
@@ -78,13 +77,16 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
           </div>
 
           {/* Connector: React UI -> Demo Control Service */}
-          <div className="topology-connector horizontal connector-active">
+          <div className="topology-connector horizontal connector-active" style={{ flex: 1, padding: '1.8rem 0.5rem 0 0.5rem' }}>
             <div className="connector-flow-group">
-              <span className="connector-flow-label">UI Gateway HTTP</span>
+              <span className="connector-flow-label">UI Gateway HTTP REST (:8080)</span>
               <div className="connector-line-with-arrow">
-                <div className="connector-line" />
+                <div className="connector-line" style={{ width: '40px' }} />
                 <span className="connector-arrow">-&gt;</span>
               </div>
+              <span className="connector-flow-desc" style={{ fontSize: '0.5625rem', color: 'var(--text-muted)' }}>
+                Activity Polling, Config Relay, Remote Controls
+              </span>
             </div>
           </div>
 
@@ -110,7 +112,7 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
                   </span>
                   <span className="node-detail">HTTP API (:8080)</span>
                 </div>
-                <span className="node-subtle">Activity Taps &amp; Remote Control</span>
+                <span className="node-subtle">Activity Ring Buffer &amp; Tap</span>
               </div>
             </div>
           </div>
@@ -118,7 +120,7 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* INTER-TIER VERTICAL CONNECTORS                                            */}
+      {/* INTER-TIER VERTICAL CONNECTORS (Tier 1 -> Tier 2)                         */}
       {/* ========================================================================= */}
       <div className="topology-vertical-bridge">
         <div className="v-bridge-col v-bridge-col-left">
@@ -126,31 +128,36 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
             <div className="v-bridge-line" />
             <span className="v-bridge-arrow">v</span>
           </div>
-          <span className="v-bridge-label">POST /jobs, /validate (:8081)</span>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span className="v-bridge-label">HTTP REST (:8081)</span>
+            <span className="v-bridge-sublabel">POST /jobs, /validate, /queue, /stream</span>
+          </div>
         </div>
-        <div className="v-bridge-col v-bridge-col-right">
+
+        <div className="v-bridge-col v-bridge-col-right" style={{ justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', textAlign: 'right' }}>
+            <span className="v-bridge-label">NATS TCP Client (:4222)</span>
+            <span className="v-bridge-sublabel">jobs.&gt; Wildcard Tap, Ephemeral Replay, Control RPC</span>
+          </div>
           <div className="v-bridge-flow">
             <div className="v-bridge-line" />
             <span className="v-bridge-arrow">v</span>
           </div>
-          <span className="v-bridge-label">Passive Tap (jobs.&gt;) &amp; Control</span>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* TIER 2: BUSINESS & MESSAGING PIPELINE                                     */}
+      {/* TIER 2: BUSINESS INGRESS & NATS SERVER ENGINE                             */}
       {/* ========================================================================= */}
-      <div className="topology-tier-header" style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
-        <span className="topology-tier-tag">TIER 2: BUSINESS &amp; MESSAGING PIPELINE</span>
+      <div className="topology-tier-header" style={{ marginTop: '0.25rem', marginBottom: '0.35rem' }}>
+        <span className="topology-tier-tag">TIER 2: BUSINESS INGRESS &amp; NATS SERVER ENGINE</span>
       </div>
 
-      <div className="topology-pipeline-layout">
-        {/* ========================================================================= */}
-        {/* DEPLOYED COMPONENT 1: Job Service                                         */}
-        {/* ========================================================================= */}
+      <div className="topology-ingress-broker-layout">
+        {/* Component 1: Job Service */}
         <div className="topology-col deployed-col">
-          <div className="deployed-boundary-label">DEPLOYED SERVICE</div>
-          <div className={`topology-node deployed-card ${isJobActive ? 'node-active' : 'node-inactive'}`}>
+          <div className="deployed-boundary-label">BUSINESS INGRESS</div>
+          <div className={`topology-node deployed-card job-service-card ${isJobActive ? 'node-active' : 'node-inactive'}`}>
             <div className="node-header">
               <span className="node-title">Job Service</span>
               <button
@@ -168,33 +175,37 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
               </span>
               <span className="node-detail">HTTP API (:8081)</span>
               <span className="node-subtle">Pure Business Service</span>
+              <div style={{ marginTop: '0.35rem', paddingTop: '0.35rem', borderTop: '1px solid var(--border-color)', fontSize: '0.625rem', color: 'var(--text-muted)' }}>
+                W3C <span className="font-mono text-cyan">traceparent</span> context injection
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Connector 1: Job Service -> NATS Server */}
-        <div className={`topology-connector horizontal ${isJobActive && isNatsConnected ? 'connector-active' : 'connector-inactive'}`}>
+        {/* Connector: Job Service -> NATS Server */}
+        <div className={`topology-connector horizontal ${isJobActive && isNatsConnected ? 'connector-active' : 'connector-inactive'}`} style={{ padding: '3.5rem 0.25rem 0 0.25rem' }}>
           <div className="connector-flow-group">
-            <span className="connector-flow-label">Publish / Request</span>
+            <span className="connector-flow-label">Publish / RPC</span>
             <div className="connector-line-with-arrow">
-              <div className="connector-line" />
+              <div className="connector-line" style={{ width: '24px' }} />
               <span className="connector-arrow">-&gt;</span>
             </div>
+            <span className="connector-flow-desc" style={{ fontSize: '0.5rem', color: 'var(--text-muted)', textAlign: 'center', whiteSpace: 'nowrap' }}>
+              NATS TCP :4222
+            </span>
           </div>
         </div>
 
-        {/* ========================================================================= */}
-        {/* DEPLOYED COMPONENT 2: NATS Server (Runtime Boundary & Internal Model)    */}
-        {/* ========================================================================= */}
-        <div className="topology-col deployed-col nats-server-col">
-          <div className="deployed-boundary-label">DEPLOYED SERVER BOUNDARY</div>
+        {/* Component 2: WIDENED NATS Server Block (Dual Engine: Core NATS & JetStream) */}
+        <div className="topology-col deployed-col nats-server-col-wide">
+          <div className="deployed-boundary-label">MESSAGE BROKER &amp; PERSISTENCE ENGINE</div>
           <div className={`nats-server-boundary ${isNatsConnected ? 'node-active' : 'node-inactive'}`}>
             {/* NATS Server Header */}
             <div className="nats-server-header">
               <div className="node-header">
                 <div className="nats-server-title-group">
                   <span className="node-title">NATS Server</span>
-                  <span className="nats-port-tag">Port 4222</span>
+                  <span className="nats-port-tag">Port 4222 / 8222</span>
                 </div>
                 <button
                   type="button"
@@ -205,264 +216,312 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
                   (i)
                 </button>
               </div>
-              <div className="node-body" style={{ marginTop: '0.25rem' }}>
+              <div className="node-body" style={{ marginTop: '0.2rem' }}>
                 <span className={`node-badge ${isNatsConnected ? 'badge-online' : 'badge-offline'}`}>
-                  {isNatsConnected ? 'Connected' : 'Disconnected'}
+                  {isNatsConnected ? 'Connected & Operational' : 'Disconnected'}
                 </span>
               </div>
             </div>
 
-            {/* Capabilities Box */}
-            <div className="nats-capabilities-section">
-              <span className="internal-section-title">SERVER CAPABILITIES</span>
-              <div className="capabilities-badges-row">
-                <div className="capability-pill">
-                  <span className="capability-pill-name">Core NATS</span>
-                  <span className="capability-pill-desc">Pub/Sub &amp; Req/Reply</span>
+            {/* Dual Engine Side-by-Side Grid */}
+            <div className="nats-dual-engine-grid">
+              {/* Compartment A: Core NATS Engine (In-Memory / Transient) */}
+              <div className="engine-compartment core-engine">
+                <div className="engine-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span className="engine-title" style={{ color: '#60A5FA' }}>Core NATS</span>
+                    <button
+                      type="button"
+                      className="node-info-btn"
+                      onClick={() => onSelectInfo('queue-groups')}
+                      title="Learn about Core NATS"
+                    >
+                      (i)
+                    </button>
+                  </div>
+                  <span className="engine-tag tag-core">IN-MEMORY • TRANSIENT</span>
                 </div>
-                <div className="capability-pill capability-pill-js">
-                  <span className="capability-pill-name">JetStream</span>
-                  <span className="capability-pill-desc">Persistence &amp; Streaming</span>
+
+                {/* Core NATS Item 1: Transient Pub/Sub */}
+                <div className="internal-item-box">
+                  <div className="internal-item-title-row">
+                    <span className="internal-item-name">Transient Pub / Sub</span>
+                    <span className="internal-item-meta">jobs.*, jobs.&gt;</span>
+                  </div>
+                  <span className="internal-item-desc">At-Most-Once fanout • Discarded if offline</span>
+                </div>
+
+                {/* Core NATS Item 2: Queue Groups */}
+                <div className="internal-item-box item-highlight">
+                  <div className="internal-item-title-row">
+                    <span className="internal-item-name">Queue Group</span>
+                    <span className="internal-item-meta">jobs.queue</span>
+                  </div>
+                  <span className="internal-item-desc">
+                    Group: <span className="font-mono text-cyan">job-workers</span> ({queueWorkers} Sub{queueWorkers > 1 ? 's' : ''} • 1-of-N balance)
+                  </span>
+                </div>
+
+                {/* Core NATS Item 3: Request / Reply */}
+                <div className="internal-item-box">
+                  <div className="internal-item-title-row">
+                    <span className="internal-item-name">Request / Reply RPC</span>
+                    <span className="internal-item-meta">jobs.validate</span>
+                  </div>
+                  <span className="internal-item-desc">Synchronous reply inbox • 2s Timeout</span>
                 </div>
               </div>
-            </div>
 
-            {/* Internal JetStream Model Container */}
-            <div className="nats-internal-resources-box">
-              <div className="internal-resources-header">
-                <span className="internal-res-title">JETSTREAM MANAGED RESOURCES</span>
-                <span className="internal-res-subtitle">Logical resources inside NATS</span>
-              </div>
-
-              {/* Resource A: JOBS Stream */}
-              <div className="internal-resource-card stream-res-card">
-                <div className="node-header">
-                  <div className="res-title-group">
-                    <span className="res-type-tag">STREAM</span>
-                    <span className="res-name">{streamName}</span>
+              {/* Compartment B: JetStream Engine (Persistent Storage & Stateful Cursors) */}
+              <div className="engine-compartment js-engine">
+                <div className="engine-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span className="engine-title" style={{ color: '#C4B5FD' }}>JetStream Engine</span>
+                    <button
+                      type="button"
+                      className="node-info-btn"
+                      onClick={() => onSelectInfo('jobs-stream')}
+                      title="Learn about JetStream"
+                    >
+                      (i)
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="node-info-btn"
-                    onClick={() => onSelectInfo('jobs-stream')}
-                    title="Learn about JOBS Stream"
-                  >
-                    (i)
-                  </button>
+                  <span className="engine-tag tag-js">PERSISTENT STORAGE</span>
                 </div>
-                <div className="res-body">
-                  <div className="node-meta-row">
-                    <span className="node-badge badge-stream">
-                      {jetstreamInfo?.messages !== undefined ? `${jetstreamInfo.messages} Stored` : 'Persistent Store'}
-                    </span>
-                    <span className="node-subtle font-mono">jobs.submitted</span>
+
+                {/* JetStream Pipeline 1: JOBS Stream & Pull Consumer */}
+                <div className="internal-resource-card stream-res-card">
+                  <div className="node-header">
+                    <div className="res-title-group">
+                      <span className="res-type-tag">STREAM</span>
+                      <span className="res-name">{streamName}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="node-info-btn"
+                      onClick={() => onSelectInfo('jobs-stream')}
+                      title="Learn about JOBS Stream"
+                    >
+                      (i)
+                    </button>
+                  </div>
+                  <div className="res-body">
+                    <div className="node-meta-row">
+                      <span className="node-badge badge-stream">PERSISTENT LOG</span>
+                      <span className="node-subtle font-mono">jobs.submitted</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Downward Connector: Stream -> Consumer */}
-              <div className="internal-connector-down">
-                <div className="internal-line-v" />
-                <span className="internal-arrow-v">v</span>
-                <span className="internal-connector-label">buffers to</span>
-              </div>
-
-              {/* Resource B: job-processor Consumer */}
-              <div className="internal-resource-card consumer-res-card">
-                <div className="node-header">
-                  <div className="res-title-group">
-                    <span className="res-type-tag">CONSUMER</span>
-                    <span className="res-name">{consumerName}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="node-info-btn"
-                    onClick={() => onSelectInfo('consumer')}
-                    title="Learn about JetStream Consumers"
-                  >
-                    (i)
-                  </button>
+                <div className="internal-connector-down">
+                  <div className="internal-line-v" />
+                  <span className="internal-arrow-v">v</span>
+                  <span className="internal-connector-label">buffers to pull cursor</span>
                 </div>
-                <div className="res-body">
-                  <div className="node-meta-row">
-                    <span className="node-badge badge-consumer">{consumerType}</span>
-                    <span className="node-detail">Ordering: {ordering}</span>
+
+                <div className="internal-resource-card consumer-res-card">
+                  <div className="node-header">
+                    <div className="res-title-group">
+                      <span className="res-type-tag">CONSUMER</span>
+                      <span className="res-name">{consumerName}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="node-info-btn"
+                      onClick={() => onSelectInfo('consumer')}
+                      title="Learn about JetStream Consumers"
+                    >
+                      (i)
+                    </button>
                   </div>
-                  <div className="consumer-res-metrics">
-                    <span className={`node-metric ${pendingCount > 0 ? 'metric-highlight' : ''}`}>
-                      Pending: {pendingCount}
-                    </span>
-                    <span className="node-metric">
-                      Ack Pend: {ackPendingCount}
-                    </span>
-                    {redeliveredCount > 0 && (
-                      <span className="node-metric metric-warning">
-                        Redeliv: {redeliveredCount}
+                  <div className="res-body">
+                    <div className="node-meta-row">
+                      <span className="node-badge badge-consumer">{consumerType}</span>
+                      <span className="node-detail">Pull Mode</span>
+                      <span className="node-detail">•</span>
+                      <span className="node-detail">{consumerType === 'DURABLE' ? 'DeliverAll' : 'DeliverNew'}</span>
+                      <span className="node-detail">•</span>
+                      <span className="node-detail">Ordering: {ordering}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* JetStream Pipeline 2: JOBS_DLQ Stream & Inspector */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '0.35rem', alignItems: 'center', marginTop: '0.2rem' }}>
+                  <div className="internal-resource-card stream-res-card" style={{ borderLeftColor: '#EF4444' }}>
+                    <div className="node-header">
+                      <span className="res-name" style={{ fontSize: '0.6875rem' }}>JOBS_DLQ</span>
+                      <button
+                        type="button"
+                        className="node-info-btn"
+                        onClick={() => onSelectInfo('dead-letter-queue')}
+                        title="Learn about DLQ Stream"
+                      >
+                        (i)
+                      </button>
+                    </div>
+                    <div className="node-meta-row">
+                      <span className="node-badge" style={{ fontSize: '0.5625rem', background: 'rgba(239, 68, 68, 0.15)', color: '#FCA5A5', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                        POISON STORE
                       </span>
-                    )}
+                      <span className="node-subtle font-mono" style={{ fontSize: '0.5625rem' }}>jobs.dlq</span>
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              {/* Resource C: JOBS_DLQ Stream */}
-              <div className="internal-resource-card stream-res-card" style={{ marginTop: '0.5rem', borderLeftColor: '#EF4444' }}>
-                <div className="node-header">
-                  <div className="res-title-group">
-                    <span className="res-type-tag" style={{ color: '#FCA5A5' }}>DLQ STREAM</span>
-                    <span className="res-name">JOBS_DLQ</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="node-info-btn"
-                    onClick={() => onSelectInfo('dead-letter-queue')}
-                    title="Learn about Dead Letter Queue Stream"
-                  >
-                    (i)
-                  </button>
-                </div>
-                <div className="res-body">
-                  <div className="node-meta-row">
-                    <span className="node-badge" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#FCA5A5', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                      {dlqStatus?.messages !== undefined ? `${dlqStatus.messages} Stored` : '0 Stored'}
-                    </span>
-                    <span className="node-subtle font-mono">jobs.dlq</span>
-                  </div>
-                </div>
-              </div>
+                  <span className="font-mono text-muted" style={{ fontSize: '0.625rem' }}>-&gt;</span>
 
-              {/* Downward Connector: DLQ Stream -> DLQ Consumer */}
-              <div className="internal-connector-down">
-                <div className="internal-line-v" style={{ background: 'rgba(239, 68, 68, 0.4)' }} />
-                <span className="internal-arrow-v" style={{ color: '#EF4444' }}>v</span>
-                <span className="internal-connector-label">inspects via</span>
-              </div>
-
-              {/* Resource D: dlq-inspector Consumer */}
-              <div className="internal-resource-card consumer-res-card" style={{ borderLeftColor: '#F59E0B' }}>
-                <div className="node-header">
-                  <div className="res-title-group">
-                    <span className="res-type-tag">DLQ CONSUMER</span>
-                    <span className="res-name">dlq-inspector</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="node-info-btn"
-                    onClick={() => onSelectInfo('dead-letter-queue')}
-                    title="Learn about dlq-inspector Consumer"
-                  >
-                    (i)
-                  </button>
-                </div>
-                <div className="res-body">
-                  <div className="node-meta-row">
-                    <span className="node-badge badge-consumer">DURABLE</span>
-                    <span className="node-detail">Pending: {dlqStatus?.pending ?? 0}</span>
+                  <div className="internal-resource-card consumer-res-card" style={{ borderLeftColor: '#F59E0B' }}>
+                    <div className="node-header">
+                      <span className="res-name" style={{ fontSize: '0.6875rem' }}>dlq-inspector</span>
+                      <button
+                        type="button"
+                        className="node-info-btn"
+                        onClick={() => onSelectInfo('dead-letter-queue')}
+                        title="Learn about dlq-inspector"
+                      >
+                        (i)
+                      </button>
+                    </div>
+                    <div className="node-meta-row">
+                      <span className="node-badge badge-consumer" style={{ fontSize: '0.5625rem' }}>
+                        DURABLE CURSOR
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Connector 2: Consumer inside NATS Server -> Processor Service Workers */}
-        <div className={`topology-connector horizontal delivery-connector ${isProcessing && isProcessorOnline ? 'connector-active' : 'connector-paused'}`}>
-          <div className="connector-flow-group">
-            {isProcessing && isProcessorOnline ? (
-              <>
-                <span className="connector-flow-label">Deliver Messages</span>
-                <div className="connector-line-with-arrow">
-                  <div className="connector-line" />
-                  <span className="connector-arrow">-&gt;</span>
-                </div>
-              </>
-            ) : (
-              <div className="connector-paused-group">
-                <span className="connector-severed-badge">[ PAUSED ]</span>
-                <span className="connector-paused-label">Delivery Suspended</span>
-              </div>
-            )}
+      {/* ========================================================================= */}
+      {/* INTER-TIER DELIVERY BRIDGE (Tier 2 NATS -> Tier 3 Processor Service)     */}
+      {/* ========================================================================= */}
+      <div className="topology-delivery-bridge">
+        <div className="delivery-bridge-item">
+          <span className="bridge-arrow-down">v</span>
+          <span className="bridge-text">
+            {isProcessing && isProcessorOnline 
+              ? 'Deliver Messages (JetStream Pull Batches • Core Queue Distribution • RPC Dispatch)'
+              : '[ DELIVERY PAUSED ] Worker goroutines idle'}
+          </span>
+          <span className="bridge-arrow-down">v</span>
+        </div>
+        <div className="delivery-bridge-item">
+          <span className="bridge-arrow-up">^</span>
+          <span className="bridge-text">
+            Lifecycle Feedback (Ack / Nak • jobs.received • jobs.completed • jobs.failed • jobs.dlq)
+          </span>
+          <span className="bridge-arrow-up">^</span>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* TIER 3: WORKER DAEMON & CONSUMER BINDINGS                                 */}
+      {/* ========================================================================= */}
+      <div className="topology-tier-header" style={{ marginBottom: '0.35rem' }}>
+        <span className="topology-tier-tag">TIER 3: WORKER DAEMON &amp; CONSUMER BINDINGS</span>
+      </div>
+
+      <div className="processor-service-wide-card">
+        {/* Processor Service Header */}
+        <div className="node-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <span className="node-title" style={{ fontSize: '0.875rem' }}>Processor Service</span>
+            <span className={`node-badge ${isProcessorOnline ? (isProcessing ? 'badge-online' : 'badge-paused') : 'badge-offline'}`}>
+              {isProcessorOnline ? (isProcessing ? 'Active' : 'Paused') : 'Offline'}
+            </span>
+            <span className={`node-detail font-bold ${isProcessing ? 'text-success' : 'text-danger'}`}>
+              Processing: {isProcessing ? 'ON' : 'OFF'}
+            </span>
+            <span className="node-subtle">
+              Total Worker Pool: {workerCount} Worker{workerCount > 1 ? 's' : ''}
+            </span>
           </div>
+          <button
+            type="button"
+            className="node-info-btn"
+            onClick={() => onSelectInfo('processor-service')}
+            title="Learn about Processor Service"
+          >
+            (i)
+          </button>
         </div>
 
-        {/* ========================================================================= */}
-        {/* DEPLOYED COMPONENT 3: Processor Service (Host Application & Worker Pool) */}
-        {/* ========================================================================= */}
-        <div className="topology-col deployed-col processor-col">
-          <div className="deployed-boundary-label">DEPLOYED SERVICE</div>
-          <div className={`topology-node deployed-card processor-service-card ${isProcessorOnline ? (isProcessing ? 'node-active' : 'node-paused') : 'node-inactive'}`}>
-            {/* Processor Service Header */}
-            <div className="node-header">
-              <span className="node-title">Processor Service</span>
-              <button
-                type="button"
-                className="node-info-btn"
-                onClick={() => onSelectInfo('processor-service')}
-                title="Learn about Processor Service"
-              >
-                (i)
-              </button>
-            </div>
-            <div className="node-body">
-              <div className="node-meta-row">
-                <span className={`node-badge ${isProcessorOnline ? (isProcessing ? 'badge-online' : 'badge-paused') : 'badge-offline'}`}>
-                  {isProcessorOnline ? (isProcessing ? 'Active' : 'Paused') : 'Offline'}
-                </span>
-                <span className={`node-detail font-bold ${isProcessing ? 'text-success' : 'text-danger'}`}>
-                  Processing: {isProcessing ? 'ON' : 'OFF'}
-                </span>
-              </div>
-              <span className="node-subtle">
-                Worker Pool: {workerCount} Worker{workerCount > 1 ? 's' : ''}
+        {/* Dual Compartment Worker Grid */}
+        <div className="processor-dual-worker-grid">
+          {/* Compartment 1: JetStream Competing Pull Workers */}
+          <div className="worker-compartment">
+            <div className="worker-compartment-header">
+              <span className="worker-compartment-title">JetStream Pull Workers</span>
+              <span className="competing-badge">
+                {workerCount === 1 ? '1 PULL WORKER' : `${workerCount} COMPETING WORKERS`}
               </span>
             </div>
-
-            {/* Nested Worker Pool */}
-            <div className="processor-workers-section">
-              <div className="workers-section-header">
-                <span className="workers-section-title">APPLICATION WORKERS</span>
-                {workerCount > 1 && (
-                  <span className="competing-badge">COMPETING WORKERS</span>
-                )}
-              </div>
-
-              {workerCount > 1 ? (
-                <div className="competing-workers-wrapper">
-                  <div className="competing-subtext">
-                    Both workers pull from shared consumer '{consumerName}'
-                  </div>
-                  <div className="topology-workers-row">
-                    {Array.from({ length: workerCount }, (_, i) => {
-                      const workerName = `processor-${i + 1}`;
-                      return (
-                        <div
-                          key={workerName}
-                          className={`topology-worker-card ${isProcessorOnline ? (isProcessing ? 'worker-active' : 'worker-paused') : 'worker-offline'}`}
-                        >
-                          <div className="worker-header">
-                            <span className="font-mono worker-name">{workerName}</span>
-                            <span className={`worker-pill ${isProcessorOnline ? (isProcessing ? 'pill-green' : 'pill-amber') : 'pill-red'}`}>
-                              {isProcessorOnline ? (isProcessing ? 'Pulling' : 'Idle') : 'Offline'}
-                            </span>
-                          </div>
-                          <div className="worker-detail">Pull Worker {i + 1}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                /* Single Worker View */
-                <div className={`topology-worker-card single-worker ${isProcessorOnline ? (isProcessing ? 'worker-active' : 'worker-paused') : 'worker-offline'}`}>
-                  <div className="worker-header">
-                    <span className="font-mono worker-name">processor-1</span>
-                    <span className={`worker-pill ${isProcessorOnline ? (isProcessing ? 'pill-green' : 'pill-amber') : 'pill-red'}`}>
-                      {isProcessorOnline ? (isProcessing ? 'Pulling' : 'Idle') : 'Offline'}
-                    </span>
-                  </div>
-                  <div className="worker-detail">Pull Worker 1 (Default)</div>
-                </div>
-              )}
+            <div className="worker-subtext">
+              Workers pull from durable consumer '{consumerName}' on stream '{streamName}'
             </div>
+            <div className="topology-workers-row" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(workerCount, 3)}, 1fr)`, gap: '0.35rem' }}>
+              {Array.from({ length: workerCount }, (_, i) => {
+                const workerName = `processor-${i + 1}`;
+                return (
+                  <div
+                    key={workerName}
+                    className={`topology-worker-card ${isProcessorOnline ? (isProcessing ? 'worker-active' : 'worker-paused') : 'worker-offline'}`}
+                  >
+                    <div className="worker-header">
+                      <span className="font-mono worker-name" style={{ fontSize: '0.75rem' }}>{workerName}</span>
+                      <span className={`worker-pill ${isProcessorOnline ? (isProcessing ? 'pill-green' : 'pill-amber') : 'pill-red'}`}>
+                        {isProcessorOnline ? (isProcessing ? 'Pull' : 'Idle') : 'Off'}
+                      </span>
+                    </div>
+                    <div className="worker-detail" style={{ fontSize: '0.625rem' }}>JS Worker {i + 1}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Compartment 2: Core NATS Queue Group Subscribers */}
+          <div className="worker-compartment">
+            <div className="worker-compartment-header">
+              <span className="worker-compartment-title">Core NATS Queue Group</span>
+              <span className="competing-badge" style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
+                {queueWorkers === 1 ? '1 SUBSCRIBER' : `${queueWorkers} SUBSCRIBERS (1-OF-N)`}
+              </span>
+            </div>
+            <div className="worker-subtext">
+              Subscribers bound to queue group 'job-workers' on subject 'jobs.queue'
+            </div>
+            <div className="topology-workers-row" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(queueWorkers, 3)}, 1fr)`, gap: '0.35rem' }}>
+              {Array.from({ length: queueWorkers }, (_, i) => {
+                const wName = `processor-${i + 1}`;
+                return (
+                  <div
+                    key={wName}
+                    className={`topology-worker-card ${isProcessorOnline ? 'worker-active' : 'worker-offline'}`}
+                  >
+                    <div className="worker-header">
+                      <span className="font-mono worker-name" style={{ fontSize: '0.75rem' }}>{wName}</span>
+                      <span className="worker-pill pill-green">Sub</span>
+                    </div>
+                    <div className="worker-detail font-mono" style={{ fontSize: '0.625rem' }}>jobs.queue</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer: Lifecycle Event Emission */}
+        <div className="processor-lifecycle-footer">
+          <span>Processor emits lifecycle events on completion/failure:</span>
+          <div className="lifecycle-chips-group">
+            <span className="lifecycle-chip">jobs.received</span>
+            <span className="lifecycle-chip">jobs.completed</span>
+            <span className="lifecycle-chip">jobs.failed</span>
+            <span className="lifecycle-chip">jobs.dlq.published</span>
           </div>
         </div>
       </div>

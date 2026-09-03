@@ -65,8 +65,35 @@ type ConsumerStatusResponse struct {
 	Ordering    string `json:"ordering"`
 	Delivery    string `json:"delivery"`
 	Status      string `json:"status"`
-	Pending     uint64 `json:"pending"`
-	AckPending  int    `json:"ack_pending"`
-	Redelivered int    `json:"redelivered"`
+	Pending      uint64         `json:"pending"`
+	AckPending   int            `json:"ack_pending"`
+	Redelivered  int            `json:"redelivered"`
+	Distribution map[string]int `json:"distribution,omitempty"`
+}
+
+// QueueGroupConfig represents the configuration payload for Core NATS queue group workers.
+type QueueGroupConfig struct {
+	Workers int `json:"workers"` // Number of queue-group worker instances: 1 or 2
+}
+
+// QueueGroupStatusResponse represents the runtime status and distribution of the Core NATS queue group.
+type QueueGroupStatusResponse struct {
+	Subject      string         `json:"subject"`
+	QueueGroup   string         `json:"queue_group"`
+	Workers      int            `json:"workers"`
+	Distribution map[string]int `json:"distribution"`
+}
+
+// QueuePublishRequest represents a batch or single message publishing request to jobs.queue.
+type QueuePublishRequest struct {
+	Count int    `json:"count"`          // Number of test messages to publish (default: 1)
+	Type  string `json:"type,omitempty"` // Optional job type
+}
+
+// QueuePublishResponse represents the HTTP response returned after publishing to jobs.queue.
+type QueuePublishResponse struct {
+	Published int      `json:"published"`
+	Subject   string   `json:"subject"`
+	Jobs      []string `json:"jobs"`
 }
 

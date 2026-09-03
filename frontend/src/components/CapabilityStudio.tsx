@@ -5,8 +5,9 @@ import { DeduplicationPanel } from './DeduplicationPanel';
 import { RequestReplyPanel } from './RequestReplyPanel';
 import { DLQPanel } from './DLQPanel';
 import { ReplayPanel } from './ReplayPanel';
+import { QueueGroupPanel } from './QueueGroupPanel';
 
-export type StudioTab = 'pubsub' | 'request-reply' | 'dlq' | 'replay';
+export type StudioTab = 'pubsub' | 'queue-group' | 'request-reply' | 'dlq' | 'replay';
 
 interface CapabilityStudioProps {
   // Job Actions
@@ -56,6 +57,14 @@ export const CapabilityStudio: React.FC<CapabilityStudioProps> = ({
           onClick={() => setActiveTab('pubsub')}
         >
           <span className="tab-label">Pub/Sub & Stream</span>
+        </button>
+
+        <button
+          type="button"
+          className={`studio-tab-btn ${activeTab === 'queue-group' ? 'active' : ''}`}
+          onClick={() => setActiveTab('queue-group')}
+        >
+          <span className="tab-label">Queue Groups</span>
         </button>
 
         <button
@@ -122,6 +131,14 @@ export const CapabilityStudio: React.FC<CapabilityStudioProps> = ({
           </div>
         )}
 
+        {activeTab === 'queue-group' && (
+          <QueueGroupPanel
+            onShowInfo={onShowInfo}
+            onAlert={onAlert}
+            onMessagesSent={onRefreshActivity}
+          />
+        )}
+
         {activeTab === 'request-reply' && (
           <RequestReplyPanel
             activities={activities}
@@ -135,6 +152,7 @@ export const CapabilityStudio: React.FC<CapabilityStudioProps> = ({
             onShowInfo={onShowInfo}
             onAlert={onAlert}
             onRefreshAll={onRefreshAll}
+            onActivityUpdated={onRefreshActivity}
           />
         )}
 

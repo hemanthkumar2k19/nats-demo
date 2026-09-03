@@ -133,6 +133,62 @@ List all jobs currently stored in the Job Service's in-memory store. Essential f
 
 ---
 
+### 1.5. Submit Queue Jobs
+Publish a batch or single message directly to Core NATS `jobs.queue` subject for load-balanced distribution across active subscribers in the `job-workers` queue group.
+
+* **Endpoint**: `POST /jobs/queue`
+* **Content-Type**: `application/json`
+* **Request Body**:
+  ```json
+  {
+    "count": 10,
+    "type": "queue-task"
+  }
+  ```
+* **Response**: `202 Accepted`
+* **Response Body**:
+  ```json
+  {
+    "published": 10,
+    "subject": "jobs.queue",
+    "jobs": [
+      "job-q-101",
+      "job-q-102"
+    ]
+  }
+  ```
+* **NATS Action**: Publishes messages to Core NATS subject `jobs.queue`.
+
+---
+
+### 1.6. Submit Stream Jobs
+Publish a batch of test messages directly to JetStream `JOBS` stream on subject `jobs.submitted` for competing pull consumer workers.
+
+* **Endpoint**: `POST /jobs/stream`
+* **Content-Type**: `application/json`
+* **Request Body**:
+  ```json
+  {
+    "count": 10,
+    "type": "image-processing"
+  }
+  ```
+* **Response**: `202 Accepted`
+* **Response Body**:
+  ```json
+  {
+    "published": 10,
+    "subject": "jobs.submitted",
+    "jobs": [
+      "job-js-101",
+      "job-js-102"
+    ]
+  }
+  ```
+* **NATS Action**: Publishes messages directly to JetStream stream `JOBS` on subject `jobs.submitted`.
+
+---
+
 ## 2. Demo Control & Observability HTTP API (Demo Control Service :8080)
 
 All demo-specific endpoints below are served by the **Demo Control Service** (`http://localhost:8080`).
@@ -329,7 +385,7 @@ Dynamically toggle whether the processor-service background processing is enable
 ---
 
 ### 2.7. Get Consumer Status
-Retrieve active JetStream consumer configuration and live metrics (pending, ack_pending, redelivered).
+Retrieve active JetStream consumer configuration and live metrics (pending, ack_pending, redelivered, and per-worker distribution).
 * **Endpoint**: `GET /consumer`
 * **Response**: `200 OK`
 * **Response Body**:
@@ -339,30 +395,42 @@ Retrieve active JetStream consumer configuration and live metrics (pending, ack_
     "type": "durable",
     "workers": 2,
     "ordering": "normal",
-    "delivery": "at-least-once",
+    "delivery": "PULL",
     "status": "ACTIVE",
     "pending": 0,
     "ack_pending": 0,
-    "redelivered": 0
+    "redelivered": 0,
+    "distribution": {
+      "processor-1": 6,
+      "processor-2": 4
+    }
   }
   ```
 
 ---
 
 ### 2.8. Put Consumer Configuration
-Dynamically configure consumer settings (Durable vs Ephemeral, worker pool size, ordering).
+Dynamically configure consumer settings (Durable vs Ephemeral, worker pool size 1 to 5, ordering).
 * **Endpoint**: `PUT /consumer`
 * **Content-Type**: `application/json`
 * **Request Body**:
   ```json
   {
     "type": "durable",
-    "workers": 2,
+    "workers": 3,
     "ordering": "normal"
   }
   ```
 * **Response**: `200 OK`
 * **Response Body**: Returns updated `ConsumerStatusResponse`.
+
+---
+
+### 2.9. Reset Consumer Distribution
+Resets all JetStream pull worker distribution counters back to zero.
+* **Endpoint**: `POST /consumer/reset`
+* **Response**: `200 OK`
+* **Response Body**: Returns updated `ConsumerStatusResponse` with zeroed distribution.
 
 ---
 
@@ -410,6 +478,75 @@ Retrieve failed messages stored in the `JOBS_DLQ` stream.
 
 ---
 
+### 2.9. Get Queue Group Status
+Fetches the active subscriber configuration and message distribution counts for Core NATS Queue Group `job-workers`.
+
+* **Endpoint**: `GET /queue-group`
+* **Response**: `200 OK`
+* **Response Body**:
+  ```json
+  {
+    "subject": "jobs.queue",
+    "queue_group": "job-workers",
+    "workers": 2,
+    "distribution": {
+      "processor-1": 6,
+      "processor-2": 4
+    }
+  }
+  ```
+
+---
+
+### 2.10. Configure Queue Group Workers
+Sets the number of active Core NATS Queue Group subscribers (1 to 5).
+
+* **Endpoint**: `PUT /queue-group`
+* **Content-Type**: `application/json`
+* **Request Body**:
+  ```json
+  {
+    "workers": 3
+  }
+  ```
+* **Response**: `200 OK`
+* **Response Body**:
+  ```json
+  {
+    "subject": "jobs.queue",
+    "queue_group": "job-workers",
+    "workers": 3,
+    "distribution": {
+      "processor-1": 4,
+      "processor-2": 3,
+      "processor-3": 3
+    }
+  }
+  ```
+
+---
+
+### 2.11. Reset Queue Group Distribution
+Resets all worker distribution counters for the Core NATS Queue Group `job-workers` back to zero.
+
+* **Endpoint**: `POST /queue-group/reset`
+* **Response**: `200 OK`
+* **Response Body**:
+  ```json
+  {
+    "subject": "jobs.queue",
+    "queue_group": "job-workers",
+    "workers": 3,
+    "distribution": {
+      "processor-1": 0,
+      "processor-2": 0,
+      "processor-3": 0
+    }
+  }
+  ```
+
+---
+
 ## 3. NATS Subjects & Payload Contracts
 
 All NATS message payloads are structured as JSON. Standard metadata is passed via NATS headers to keep the payload clean.
@@ -429,6 +566,11 @@ The following headers are present in messages:
 | :--- | :--- | :--- | :--- |
 | `jobs.submitted` | Job -> Processor | Job submission event | `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}` |
 | `jobs.validate` | Job <-> Processor | Req/Rep validation | **Req**: `{"job_id": string, "type": string, "payload": object, "delivery_mode": string}`<br>**Rep**: `{"valid": boolean, "message": string}` |
+| `jobs.queue` | Job -> Queue Group | Core NATS Queue Group test message | `{"job_id": string, "type": string, "delivery_mode": "CORE", "payload": object}` |
+| `jobs.queue.received` | Processor -> Observability | Queue group message receipt event | `{"job_id": string, "status": "RECEIVED", "delivery_count": 1}` |
+| `queuegroup.config.set` | Demo Control <-> Processor | Configure queue group worker count | **Req**: `{"workers": int}`<br>**Rep**: `{"subject": string, "queue_group": string, "workers": int, "distribution": object}` |
+| `queuegroup.status` | Demo Control <-> Processor | Query queue group status & stats | **Req**: `<empty>`<br>**Rep**: `{"subject": string, "queue_group": string, "workers": int, "distribution": object}` |
+| `queuegroup.reset` | Demo Control <-> Processor | Reset queue group worker distribution | **Req**: `<empty>`<br>**Rep**: `{"subject": string, "queue_group": string, "workers": int, "distribution": object}` |
 | `jobs.request.sent` | Job -> Observability | Validation request dispatched event | `{"job_id": string, "status": "REQUEST_SENT", "delivery_count": 1}` |
 | `jobs.request.received` | Processor -> Job | Validation request received event | `{"job_id": string, "status": "REQUEST_RECEIVED", "delivery_count": 1}` |
 | `jobs.reply.sent` | Processor -> Job | Validation reply dispatched event | `{"job_id": string, "status": "REPLY_SENT", "delivery_count": 1}` |
@@ -446,6 +588,7 @@ The following headers are present in messages:
 | `jobs.dlq.published` | Processor -> Observability | DLQ publication lifecycle event | `{"job_id": string, "status": "DLQ_PUBLISHED", "delivery_count": int, "error": string}` |
 | `processor.state.set` | Demo Control <-> Processor | Toggle processor processing state | **Req**: `{"enabled": boolean}`<br>**Rep**: `{"enabled": boolean, "status": string}` |
 | `consumer.config.set` | Demo Control <-> Processor | Dynamic consumer reconfiguration | **Req**: `{"type": string, "workers": int, "ordering": string}`<br>**Rep**: `ConsumerStatusResponse` |
+| `consumer.reset` | Demo Control <-> Processor | Reset consumer worker distribution | **Req**: `<empty>`<br>**Rep**: `ConsumerStatusResponse` |
 
 ---
 

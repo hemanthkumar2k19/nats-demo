@@ -14,6 +14,8 @@ func RegisterJobRoutes(router *gin.Engine, h *JobHandler) {
 	router.POST("/jobs/validate", h.ValidateJob)
 	router.GET("/jobs", h.ListJobs)
 	router.GET("/jobs/:job_id", h.GetJob)
+	router.POST("/jobs/queue", h.SubmitQueueJobs)
+	router.POST("/jobs/stream", h.SubmitStreamJobs)
 }
 
 // RegisterControlRoutes registers demo inspection and UI control endpoints onto the router.
@@ -27,8 +29,16 @@ func RegisterControlRoutes(router *gin.Engine, h *ControlHandler) {
 	router.PUT("/processor/state", h.PutProcessorState)
 	router.GET("/consumer", h.GetConsumerStatus)
 	router.PUT("/consumer", h.PutConsumerConfig)
+	router.POST("/consumer/reset", h.PostConsumerReset)
 	router.GET("/dlq/status", h.GetDLQStatus)
 	router.GET("/dlq/messages", h.GetDLQMessages)
+	router.POST("/dlq/reprocess", h.ReprocessDLQ)
+	router.POST("/dlq/purge", h.PurgeDLQ)
+	router.GET("/queue-group", h.GetQueueGroupStatus)
+	router.PUT("/queue-group", h.PutQueueGroupConfig)
+	router.POST("/queue-group/reset", h.PostQueueGroupReset)
+	router.POST("/jobs/queue", h.PublishQueueJobs)
+	router.POST("/jobs/stream", h.PublishStreamJobs)
 }
 
 // RegisterRoutes registers the handlers onto the HTTP router (legacy all-in-one).

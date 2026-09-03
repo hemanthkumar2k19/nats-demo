@@ -56,12 +56,13 @@ nats-demo/
 ### Frontend
 - **React SPA Dashboard (`frontend`)**:
    - Displays interactive **Current Demo Setup** pairing runtime topology on the left with embedded **Consumer Lab** controls and live metrics on the right.
-   - Accurately visualizes a two-tier architecture: Tier 1 with **React UI** and **Demo Control Service** connected to Tier 2 with **Job Service**, **NATS Server**, and **Processor Service**, clearly distinguishing deployed runtime components from internal NATS/JetStream resources (`JOBS Stream`, `JOBS_DLQ Stream`, `job-processor Consumer`, `dlq-inspector Consumer`).
+   - Accurately visualizes a three-tier architecture: Tier 1 with **React UI** and **Demo Control Service**, Tier 2 with **Job Service** and a wide dual-engine **NATS Server** (side-by-side **Core NATS** and **JetStream** engines), and Tier 3 with **Processor Service** worker pool directly beneath NATS, clearly distinguishing deployed services from internal broker resources (`JOBS Stream`, `JOBS_DLQ Stream`, `job-processor Consumer`, `dlq-inspector Consumer`).
    - Features the **NATS Capability Studio** (`CapabilityStudio.tsx`) unifying all demo action triggers into segmented tabs:
      1. `Pub/Sub & Stream`: Standard job submissions with instant switch to JetStream deduplication test bench.
-     2. `Request / Reply`: Synchronous RPC validation testing and timeout simulation.
-     3. `Dead Letter Queue`: Poison message failure routing and DLQ message inspection.
-     4. `Stream Replay`: Historical time-window and sequence rewind controls.
+     2. `Queue Groups`: Core NATS server-side load balancing and worker distribution without JetStream.
+     3. `Request / Reply`: Synchronous RPC validation testing and timeout simulation.
+     4. `Dead Letter Queue`: Poison message failure routing and DLQ message inspection.
+     5. `Stream Replay`: Historical time-window and sequence rewind controls.
    - Features the **Observability Panel Container** (`ObservabilityPanelContainer.tsx`) with a top-level switcher between `Live Activity Log` and `Subject Addressing & Wildcards`.
    - Features the **Modal Job Inspector** (`JobInspectorPanel.tsx`) opening directly as a focused pop-up overlay upon clicking any row in the Activity Log, with event display limits (15, 30, 50, all) keeping the view clean and compact.
    - Contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
@@ -74,6 +75,7 @@ nats-demo/
 | :--- | :--- |
 | **Addressing (Wildcards)** | Demonstrates exact matching (`jobs.submitted`), single-level wildcard (`jobs.*`), and multi-level wildcard (`jobs.>`) routing. |
 | **Transient Pub/Sub (Core NATS)** | Jobs sent via `CORE` delivery mode are not stored and are discarded if the processor is offline. |
+| **Core NATS Queue Groups** | Demonstrates Core NATS server-side load balancing across subscribers in queue group `job-workers` on subject `jobs.queue` without JetStream or consumer state. |
 | **Durable Streaming (JetStream)** | Jobs sent via `JETSTREAM` delivery mode are persisted in the `JOBS` stream, allowing offline processing. |
 | **Consumer Groups / Competing Consumers** | Multiple processor workers (`processor-1`, `processor-2`) pull from the same stream to balance workloads. |
 | **Durable vs Ephemeral Consumers** | Supports durable (`job-processor`) and dynamic ephemeral pull consumers configured via Consumer Lab. |
@@ -89,6 +91,34 @@ nats-demo/
 ---
 
 ## 5. Important Implementation Concepts
+
+### Core NATS Queue Groups vs JetStream Competing Consumers
+
+```text
+Core NATS
+  -> Subject: jobs.queue
+       -> Queue Group: job-workers
+            -> processor-1
+            -> processor-2
+
+vs.
+
+JetStream
+  -> Stream: JOBS
+       -> Consumer: job-processor
+            -> processor-1
+            -> processor-2
+```
+
+- **Core NATS Queue Groups**:
+  - A subscription mechanism native to Core NATS.
+  - Deliver each message to exactly one member of the queue group.
+  - In-memory, transient load balancing: if no workers are active, messages are discarded.
+  - Zero persistence, zero Consumer tracking, zero ACK/NAK semantics.
+- **JetStream Competing Consumers**:
+  - Built on persistent Streams with stateful Consumers.
+  - Track message delivery state, acknowledgements (`msg.Ack()`), redeliveries (`msg.Nak()`), and delivery limits.
+  - Unacknowledged messages persist in the stream and are redelivered automatically.
 
 ### Dead Letter Queue (DLQ) Pattern Flow
 - NATS does not require DLQ to be a special server-side component; DLQ is an application-level architectural pattern built using JetStream primitives (persistence, NAK, redelivery counters, stream routing).

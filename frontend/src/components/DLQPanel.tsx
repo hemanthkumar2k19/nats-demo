@@ -1,19 +1,32 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { submitJob, getDLQStatus, getDLQMessages, DLQStatus, DLQMessage, Job } from '../api/demoApi';
+import {
+  submitJob,
+  getDLQStatus,
+  getDLQMessages,
+  reprocessDLQMessages,
+  purgeDLQ,
+  DLQStatus,
+  DLQMessage,
+  Job,
+} from '../api/demoApi';
 
 interface DLQPanelProps {
   onShowInfo: (key: string) => void;
   onAlert?: (type: 'success' | 'error' | 'warning', message: string) => void;
   onRefreshAll?: () => void;
+  onActivityUpdated?: () => void;
 }
 
 export const DLQPanel: React.FC<DLQPanelProps> = ({
   onShowInfo,
   onAlert,
   onRefreshAll,
+  onActivityUpdated,
 }) => {
   const [maxAttempts, setMaxAttempts] = useState<number>(3);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isReprocessing, setIsReprocessing] = useState<boolean>(false);
+  const [isPurging, setIsPurging] = useState<boolean>(false);
   const [isLoadingDLQ, setIsLoadingDLQ] = useState<boolean>(false);
   const [dlqStatus, setDlqStatus] = useState<DLQStatus | null>(null);
   const [dlqMessages, setDlqMessages] = useState<DLQMessage[]>([]);
@@ -62,16 +75,70 @@ export const DLQPanel: React.FC<DLQPanelProps> = ({
       if (onAlert) {
         onAlert('success', `Submitted failing job ${jobId} (Max delivery attempts: ${maxAttempts})`);
       }
+      onActivityUpdated?.();
+      setTimeout(() => onActivityUpdated?.(), 1000);
+      setTimeout(() => onActivityUpdated?.(), 2500);
+      setTimeout(() => onActivityUpdated?.(), 4000);
       if (onRefreshAll) {
         onRefreshAll();
       }
-      setTimeout(fetchDLQData, 1200);
+      setTimeout(fetchDLQData, 1500);
+      setTimeout(fetchDLQData, 3500);
     } catch (err: any) {
       if (onAlert) {
         onAlert('error', `Failed to submit failing job: ${err?.message || 'Unknown error'}`);
       }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleReprocessAll = async () => {
+    setIsReprocessing(true);
+    try {
+      const res = await reprocessDLQMessages();
+      onAlert?.('success', res.message || `Reprocessed ${res.reprocessed} messages from JOBS_DLQ back into JOBS stream`);
+      onActivityUpdated?.();
+      setTimeout(() => onActivityUpdated?.(), 600);
+      setTimeout(() => onActivityUpdated?.(), 1500);
+      await fetchDLQData();
+      onRefreshAll?.();
+    } catch (err: any) {
+      onAlert?.('error', `Failed to reprocess DLQ messages: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsReprocessing(false);
+    }
+  };
+
+  const handleReprocessSingle = async (jobId: string) => {
+    setIsReprocessing(true);
+    try {
+      const res = await reprocessDLQMessages(jobId);
+      onAlert?.('success', `Reprocessed ${jobId} back into JOBS stream (recovered from DLQ)`);
+      onActivityUpdated?.();
+      setTimeout(() => onActivityUpdated?.(), 600);
+      setTimeout(() => onActivityUpdated?.(), 1500);
+      await fetchDLQData();
+      onRefreshAll?.();
+    } catch (err: any) {
+      onAlert?.('error', `Failed to reprocess ${jobId}: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsReprocessing(false);
+    }
+  };
+
+  const handlePurge = async () => {
+    setIsPurging(true);
+    try {
+      await purgeDLQ();
+      onAlert?.('success', 'JOBS_DLQ stream purged successfully');
+      onActivityUpdated?.();
+      await fetchDLQData();
+      onRefreshAll?.();
+    } catch (err: any) {
+      onAlert?.('error', `Failed to purge DLQ: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsPurging(false);
     }
   };
 
@@ -201,6 +268,30 @@ export const DLQPanel: React.FC<DLQPanelProps> = ({
         </span>
       </div>
 
+      {/* Operator Actions: Reprocess All & Purge Buttons */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.875rem' }}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ flex: 1, padding: '0.4rem 0.6rem', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
+          onClick={handleReprocessAll}
+          disabled={isReprocessing || storedCount === 0}
+          title="Replay all DLQ messages back into JOBS stream without failure simulation"
+        >
+          <span>{isReprocessing ? 'Reprocessing...' : `Reprocess DLQ Messages (${storedCount})`}</span>
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', color: '#EF4444' }}
+          onClick={handlePurge}
+          disabled={isPurging || storedCount === 0}
+          title="Purge all messages from JOBS_DLQ stream"
+        >
+          <span>{isPurging ? 'Purging...' : 'Purge'}</span>
+        </button>
+      </div>
+
       {/* Messages In DLQ List */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.25rem' }}>
@@ -247,9 +338,21 @@ export const DLQPanel: React.FC<DLQPanelProps> = ({
                   <span className="mono-cell" style={{ color: '#F87171', fontWeight: 700, fontSize: '0.75rem' }}>
                     {msg.job_id}
                   </span>
-                  <span style={{ fontSize: '0.625rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                    {msg.timestamp ? msg.timestamp.substring(11, 19) : '-'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span style={{ fontSize: '0.625rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                      {msg.timestamp ? msg.timestamp.substring(11, 19) : '-'}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.1rem 0.35rem', fontSize: '0.625rem', color: '#34D399', borderColor: 'rgba(52, 211, 153, 0.3)' }}
+                      onClick={() => handleReprocessSingle(msg.job_id)}
+                      disabled={isReprocessing}
+                      title={`Replay ${msg.job_id} back into JOBS stream`}
+                    >
+                      Reprocess
+                    </button>
+                  </div>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
                   <span

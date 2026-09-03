@@ -26,13 +26,25 @@ const (
 
 	// Consumer management and deduplication subjects
 	SubjectConsumerConfigSet = "consumer.config.set"
+	SubjectConsumerReset     = "consumer.reset"
 	SubjectJobDeduplicated   = "jobs.deduplicated"
 
 	// JetStream replay subject
 	SubjectJobReplayed = "jobs.replayed"
 
 	// JetStream Dead Letter Queue subjects
-	SubjectJobDLQ          = "jobs.dlq"
-	SubjectJobDLQPublished = "jobs.dlq.published"
+	SubjectJobDLQ            = "jobs.dlq"
+	SubjectJobDLQPublished   = "jobs.dlq.published"
+	SubjectJobReprocessed    = "jobs.reprocessed"
+	SubjectJobDLQReprocessed = "jobs.dlq.reprocessed"
+
+	// Core NATS Queue Group constants
+	SubjectJobQueue            = "jobs.queue"
+	SubjectJobQueueReceived    = "jobs.queue.received"
+	SubjectJobQueueCompleted   = "jobs.queue.completed"
+	QueueGroupJobWorkers       = "job-workers"
+	SubjectQueueGroupConfigSet = "queuegroup.config.set"
+	SubjectQueueGroupStatus    = "queuegroup.status"
+	SubjectQueueGroupReset     = "queuegroup.reset"
 )
 

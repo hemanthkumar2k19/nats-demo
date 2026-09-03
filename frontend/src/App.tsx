@@ -30,7 +30,9 @@ import {
   ConsumerStatus,
   getConsumerStatus,
   DLQStatus,
-  getDLQStatus
+  getDLQStatus,
+  QueueGroupStatus,
+  getQueueGroupStatus
 } from './api/demoApi';
 
 const DEFAULT_SERVICES: ServiceStatus[] = [
@@ -45,6 +47,7 @@ export const App: React.FC = () => {
   const [jetstreamInfo, setJetstreamInfo] = useState<JetStreamInfo | null>(null);
   const [consumerStatus, setConsumerStatus] = useState<ConsumerStatus | null>(null);
   const [dlqStatus, setDlqStatus] = useState<DLQStatus | null>(null);
+  const [queueGroupStatus, setQueueGroupStatus] = useState<QueueGroupStatus | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -77,8 +80,9 @@ export const App: React.FC = () => {
 
     const interval = setInterval(() => {
       refreshStatus(true);
+      refreshActivity(true);
       refreshAddressing(true);
-    }, 5000);
+    }, 2500);
 
     return () => clearInterval(interval);
   }, []);
@@ -104,6 +108,13 @@ export const App: React.FC = () => {
       } catch {
         // DLQ API quiet
       }
+
+      try {
+        const qStatus = await getQueueGroupStatus();
+        setQueueGroupStatus(qStatus);
+      } catch {
+        // Queue group API quiet
+      }
     } catch (err: any) {
       if (!silent) {
         setError(err.message || 'Failed to refresh service status');
@@ -115,6 +126,7 @@ export const App: React.FC = () => {
       ]);
       setJetstreamInfo(null);
       setDlqStatus(null);
+      setQueueGroupStatus(null);
     } finally {
       if (!silent) {
         setIsRefreshingStatus(false);
@@ -297,6 +309,7 @@ export const App: React.FC = () => {
         jetstreamInfo={jetstreamInfo}
         consumerStatus={consumerStatus}
         dlqStatus={dlqStatus}
+        queueGroupStatus={queueGroupStatus}
         onShowInfo={setActiveInfoKey}
         onAlert={(type, msg) => {
           if (type === 'success') {
@@ -307,7 +320,13 @@ export const App: React.FC = () => {
             setError(msg);
           }
         }}
+        onActivityUpdated={() => {
+          refreshActivity(true);
+          setTimeout(() => refreshActivity(true), 600);
+          setTimeout(() => refreshActivity(true), 1500);
+        }}
         onConfigChanged={setConsumerStatus}
+        onQueueGroupConfigChanged={setQueueGroupStatus}
       />
 
       <main className="dashboard-grid">

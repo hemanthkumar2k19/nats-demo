@@ -52,6 +52,8 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
         return 'badge-failed';
       case 'REPLAYED':
         return 'badge-replayed';
+      case 'REPROCESSED':
+        return 'badge-reprocessed';
       case 'DLQ_PUBLISHED':
       case 'DLQ':
         return 'badge-dlq';

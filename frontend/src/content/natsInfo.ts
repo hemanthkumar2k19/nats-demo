@@ -9,22 +9,22 @@ export interface NatsComponentInfo {
 
 export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
 
-  // Topology Components
+  // Topology & Architectural Components
 
   'react-ui': {
     id: 'react-ui',
     title: 'React UI',
-    role: 'Developer demonstration dashboard providing interactive controls and topology visualization.',
+    role: 'Interactive demonstration dashboard for observing and controlling NATS capabilities.',
     concepts: [
       'Decoupled Frontend Architecture',
-      'HTTP API Client (Fetch API)',
-      'Real-Time Polling & State Synchronization',
+      'HTTP Client Gateway',
+      'Real-Time State Polling',
       'Zero Direct NATS Coupling',
     ],
     demoUsage:
-      'Runs locally on port 5173. Calls Demo Control Service (:8080) for UI state, activity logs, replay, and worker toggles, and Job Service (:8081) for business job submissions.',
+      'Communicates via HTTP with the Demo Control Service (:8080) for UI state and telemetry, and Job Service (:8081) for business job submissions.',
     trivia:
-      'In a well-designed NATS architecture, web browsers do not need direct NATS credentials or socket connections when HTTP gateway services provide clean boundary abstraction.',
+      'In a secure NATS architecture, browser clients do not require direct NATS credentials or WebSocket connections when boundary gateways mediate access.',
   },
 
   'job-service': {
@@ -32,331 +32,352 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
     title: 'Job Service',
     role: 'Pure business microservice handling job submissions and domain validation.',
     concepts: [
-      'Clean Business Architecture',
+      'Service Decoupling',
       'NATS Go Client (nats.go)',
-      'Publish / Subscribe (jobs.submitted)',
-      'Request / Reply (jobs.validate)',
-      'OpenTelemetry W3C Trace Context Injection',
+      'Event Publishing',
+      'Synchronous Request / Reply',
+      'W3C Trace Context Propagation',
     ],
     demoUsage:
-      'Exposes standard HTTP endpoints (POST /jobs, POST /jobs/validate) on port 8081. Decoupled from demo UI concerns - only executes business logic and communicates via NATS.',
+      'Exposes REST endpoints (POST /jobs, POST /jobs/validate) on port 8081. Decoupled from demo UI concerns - only executes business logic and communicates via NATS.',
     trivia:
-      'A pure business service publishes events and lets interested parties (like consumers, audit loggers, or the demo harness) react asynchronously through subjects.',
+      'A pure business service publishes events to subjects without coupling to consumers, audit loggers, or downstream orchestrators.',
   },
 
   'demo-control-service': {
     id: 'demo-control-service',
     title: 'Demo Control Service',
-    role: 'Dedicated UI gateway and demo controller for the demonstration dashboard.',
+    role: 'Dedicated UI gateway and observer for the demonstration platform.',
     concepts: [
-      'Separation of Concerns (Decoupled Demo vs Business Logic)',
-      'NATS Wildcard Passive Observation (jobs.>)',
-      'Ephemeral Replay Consumer Management',
-      'Remote Worker State & Configuration Control',
+      'Passive Event Observation',
+      'Wildcard Subscriptions (jobs.>)',
+      'Replay Consumer Management',
+      'Remote Worker Control',
     ],
     demoUsage:
-      'Passively observes NATS events to populate the live activity log, powers the wildcard subject addressing comparison, triggers JetStream message replay, and relays consumer configuration commands without polluting the production job-service.',
+      'Passively subscribes to jobs.> to populate the live activity log, executes historical JetStream replays, and controls worker pools without altering business code.',
     trivia:
-      'Because NATS is an open publish/subscribe broker, any authorized service can attach a wildcard subscription (jobs.>) to observe events in real time without the publisher or consumer ever knowing or modifying their code.',
+      'Because NATS uses open publish/subscribe routing, authorized services can attach wildcard observers (jobs.>) without existing publishers or workers knowing.',
   },
 
-  // Backward compatibility alias
+  // Backward compatibility alias for topology diagram
   'demo-service': {
     id: 'demo-control-service',
     title: 'Demo Control Service',
-    role: 'Dedicated UI gateway and demo controller for the demonstration dashboard.',
+    role: 'Dedicated UI gateway and observer for the demonstration platform.',
     concepts: [
-      'Separation of Concerns',
-      'NATS Wildcard Observation',
-      'UI Dashboard Gateway',
+      'Passive Event Observation',
+      'Wildcard Subscriptions (jobs.>)',
+      'Replay Consumer Management',
+      'Remote Worker Control',
     ],
-    demoUsage: 'Serves the React dashboard and provides activity taps into NATS.',
+    demoUsage:
+      'Passively subscribes to jobs.> to populate the live activity log, executes historical JetStream replays, and controls worker pools without altering business code.',
+    trivia:
+      'Because NATS uses open publish/subscribe routing, authorized services can attach wildcard observers (jobs.>) without existing publishers or workers knowing.',
   },
 
   'nats-server': {
     id: 'nats-server',
     title: 'NATS Server',
-    role: 'Deployed messaging server that provides NATS messaging capabilities.',
+    role: 'High-performance messaging system providing Core NATS and JetStream capabilities.',
     concepts: [
-      'Core NATS',
-      'JetStream',
-      'Subject-based Routing',
+      'Core NATS Engine',
+      'JetStream Engine',
+      'Subject-Based Addressing',
       'Publish / Subscribe',
       'Request / Reply',
       'Streams and Consumers',
     ],
     demoUsage:
-      'The demo runs a NATS Server that handles Core NATS messaging and hosts the JetStream resources used by the job-processing flow.',
+      'Single deployed NATS server process handling transient pub/sub messaging while hosting the persistent JOBS and JOBS_DLQ streams.',
     trivia:
-      'Core NATS provides lightweight messaging, while JetStream adds persistence, replay, acknowledgements, and durable consumption. Streams and Consumers are logical resources managed by the NATS Server rather than separate deployments.',
+      'Core NATS provides ultra-low latency in-memory messaging, while JetStream provides persistence, replay, deduplication, and durable consumption within the same server binary.',
   },
 
   'jobs-stream': {
     id: 'jobs-stream',
     title: 'JOBS Stream',
-    role: 'Logical JetStream resource that persistently stores messages.',
+    role: 'Persistent write-ahead log that captures and stores messages on defined subjects.',
     concepts: [
       'JetStream Stream',
       'Message Persistence',
-      'Subject Capture',
+      'Subject Capture (jobs.submitted)',
       'Stream Sequence Numbers',
-      'Message IDs and Deduplication',
       'Retention Policies',
+      'Storage Footprint',
     ],
     demoUsage:
-      'Stores job submission messages published on jobs.submitted so they remain available for JetStream consumers even when processors are temporarily unavailable.',
+      'Persists messages published to jobs.submitted so they remain available for consumer workers even when the processor service is offline or paused.',
     trivia:
-      'A Stream is a persistent message store managed by JetStream. A stream can capture one or many subjects, and every stored message receives a monotonically increasing stream sequence number.',
+      'Streams decouple ingestion from consumption. Publishers append to the stream at wire speed without coordinating with consumer groups or waiting for ACKs from workers.',
   },
 
   'dead-letter-queue': {
     id: 'dead-letter-queue',
     title: 'Dead Letter Queue (JOBS_DLQ)',
-    role: 'Persistent JetStream stream used to store messages that have exhausted their processing attempts.',
+    role: 'Isolated JetStream stream for persistent storage of poison messages that exceed retry limits.',
     concepts: [
       'Dead Letter Queue Pattern',
-      'Max Delivery Attempts',
-      'Redelivery',
-      'JetStream Stream',
-      'Failed Message Isolation',
+      'Max Deliveries (MaxDeliver)',
+      'Redelivery Exhaustion',
+      'Poison Message Isolation',
+      'DLQ Stream Routing',
     ],
     demoUsage:
-      'Stores jobs that fail processing after the configured maximum delivery attempts.',
+      'When a worker NAKs a job repeatedly until reaching 3 attempts, it routes the message to jobs.dlq in stream JOBS_DLQ, ACKs the original JOBS stream message, and notifies dlq-inspector.',
     trivia:
-      'NATS does not require a DLQ to be a special server component. A DLQ can be implemented using a separate JetStream Stream and application-controlled failure routing.',
+      'A DLQ in NATS does not require a proprietary server feature; it is an architectural pattern implemented cleanly using another JetStream stream and application routing.',
   },
 
+  // Backward compatibility alias for DLQ
   'jobs-dlq': {
     id: 'dead-letter-queue',
     title: 'Dead Letter Queue (JOBS_DLQ)',
-    role: 'Persistent JetStream stream used to store messages that have exhausted their processing attempts.',
+    role: 'Isolated JetStream stream for persistent storage of poison messages that exceed retry limits.',
     concepts: [
       'Dead Letter Queue Pattern',
-      'Max Delivery Attempts',
-      'Redelivery',
-      'JetStream Stream',
-      'Failed Message Isolation',
+      'Max Deliveries (MaxDeliver)',
+      'Redelivery Exhaustion',
+      'Poison Message Isolation',
+      'DLQ Stream Routing',
     ],
     demoUsage:
-      'Stores jobs that fail processing after the configured maximum delivery attempts.',
+      'When a worker NAKs a job repeatedly until reaching 3 attempts, it routes the message to jobs.dlq in stream JOBS_DLQ, ACKs the original JOBS stream message, and notifies dlq-inspector.',
     trivia:
-      'NATS does not require a DLQ to be a special server component. A DLQ can be implemented using a separate JetStream Stream and application-controlled failure routing.',
+      'A DLQ in NATS does not require a proprietary server feature; it is an architectural pattern implemented cleanly using another JetStream stream and application routing.',
   },
 
   'consumer': {
     id: 'consumer',
     title: 'JetStream Consumer',
-    role: 'Logical JetStream resource that controls and tracks message delivery from a Stream.',
+    role: 'Logical JetStream resource that controls and tracks message delivery state from a Stream.',
     concepts: [
-      'JetStream Consumer',
-      'Durable vs Ephemeral Consumers',
-      'Pull vs Push Consumption',
-      'ACK / NAK',
-      'At-Least-Once Delivery',
-      'Redelivery',
-      'Pending and Ack Pending',
-      'Normal vs Ordered Consumers',
+      'Consumer State Tracking',
+      'Durable vs Ephemeral Lifecycle',
+      'Push vs Pull Consumption',
+      'ACK / NAK Semantics',
+      'AckWait & MaxDeliver',
+      'Pending vs Ack Pending Backlog',
     ],
     demoUsage:
-      'The job-processor consumer delivers messages from the JOBS Stream to Processor Service workers and tracks delivery, acknowledgements, pending messages, and redeliveries.',
+      'The job-processor consumer reads from the JOBS stream, manages message dispatch to workers, and tracks redelivery attempts upon processing failure.',
     trivia:
-      'A durable consumer keeps its delivery state so consumption can continue after a client disconnects. An ephemeral consumer is intended for temporary consumption and does not provide the same durable consumer lifecycle.',
+      'Durable and Ephemeral describe Consumer lifecycle, while Push and Pull describe delivery method. Stream persistence stores messages; Durable describes persistence of Consumer state.',
   },
 
   'processor-service': {
     id: 'processor-service',
     title: 'Processor Service',
-    role: 'Deployed application service that processes jobs received from NATS.',
+    role: 'Application service that executes business workloads delivered by NATS consumers.',
     concepts: [
-      'NATS Client Consumer',
       'Worker Pool',
       'Competing Consumers',
-      'Message Acknowledgement',
-      'At-Least-Once Processing',
-      'Redelivery on Failure',
+      'Work Distribution',
+      'Message Acknowledgement (msg.Ack)',
+      'Negative Acknowledgement (msg.Nak)',
+      'Failure Redelivery',
     ],
     demoUsage:
-      'Runs one or more workers that pull jobs from the JetStream consumer, execute the simulated task, acknowledge successful processing, and NAK failed processing for redelivery.',
+      'Runs a pool of worker goroutines (processor-1, processor-2) that pull jobs from the JetStream consumer, simulate execution, and emit lifecycle events.',
     trivia:
-      'Multiple application workers can consume from the same JetStream consumer. This allows workers to share the workload while the consumer maintains the delivery state.',
+      'Multiple workers can consume from the same JetStream consumer to share processing load without requiring application-managed message partitioning.',
   },
 
-  // Dashboard Sections
+  // Dashboard Sections & Capability Panels
 
   'platform-status': {
     id: 'platform-status',
     title: 'Platform Status',
-    role: 'Real-time view of NATS connectivity and processing state.',
+    role: 'Global operational health and control bar for services, connectivity, and JetStream availability.',
     concepts: [
-      'NATS Connection State',
-      'Request / Reply Health Check',
-      'JetStream Stream and Consumer State',
-      'Consumer Backlog',
+      'NATS Server Connectivity',
+      'JetStream Subsystem Health',
+      'Microservice Discovery',
+      'Global Processing Toggle',
     ],
     demoUsage:
-      'Shows NATS connectivity, Processor Service availability, JetStream state, pending messages, and provides the control for pausing or resuming job processing.',
+      'Displays real-time connectivity for NATS Server, JetStream, Job Service, and Processor Service, and provides a toggle to pause or resume processing.',
     trivia:
-      'JetStream keeps stored messages available even when a consumer temporarily stops processing them. This allows the backlog to build without losing the persisted messages.',
+      'NATS clients maintain persistent lightweight TCP connections and can reconnect automatically while buffering in-flight requests.',
   },
 
   'submit-job': {
     id: 'submit-job',
-    title: 'Pub / Sub',
-    role: 'Interactive job publisher for demonstrating NATS messaging and delivery behaviour.',
+    title: 'Pub / Sub & Stream Publishing',
+    role: 'Interactive publisher demonstrating transient Core NATS and persistent JetStream message delivery.',
     concepts: [
-      'Core NATS Publish / Subscribe',
+      'Core NATS Pub/Sub',
       'JetStream Publishing',
-      'Transient vs Persistent Messaging',
-      'NATS Subjects',
-      'Message IDs',
-      'Duplicate Message Detection',
+      'Transient vs Persistent Delivery',
+      'Subject Addressing',
+      'Delivery Mode Semantics',
+      'Message ID Stamping',
     ],
     demoUsage:
-      'Allows jobs to be published using Core NATS or JetStream and provides controls for generating duplicate messages and simulated processing failures.',
+      'Publishes job requests using Core NATS (at-most-once) or JetStream (at-least-once), allowing immediate comparison of offline behavior and durability.',
     trivia:
-      'Core NATS is transient: messages are delivered to active subscribers but are not persisted for future delivery. JetStream can persist published messages and make them available to consumers later.',
+      'JetStream allows the same NATS platform to support both lightweight transient messaging and durable streaming without running separate message brokers.',
   },
 
   'message-deduplication': {
     id: 'message-deduplication',
     title: 'Message Deduplication',
-    role: 'JetStream provides server-side, Stream-scoped, time-windowed deduplication based on an optional Nats-Msg-Id; it is not a global exactly-once mechanism.',
+    role: 'Server-side, stream-scoped deduplication that discards duplicate publishes within a configured time window.',
     concepts: [
-      'Stream-Level Feature: Belongs to the Stream, not the Consumer',
-      'Deduplication Window: Default 2m (configured via duplicate_window; no universal maximum)',
-      'Optional Header: Triggered by Nats-Msg-Id (absent header opts out; payload is never inspected)',
-      'Scope & Clustering: Scoped to the Stream (replicated across stream replicas; not global across regions)',
-      'Server Overhead: Lightweight in-memory ID tracking and lookup on publish (no second pipeline)',
-      'PubAck Response: Duplicate publish returns PubAck { duplicate: true, sequence: originalSeq }',
+      'Stream-Level Deduplication',
+      'Deduplication Window (duplicate_window)',
+      'Nats-Msg-Id Header',
+      'PubAck Duplicate Detection',
+      'Effectively-Once Business Semantics',
     ],
     demoUsage:
-      'The JOBS stream tracks Nats-Msg-Id within the configured 2-minute window. Publishing an identical ID within 120s causes JetStream to suppress duplicate storage and emit a DEDUPLICATED event without re-delivering to workers.',
+      'The JOBS stream tracks Nats-Msg-Id within a 2-minute sliding window. Re-publishing the same ID returns a duplicate PubAck and emits DEDUPLICATED without storing a second entry.',
     trivia:
-      'Architecture Summary (Stream vs Global):\n- Default Window: 2 minutes (server can set maximum limits)\n- Scope: Per-Stream only (follows stream replicas; not global cross-region)\n- Header: Optional (omit Nats-Msg-Id to opt out)\n- Overhead: In-memory sliding window ID lookup; keep window sized to publisher retry needs',
+      'JetStream combines acknowledgement-based delivery with publisher message-ID deduplication. Deduplication is not the same as exactly-once business processing; exactly-once business effects require combining messaging deduplication with idempotent application handlers.',
   },
 
   'consumer-lab': {
     id: 'consumer-lab',
     title: 'Consumer Lab',
-    role: 'Interactive controller for experimenting with JetStream Consumer configurations.',
+    role: 'Interactive test bench for configuring JetStream Consumer parameters and observing delivery behavior.',
     concepts: [
       'Durable vs Ephemeral Consumers',
-      'Pull Consumers',
+      'Pull Consumption Model',
       'Competing Consumers',
-      'Ordered Consumers',
-      'ACK / NAK',
-      'Redelivery',
-      'At-Least-Once Delivery',
+      'Normal vs Ordered Consumers',
+      'Flow Control & Backpressure',
+      'Worker Concurrency',
     ],
     demoUsage:
-      'Allows the Processor Service consumer to be configured as Durable or Ephemeral, changes the number of competing workers, and switches between Normal and Ordered consumption.',
+      'Dynamically configures consumer durability, adjusts worker pool concurrency (1-3 workers), and toggles between Normal and Ordered consumption.',
     trivia:
-      'Durable and Ephemeral describe the consumer lifecycle, not whether messages are persisted. Message persistence is provided by the Stream; the Consumer maintains delivery and acknowledgement state.',
+      'Multiple workers can share processing load without application-managed message partitioning. NATS also provides ordered-consumption capabilities without requiring Kafka-style partition-count planning.',
   },
 
   'request-reply': {
     id: 'request-reply',
     title: 'Request / Reply',
-    role: 'Interactive demonstration of synchronous request-response messaging over NATS.',
+    role: 'Synchronous RPC pattern executed natively over subject-based messaging.',
     concepts: [
-      'NATS Request / Reply',
-      'Subjects',
-      'Reply Subjects',
-      'Inbox Subjects',
-      'Timeout Handling',
+      'Request / Reply Pattern',
+      'Dynamic Inbox Subjects (_INBOX.)',
       'Point-to-Point Response Routing',
+      'Requester Timeout Handling',
+      'Synchronous Semantics over NATS',
     ],
     demoUsage:
-      'Sends a validation request to jobs.validate and waits for the Processor Service to return a response within the configured timeout.',
+      'Dispatches job validation requests to jobs.validate and waits synchronously for a response from processor-service, demonstrating natural timeouts when the processor is paused.',
     trivia:
-      'NATS Request / Reply is built on the same subject-based messaging model as publish/subscribe. A requester publishes a request with a reply subject, and the responder publishes the response to that subject.',
+      'NATS provides Request / Reply natively through its subject-based messaging model, avoiding the need to build RPC semantics over a persistent log.',
   },
 
   'jetstream-replay': {
     id: 'jetstream-replay',
-    title: 'JetStream Replay',
-    role: 'Interactive view for replaying historical messages stored in a JetStream Stream.',
+    title: 'Stream Replay',
+    role: 'Time-window and sequence rewind controls for reading historical stream data.',
     concepts: [
-      'Message Replay',
-      'Replay Policy',
-      'Start Sequence',
-      'Start Time',
-      'Historical Consumption',
-      'Multiple Consumers',
+      'Stream Replay',
+      'Deliver Policy (DeliverByStartSequence, DeliverByStartTime)',
+      'Replay Policy (Instant vs Original)',
+      'Historical Backfill',
+      'Ephemeral Replay Consumers',
     ],
     demoUsage:
-      'Creates a temporary replay consumer that starts from a selected stream position or time and displays previously stored messages without modifying the original Stream.',
+      'Creates an ephemeral consumer starting from a selected sequence number or timestamp to replay previously stored JOBS messages without altering stream state or disrupting active workers.',
     trivia:
-      'JetStream allows different consumers to read the same stored messages independently. Replaying a message does not remove it from the Stream.',
+      'Consumers can start from historical Stream positions, enabling replay and backfill scenarios without modifying or removing original stored messages.',
   },
 
   'activity-log': {
     id: 'activity-log',
     title: 'Activity Log',
-    role: 'Real-time view of job and messaging lifecycle events.',
+    role: 'Live chronological stream of message deliveries, worker milestones, and lifecycle transitions.',
     concepts: [
+      'Lifecycle Telemetry',
       'Event Observation',
-      'NATS Subject Subscriptions',
-      'Wildcard Subscriptions',
-      'W3C Trace Context',
-      'Message Delivery Events',
+      'Multi-Subject Monitoring',
+      'W3C Trace Context Association',
+      'Delivery Sequence Tracking',
     ],
     demoUsage:
-      'Displays lifecycle events generated during job submission and processing, including publish, receive, redelivery, acknowledgement, and completion events.',
+      'Displays real-time events published across jobs.> subjects (published, stored, delivered, processed, completed, failed, dlq_published), with full-text search and filtering.',
     trivia:
-      'NATS subjects can be subscribed to using wildcards, allowing an observer to monitor groups of related subjects without subscribing to every subject individually.',
+      'Subject wildcards allow monitoring services to observe entire message hierarchies with a single subscription, making system observability lightweight and non-invasive.',
   },
 
   'job-details': {
     id: 'job-details',
     title: 'Job Details Inspector',
-    role: 'Detailed view of an individual job and its processing lifecycle.',
+    role: 'Modal inspection dialog displaying granular metadata, delivery attempts, and history for a selected job.',
     concepts: [
-      'Message Metadata',
-      'Delivery Attempts',
-      'Acknowledgement State',
-      'Distributed Tracing',
-      'Processing Lifecycle',
+      'Message Metadata Inspection',
+      'Delivery Attempt Counters',
+      'Processing History Timeline',
+      'Distributed Trace Context',
+      'Raw Payload Verification',
     ],
     demoUsage:
-      'Shows the selected job payload, metadata, processing attempts, delivery information, errors, and chronological lifecycle events.',
+      'Opens when clicking any Job ID in the Activity Log, displaying delivery counts, status milestones, raw JSON payloads, and direct links to Grafana Tempo traces.',
     trivia:
-      'With at-least-once delivery, a message can be delivered more than once when processing does not result in a successful acknowledgement. Delivery information helps identify such retries.',
+      'With at-least-once delivery, messages can be redelivered if workers crash or fail before ACKing. Inspecting delivery counts helps identify intermittent worker failures or poison payloads.',
   },
 
   'subject-addressing': {
     id: 'subject-addressing',
     title: 'NATS Subject Addressing',
-    role: 'Interactive explorer for NATS subject hierarchy and wildcard matching.',
+    role: 'Interactive explorer for NATS subject hierarchies, tokens, and wildcard matching patterns.',
     concepts: [
-      'Dot-delimited Subject Tokens',
-      'Exact Subject Matching',
+      'Subject Hierarchy',
+      'Dot-Delimited Tokens',
+      'Exact Matching',
       'Single-Token Wildcard (*)',
       'Multi-Token Wildcard (>)',
-      'Publish / Subscribe Routing',
+      'Subject-Based Routing',
     ],
     demoUsage:
-      'Shows active subscriptions and demonstrates which exact or wildcard subscriptions match incoming NATS subjects.',
+      'Shows active subscriptions alongside incoming subjects, visualizing how exact subjects (jobs.submitted), single-token wildcards (jobs.*), and multi-token wildcards (jobs.>) match events.',
     trivia:
-      'NATS subjects are hierarchical names made from dot-separated tokens. The * wildcard matches one token, while > matches one or more trailing tokens.',
+      'Subject-based routing allows applications to communicate without provisioning a queue or broker configuration for every routing relationship.',
   },
 
   'metrics-observability': {
     id: 'metrics-observability',
-    title: 'Metrics Observability',
-    role: 'Monitoring view for application and NATS infrastructure metrics.',
+    title: 'Metrics & Observability',
+    role: 'Integrated dashboard views for application metrics, NATS operational stats, and distributed traces.',
     concepts: [
-      'OpenTelemetry Metrics',
-      'Prometheus Metrics',
-      'NATS Server Metrics',
-      'JetStream Metrics',
-      'Counters, Rates and Latencies',
-      'Metric Cardinality',
+      'Prometheus Metrics Exporter',
+      'NATS Server Monitoring',
+      'JetStream Operational Metrics',
+      'OpenTelemetry OTLP Instrumentation',
+      'W3C Distributed Tracing',
     ],
     demoUsage:
-      'Displays application metrics from the Job Service and Processor Service together with NATS and JetStream infrastructure metrics collected through the observability stack.',
+      'Correlates NATS server and JetStream counters with application-level job latencies and error rates, with direct links to Grafana and Tempo.',
     trivia:
-      'Metrics should generally use low-cardinality dimensions such as operation, status, or worker. High-cardinality values such as job IDs are better suited to logs or traces than Prometheus metric labels.',
+      'NATS exposes operational information through native monitoring events and integrates with standard Prometheus and OpenTelemetry observability stacks.',
+  },
+
+  'queue-groups': {
+    id: 'queue-groups',
+    title: 'Core NATS Queue Groups',
+    role: 'Native server-side load balancing distributing messages across dynamic pools of subscribers with zero broker state.',
+    concepts: [
+      'Queue Group (job-workers): A logical pool identifier supplied at subscription time (nc.QueueSubscribe). All subscribers sharing the same queue name form a single cooperative processing pool.',
+      'Subject (jobs.queue): The destination address where producers publish messages. NATS transparently balances deliveries among subscribers registered to the queue group on this subject.',
+      'Load-Balanced Delivery (1 of N): For each published message, the NATS server randomly routes the message to exactly one connected subscriber in the queue group, eliminating application-level partition management.',
+      'At-Most-Once Delivery (Best-Effort): Transient, in-memory delivery semantics. Messages are not written to disk; if no worker is connected when a message is published, the message is discarded.',
+      'Stateless Messaging (No ACK/NAK): Unlike JetStream, Core NATS Queue Groups do not require acknowledgements, cursors, or redelivery timers, achieving sub-millisecond wire latencies.',
+      'Multi-Group Fanout: If multiple distinct queue groups subscribe to the same subject (e.g. workers and auditors), NATS delivers the message to 1 member of each group, plus all non-queue subscribers.',
+      'Dynamic Membership (1 to 5 Workers): Workers can join or leave the group on the fly without cluster-wide partition rebalances or stop-the-world pauses.',
+      'Worker Distribution: Real-time telemetry tracking how the NATS server balances incoming message volume across all connected worker instances.',
+      'Reset Worker Distribution: Clears accumulated distribution counters to baseline comparative load-balancing benchmarks.',
+    ],
+    demoUsage:
+      'Publish test message bursts to jobs.queue and observe the NATS server distribute messages across 1 to 5 active workers (processor-1 through processor-5) sharing the job-workers queue group, contrasting in-memory 1-of-N load balancing with JetStream persistent consumers.',
+    trivia:
+      'Unlike Kafka consumer groups which require partition assignments and rebalance protocols, or RabbitMQ which relies on consumer prefetch buffers, Core NATS queue groups balance messages directly in the server socket layer with zero coordination overhead.',
   },
 
 };
+

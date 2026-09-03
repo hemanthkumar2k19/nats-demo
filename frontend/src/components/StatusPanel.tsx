@@ -13,7 +13,6 @@ interface StatusPanelProps {
 
 export const StatusPanel: React.FC<StatusPanelProps> = ({
   services,
-  jetstreamInfo,
   onRefresh,
   onToggleProcessor,
   isLoading,
@@ -33,14 +32,6 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
   const isProcessing = processorService?.processing ?? false;
   const isNatsConnected = natsStatus === 'connected' || natsStatus === 'active';
   const isProcessorOnline = processorStatus !== 'disconnected' && processorStatus !== 'unknown';
-
-  // Compute worker count and consumer status
-  const workerCount = isProcessorOnline ? (processorService?.workers ?? 1) : 0;
-  const consumerStatus = isProcessorOnline
-    ? isProcessing
-      ? 'Active'
-      : 'Paused'
-    : 'Offline';
 
   return (
     <div className="panel platform-status-panel">
@@ -74,7 +65,6 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
       </div>
 
       <div className="platform-status-grid">
-        {/* Row 1: Core Services & Processing Toggle */}
         <div className="platform-status-row">
           <div className="status-metric-cell">
             <span className="status-metric-label">NATS Server</span>
@@ -82,6 +72,20 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
               status={natsStatus as any}
               label={isNatsConnected ? 'Connected' : 'Disconnected'}
             />
+          </div>
+
+          <div className="status-metric-cell">
+            <span className="status-metric-label">JetStream</span>
+            <span
+              className="badge"
+              style={{
+                background: isNatsConnected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                color: isNatsConnected ? '#34D399' : '#F87171',
+                border: isNatsConnected ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(239, 68, 68, 0.25)',
+              }}
+            >
+              {isNatsConnected ? 'Available' : 'Unavailable'}
+            </span>
           </div>
 
           <div className="status-metric-cell">
@@ -119,67 +123,6 @@ export const StatusPanel: React.FC<StatusPanelProps> = ({
               <span className="toggle-dot" />
               <span>{isProcessing ? 'ON' : 'OFF'}</span>
             </button>
-          </div>
-        </div>
-
-        {/* Row 2: JetStream, Stream Info, Pending, Workers & Consumer */}
-        <div className="platform-status-row secondary-row">
-          <div className="status-metric-cell">
-            <span className="status-metric-label">JetStream</span>
-            <span
-              className="badge"
-              style={{
-                background: isNatsConnected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                color: isNatsConnected ? '#34D399' : '#F87171',
-                border: isNatsConnected ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid rgba(239, 68, 68, 0.25)',
-              }}
-            >
-              {isNatsConnected ? 'Available' : 'Unavailable'}
-            </span>
-          </div>
-
-          <div className="status-metric-cell">
-            <span className="status-metric-label">Stream</span>
-            <span className="mono-cell" style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>
-              {jetstreamInfo?.stream || 'JOBS'}
-            </span>
-          </div>
-
-          <div className="status-metric-cell">
-            <span className="status-metric-label">Pending</span>
-            <span
-              className="badge"
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontWeight: 600,
-                background: (jetstreamInfo?.pending ?? 0) > 0 ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                color: (jetstreamInfo?.pending ?? 0) > 0 ? '#FBBF24' : '#34D399',
-                border: (jetstreamInfo?.pending ?? 0) > 0 ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
-              }}
-            >
-              {jetstreamInfo?.pending ?? 0}
-            </span>
-          </div>
-
-          <div className="status-metric-cell">
-            <span className="status-metric-label">Workers</span>
-            <span className="mono-cell" style={{ fontWeight: 600 }}>
-              {workerCount}
-            </span>
-          </div>
-
-          <div className="status-metric-cell">
-            <span className="status-metric-label">Consumer</span>
-            <span
-              className="badge"
-              style={{
-                background: consumerStatus === 'Active' ? 'rgba(59, 130, 246, 0.15)' : 'rgba(107, 114, 128, 0.15)',
-                color: consumerStatus === 'Active' ? '#60A5FA' : '#9CA3AF',
-                border: consumerStatus === 'Active' ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(107, 114, 128, 0.3)',
-              }}
-            >
-              {consumerStatus}
-            </span>
           </div>
         </div>
       </div>

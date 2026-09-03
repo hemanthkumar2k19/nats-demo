@@ -38,7 +38,7 @@ func NewTracker() *Tracker {
 
 func getStatusWeight(status string) int {
 	switch status {
-	case "PUBLISHED", "STORED", "REQUEST_SENT", "DEDUPLICATED":
+	case "PUBLISHED", "STORED", "REQUEST_SENT", "DEDUPLICATED", "REPROCESSED":
 		return 1
 	case "RECEIVED", "DELIVERED", "REQUEST_RECEIVED", "REDELIVERED":
 		return 2
@@ -157,8 +157,23 @@ func (t *Tracker) ProcessLifecycleEvent(subject string, data []byte, source stri
 		status = "REPLAYED"
 	case "jobs.dlq", "jobs.dlq.published":
 		status = "DLQ_PUBLISHED"
+	case "jobs.reprocessed", "jobs.dlq.reprocessed":
+		status = "REPROCESSED"
+		subject = "jobs.submitted"
+	case "jobs.queue":
+		status = "PUBLISHED"
+	case "jobs.queue.received":
+		status = "RECEIVED"
+		subject = "jobs.queue"
+	case "jobs.queue.completed":
+		status = "COMPLETED"
+		subject = "jobs.queue"
 	default:
 		status = payload.Status
+	}
+
+	if payload.DeliveryMode == "" && (subject == "jobs.queue" || subject == "jobs.queue.received" || subject == "jobs.queue.completed") {
+		payload.DeliveryMode = "CORE"
 	}
 
 	if payload.DeliveryCount <= 0 {

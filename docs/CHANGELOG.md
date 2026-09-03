@@ -2,7 +2,144 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-09-03
+
+### Added (DLQ Message Reprocessing, Purging & Activity Log Recovery)
+- **DLQ Reprocessing & Purge API (`control_handler.go`, `routes.go`, `demoApi.ts`)**:
+  - Implemented `POST /dlq/reprocess` supporting batch or single job reprocessing from `JOBS_DLQ` back into the active `JOBS` stream on `jobs.submitted` with failure simulation flags cleared.
+  - Implemented `POST /dlq/purge` to purge all poison messages from `JOBS_DLQ` storage.
+  - Added subjects `jobs.reprocessed` and `jobs.dlq.reprocessed` with `REPROCESSED` event status mapping and green badge styling.
+- **DLQ Operator Action Controls (`DLQPanel.tsx`, `CapabilityStudio.tsx`, `index.css`)**:
+  - Added primary **"Reprocess DLQ Messages"** and **"Purge"** action buttons to the DLQ header.
+  - Added per-row **"Reprocess"** button on each message card in `JOBS_DLQ` list.
+  - Connected `onActivityUpdated` lifecycle triggers to live-stream recovery events (`REPROCESSED` -> `DELIVERED` -> `COMPLETED` -> `ACKED`) into the Activity Log.
+
+### Changed (UI Chips, 3-Per-Row Processor Grid & Consumer Policy Display)
+- **Delivery Type Badges & Chips Cleanup (`QueueGroupPanel.tsx`, `ConsumerLabPanel.tsx`)**:
+  - Removed `MULTI-GROUP` from Core NATS Queue Group panel and replaced with `DELIVERY TYPE: Push (Server-Dispatched)`.
+  - Removed `STATUS` from JetStream Consumer Lab and replaced with `DELIVERY TYPE: Pull (Client-Fetched)`.
+  - Added dedicated **Internal NATS Consumer Policy** inspector showing real-time `DeliverPolicy` (`DeliverAll` / `DeliverNew`), `AckPolicy: Explicit`, and `FilterSubject: jobs.submitted`.
+- **Processor Service Responsive Grid (`DemoTopology.tsx`)**:
+  - Constrained Tier 3 worker blocks to a maximum of 3 per row (`repeat(min(count, 3), 1fr)`) so 4th and 5th workers wrap to a second line without stretching the card width or encroaching on neighboring panels.
+- **Backend Ephemeral Consumer Policy (`processor-service/main.go`)**:
+  - Explicitly configured `DeliverPolicy: nats.DeliverNewPolicy`, `AckPolicy: nats.AckExplicitPolicy`, `FilterSubject: messaging.SubjectJobSubmitted` when creating ephemeral consumers.
+
+### Fixed (Activity Log Live Streaming & Test Bursts)
+- **Continuous Activity Polling & Fast Action Triggers (`App.tsx`, `DemoSetupPanel.tsx`, `ConsumerLabPanel.tsx`, `QueueGroupPanel.tsx`)**:
+  - Integrated `refreshActivity(true)` directly into the primary 2.5s polling loop in `App.tsx` so all incoming asynchronous NATS events are automatically streamed into the Activity Log.
+  - Added `onActivityUpdated` callback across `ConsumerLabPanel` and `QueueGroupPanel` to trigger immediate and staggered activity log refreshes upon dispatching test message bursts.
+- **Worker Lifecycle Completion Event Publishing (`processor-service/main.go`)**:
+  - Added simulated processing delay and `jobs.queue.completed` lifecycle event emission for Core NATS queue group message handling.
+  - Added `jobs.completed` lifecycle event emission alongside `jobs.acked` in JetStream pull worker processing.
+
+### Changed (Demo Setup Topology Redesign & Dual-Engine NATS Server)
+- **Three-Tier Runtime Architecture Layout (`DemoTopology.tsx`, `index.css`)**:
+  - Reorganized the architecture visualization into 3 clean vertical tiers:
+    1. **Tier 1 (Client & Gateway Tier)**: React UI (:5173) and Demo Control Service (:8080) with explicit HTTP REST and SSE/polling metadata.
+    2. **Tier 2 (Business Ingress & NATS Server Tier)**: Job Service (:8081) on the left publishing into an expanded, wide NATS Server (:4222) layout.
+    3. **Tier 3 (Worker Daemon & Processing Tier)**: Processor Service positioned directly below NATS Server with bidirectional delivery (`Pull/Queue/RPC`) and lifecycle feedback (`Ack/Nak`, `jobs.received`, `jobs.completed`, `jobs.failed`, `jobs.dlq.published`) flows.
+- **Widened Dual-Engine NATS Server Block**:
+  - Expanded NATS Server into a square/wide card with side-by-side internal compartments:
+    - **Core NATS Engine**: In-Memory Transient Pub/Sub (`jobs.*`, `jobs.>`), Queue Groups (`job-workers` on `jobs.queue` with 1-of-N distribution), and Request/Reply RPC (`jobs.validate`).
+    - **JetStream Persistence Engine**: Stream `JOBS` (Persistent Log for `jobs.submitted`) -> Consumer `job-processor` (Pull Mode with durability and ordering properties), plus Stream `JOBS_DLQ` (Poison Store for `jobs.dlq`) -> Consumer `dlq-inspector` (Durable Cursor).
+    - Removed transient message counter badges (`Stored Messages`, `Pending`, `Ack Pending`, `Redelivered`) from the architectural diagram to eliminate clutter, keeping them dedicated to the interactive **Consumer Lab Panel**, **Queue Group Panel**, and **DLQ Panel**.
+- **Wide Processor Service Worker Grid**:
+  - Displayed side-by-side compartments for JetStream Competing Pull Workers (1-5 workers binding to `job-processor`) and Core NATS Queue Group Subscribers (1-5 workers in group `job-workers`).
+- **Enhanced Inter-Service Communication Details**:
+  - Added explicit protocol labels, port annotations (:5173, :8080, :8081, :4222), subject patterns, W3C trace context badges, and interaction descriptions across all connectors.
+
+### Changed (Platform Status Panel Simplification)
+- **High-Level Platform Status Bar (`StatusPanel.tsx`)**:
+  - Simplified the top-level Platform Status panel to display only high-level connectivity and service availability.
+  - Removed granular stream and consumer badges (`Stream: JOBS`, `Pending`, `Workers`, `Consumer`) from the top-level header bar.
+  - Consolidated status indicators into a clean single-row layout displaying: NATS Server, JetStream availability, Demo Control Service (:8080), Job Service (:8081), Processor Service, and the Processing ON/OFF toggle.
+  - Stream backlogs and worker distributions remain available in their dedicated contextual panels (`ConsumerLabPanel`, `DemoTopology`, and `DLQPanel`).
+- **Educational Metadata (`natsInfo.ts`)**:
+  - Updated `platform-status` information popover to focus on overall service health and JetStream availability.
+
 ## 2026-09-02
+
+### Fixed
+- **ControlHandler Package Import**:
+  - Added missing `"io"` import to `control_handler.go`, resolving compiler error `undefined: io` on `io.ReadAll(c.Request.Body)` in `PublishStreamJobs`.
+- **Affected Area**:
+  - `backend/src/api/http/control_handler.go`
+- **JobHandler Interface Definition**:
+  - Added missing `SubmitStreamJobs` method signature to `JobServiceDomain` interface in `job_handler.go`, resolving compiler error when calling `h.jobService.SubmitStreamJobs`.
+- **Affected Area**:
+  - `backend/src/api/http/job_handler.go`
+
+### Added (Core NATS Queue Groups Demonstration)
+- **Core NATS Queue Groups Implementation**:
+  - Implemented Core NATS queue group load-balancing demonstration on subject `jobs.queue` with queue group `job-workers`.
+  - Contrasted transient Core NATS in-memory work distribution (1-of-N delivery, no persistence, no JetStream consumer state) with JetStream Competing Consumers.
+- **Backend Services**:
+  - **`processor-service`**:
+    - Added Core NATS Queue Group subscriptions via `Conn.QueueSubscribe(jobs.queue, job-workers)`.
+    - Dynamic worker reconfiguration (1 to 5 workers) via NATS control subject `queuegroup.config.set` and status reporting on `queuegroup.status`.
+    - Added `queuegroup.reset` responder resetting worker distribution counters to zero on demand.
+    - Maintained per-worker message distribution counters (`processor-1` through `processor-5`).
+    - Emitted `jobs.queue.received` lifecycle events identifying the specific receiving worker.
+  - **`job-service`**:
+    - Added `POST /jobs/queue` endpoint and `PublishJobQueue` publisher method for publishing single or batch test messages to `jobs.queue` with delivery mode `CORE`.
+  - **`demo-control-service`**:
+    - Added `GET /queue-group`, `PUT /queue-group`, `POST /queue-group/reset`, and `POST /jobs/queue` proxy endpoints.
+    - Updated activity tracker `ProcessLifecycleEvent` to capture `jobs.queue` submissions and worker receipt events.
+- **Frontend Dashboard**:
+  - Enhanced `QueueGroupPanel.tsx`:
+    - Added dynamic worker selector buttons for 1 to 5 active workers (`processor-1` to `processor-5`).
+    - Added "Reset Counters" button to reset worker distribution counters back to zero.
+    - Added comprehensive delivery semantics badges (Load-Balanced 1 of N, At-Most-Once Best-Effort, Stateless / No ACK-NAK, Multi-Group Fanout).
+    - Added dynamic distribution progress bars for all active workers with distinct color coding.
+    - Expanded educational popover (`natsInfo.ts`) thoroughly defining all terminology shown on the panel.
+  - **Current Demo Setup Integration (`DemoSetupPanel.tsx` & `DemoTopology.tsx`)**:
+    - Placed `Core NATS Queue Group` on the left of the lab switcher and `JetStream Consumer Lab` on the right, defaulting to Core NATS Queue Group.
+    - Dynamically rendered 1 to 5 active worker subscriber cards inside Processor Service in `DemoTopology`.
+
+### Changed (JetStream Consumer Lab Visual & Functional Parity)
+- **Visual Design & Architecture Symmetry (`ConsumerLabPanel.tsx`)**:
+  - Refactored `ConsumerLabPanel` to mirror the rich aesthetic and layout of `QueueGroupPanel`:
+    - Meta chips displaying Stream (`JOBS`), Consumer name, Delivery Mode (`Pull`), Guarantees (`At-Least-Once`), State (`Stateful Cursors`), and Status.
+    - Segmented toggle buttons for Consumer Durability (`Durable` vs `Ephemeral`), Message Ordering (`Normal` vs `Ordered`), and Active Pull Workers (`1` to `5` Competing Workers).
+    - Added "Messages to Publish to Stream" selector (`5`, `10`, `20`, or custom count).
+    - Added "Worker Distribution" section with real-time counters, per-worker progress bars (`processor-1` through `processor-5`), stream metrics (Pending, Ack Pending, Redelivered), and "Reset Counters" button.
+    - Added "Send Test Messages to Stream" primary action button publishing batch JetStream jobs directly to the `JOBS` stream via new atomic `POST /jobs/stream` endpoint.
+- **Backend Tracking & Responders**:
+  - Added support for 1 to 5 competing pull consumer workers in `processor-service` and `demo-control-service`.
+  - Added atomic batch stream publisher `SubmitStreamJobs` on `POST /jobs/stream` in `job-service` and proxy in `demo-control-service`.
+  - Added per-worker JetStream message distribution counters (`a.consumerDistribution`) in `processor-service` initialized for `processor-1` through `processor-5`.
+  - Added `SubjectConsumerReset` (`consumer.reset`) responder to reset distribution counters on demand.
+  - Added `POST /consumer/reset` endpoint to `demo-control-service`.
+  - Exposed `distribution` map in `GET /consumer` responses.
+- **Documentation**:
+  - Updated `api-spec.md` with `POST /jobs/stream`, `POST /consumer/reset`, and 1-5 worker support for `PUT /consumer`.
+- **Reason**:
+  - Enable scaling JetStream competing pull consumers up to 5 workers and provide high-speed batch stream publishing per user request.
+- **Affected Area**:
+  - Backend (`processor-service`, `job-service`, `demo-control-service`), Frontend (`ConsumerLabPanel`, `DemoTopology`, `demoApi`), Documentation.
+- **Documentation**:
+  - Updated `DEVELOPER_GUIDE.md` with capability matrix mapping and architecture comparison.
+  - Updated `api-spec.md` with HTTP endpoints and NATS subject contracts.
+- **Reason**:
+  - Fulfill specification in `docs/feature.md` to demonstrate Core NATS Queue Groups alongside JetStream Competing Consumers.
+- **Affected Area**:
+  - Backend, Frontend, Documentation.
+
+### Changed (UI Information Content Aligned with NATS Capability Mapping)
+- **NATS Capability Popovers (`natsInfo.ts`)**:
+  - Aligned all `(i)` educational popover entries across the platform with the **NATS Capability Mapping -- NATS Native vs Incumbents** model per `docs/feature.md`.
+  - Structured every entry around the 4-question mental model:
+    - **`Role`**: Concise definition of the component/capability.
+    - **`Concepts`**: Accurate technical concepts that teach (e.g., Stream persistence vs Consumer durability, Push vs Pull delivery, Competing Consumers, Message Deduplication, Replay policies, Request/Reply inboxes).
+    - **`Demo Usage`**: Contextualized explanation of how this specific demo exercises the capability.
+    - **`Trivia`**: Why the platform cares / architectural advantages of native NATS primitives.
+  - Distinctly separated **NATS Capability / Resource Components** from **Demo-Specific Components** (which explain demo mechanisms rather than generic documentation).
+  - Clarified technical distinctions (Durable vs Ephemeral, Push vs Pull, Stream vs Consumer, Deduplication vs business idempotent processing).
+  - Maintained complete UI stability: exactly one `(i)` icon per component with zero visual layout changes.
+- **Reason**:
+  - Ensure the demonstration UI acts as an authoritative, technically precise learning tool for developers and architects evaluating NATS.
+- **Affected Area**:
+  - Frontend (`natsInfo.ts`), Documentation (`CHANGELOG.md`).
 
 ### Changed (Deprecate Legacy Correlation ID in Favor of W3C Trace Context)
 - **Standardized on W3C Distributed Tracing**:

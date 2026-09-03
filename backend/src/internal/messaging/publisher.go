@@ -221,3 +221,45 @@ func (p *Publisher) PublishJobLifecycle(subject string, jobID string, status str
 	return nil
 }
 
+// PublishJobQueue publishes a job to Core NATS jobs.queue subject for Queue Group processing.
+func (p *Publisher) PublishJobQueue(ctx context.Context, job jobs.Job) error {
+	payload, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("failed to marshal queue job payload: %w", err)
+	}
+
+	pubCtx, pubSpan := telemetry.StartSpan(ctx, "NATS Publish "+SubjectJobQueue,
+		trace.WithSpanKind(trace.SpanKindProducer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "nats"),
+			attribute.String("messaging.operation", "publish"),
+			attribute.String("messaging.destination.name", SubjectJobQueue),
+			attribute.String("delivery.mode", "CORE"),
+			attribute.String("job.id", job.JobID),
+			attribute.String("job.type", job.Type),
+			attribute.String("queue.group", QueueGroupJobWorkers),
+		),
+	)
+	defer pubSpan.End()
+
+	msg := nats.NewMsg(SubjectJobQueue)
+	msg.Header.Set("Content-Type", "application/json")
+	msg.Header.Set("Nats-Msg-Id", job.JobID)
+	msg.Header.Set("X-Message-Id", fmt.Sprintf("msg-q-%s-%d", job.JobID, time.Now().UnixNano()))
+	msg.Header.Set("X-Source", "job-service")
+	msg.Header.Set("X-Delivery-Mode", "CORE")
+	msg.Data = payload
+
+	// Inject W3C traceparent into NATS message headers
+	telemetry.InjectTraceContext(pubCtx, msg.Header)
+
+	if err := p.client.Conn.PublishMsg(msg); err != nil {
+		pubSpan.RecordError(err)
+		pubSpan.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("failed to publish to queue subject %s: %w", SubjectJobQueue, err)
+	}
+
+	pubSpan.SetStatus(codes.Ok, "published")
+	return nil
+}
+

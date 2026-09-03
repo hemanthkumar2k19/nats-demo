@@ -43,6 +43,20 @@ type App struct {
 	consumerName      string
 	workerCancels     []context.CancelFunc
 	otelShutdown      func(context.Context) error
+
+	// JetStream Consumer distribution tracking
+	consumerMu           sync.Mutex
+	consumerDistribution map[string]int
+	consumerResetSub     *nats.Subscription
+
+	// Core NATS Queue Group state
+	queueMu           sync.Mutex
+	queueWorkersCount int
+	queueSubs         []*nats.Subscription
+	queueDistribution map[string]int
+	queueConfigSub    *nats.Subscription
+	queueStatusSub    *nats.Subscription
+	queueResetSub     *nats.Subscription
 }
 
 // Init loads configuration, connects to NATS, and instantiates components.
@@ -82,6 +96,26 @@ func (a *App) Init() error {
 		Ordering: "normal",
 	}
 	a.consumerName = "job-processor"
+
+	// Initialize Core NATS Queue Group state (1 worker by default)
+	a.queueWorkersCount = 1
+	a.queueSubs = make([]*nats.Subscription, 0)
+	a.queueDistribution = map[string]int{
+		"processor-1": 0,
+		"processor-2": 0,
+		"processor-3": 0,
+		"processor-4": 0,
+		"processor-5": 0,
+	}
+
+	// Initialize JetStream Consumer distribution tracking
+	a.consumerDistribution = map[string]int{
+		"processor-1": 0,
+		"processor-2": 0,
+		"processor-3": 0,
+		"processor-4": 0,
+		"processor-5": 0,
+	}
 
 	return nil
 }
@@ -292,8 +326,16 @@ func (a *App) Run() error {
 		cOrdering := a.consumerConfig.Ordering
 		a.mu.RUnlock()
 
-		respBytes := []byte(fmt.Sprintf(`{"status":"ACTIVE","processing":%t,"consumer_type":"%s","consumer_name":"%s","workers":%d,"ordering":"%s"}`,
-			enabled, cType, cName, cWorkers, cOrdering))
+		a.consumerMu.Lock()
+		distCopy := make(map[string]int)
+		for k, v := range a.consumerDistribution {
+			distCopy[k] = v
+		}
+		a.consumerMu.Unlock()
+		distJSON, _ := json.Marshal(distCopy)
+
+		respBytes := []byte(fmt.Sprintf(`{"status":"ACTIVE","processing":%t,"consumer_type":"%s","consumer_name":"%s","workers":%d,"ordering":"%s","distribution":%s}`,
+			enabled, cType, cName, cWorkers, cOrdering, string(distJSON)))
 		if err := msg.Respond(respBytes); err != nil {
 			log.Printf("[Processor] Failed to send status reply: %v", err)
 		}
@@ -318,6 +360,8 @@ func (a *App) Run() error {
 		}
 		if req.Workers <= 0 {
 			req.Workers = 1
+		} else if req.Workers > 5 {
+			req.Workers = 5
 		}
 		if req.Ordering == "" {
 			req.Ordering = "normal"
@@ -361,16 +405,24 @@ func (a *App) Run() error {
 			statusVal = "STOPPED"
 		}
 
+		a.consumerMu.Lock()
+		distCopy := make(map[string]int)
+		for k, v := range a.consumerDistribution {
+			distCopy[k] = v
+		}
+		a.consumerMu.Unlock()
+
 		resp := jobs.ConsumerStatusResponse{
-			Name:        a.consumerName,
-			Type:        req.Type,
-			Workers:     req.Workers,
-			Ordering:    req.Ordering,
-			Delivery:    "at-least-once",
-			Status:      statusVal,
-			Pending:     pending,
-			AckPending:  ackPending,
-			Redelivered: redelivered,
+			Name:         a.consumerName,
+			Type:         req.Type,
+			Workers:      req.Workers,
+			Ordering:     req.Ordering,
+			Delivery:     "at-least-once",
+			Status:       statusVal,
+			Pending:      pending,
+			AckPending:   ackPending,
+			Redelivered:  redelivered,
+			Distribution: distCopy,
 		}
 		respBytes, _ := json.Marshal(resp)
 		_ = msg.Respond(respBytes)
@@ -382,6 +434,62 @@ func (a *App) Run() error {
 	}
 	a.consumerConfigSub = consumerConfigSub
 	log.Printf("[Run] Subscribed to consumer config responder subject: %s", messaging.SubjectConsumerConfigSet)
+
+	// Subscribe to consumer reset responder subject
+	consumerResetSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectConsumerReset, func(msg *nats.Msg) {
+		a.consumerMu.Lock()
+		a.consumerDistribution = make(map[string]int)
+		for i := 1; i <= 5; i++ {
+			a.consumerDistribution[fmt.Sprintf("processor-%d", i)] = 0
+		}
+		distCopy := make(map[string]int)
+		for k, v := range a.consumerDistribution {
+			distCopy[k] = v
+		}
+		a.consumerMu.Unlock()
+
+		a.mu.RLock()
+		statusVal := "ACTIVE"
+		if !a.processingEnabled {
+			statusVal = "STOPPED"
+		}
+		cName := a.consumerName
+		cType := a.consumerConfig.Type
+		wCount := a.consumerConfig.Workers
+		ordering := a.consumerConfig.Ordering
+		a.mu.RUnlock()
+
+		var pending uint64
+		var ackPending, redelivered int
+		if js, err := a.natsClient.Conn.JetStream(); err == nil {
+			if cinfo, err := js.ConsumerInfo("JOBS", cName); err == nil && cinfo != nil {
+				pending = cinfo.NumPending
+				ackPending = cinfo.NumAckPending
+				redelivered = cinfo.NumRedelivered
+			}
+		}
+
+		resp := jobs.ConsumerStatusResponse{
+			Name:         cName,
+			Type:         cType,
+			Workers:      wCount,
+			Ordering:     ordering,
+			Delivery:     "at-least-once",
+			Status:       statusVal,
+			Pending:      pending,
+			AckPending:   ackPending,
+			Redelivered:  redelivered,
+			Distribution: distCopy,
+		}
+		respBytes, _ := json.Marshal(resp)
+		_ = msg.Respond(respBytes)
+		log.Printf("[Processor] JetStream consumer distribution reset")
+	})
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to consumer reset subject: %w", err)
+	}
+	a.consumerResetSub = consumerResetSub
+	log.Printf("[Run] Subscribed to consumer reset responder subject: %s", messaging.SubjectConsumerReset)
 
 	// Subscribe to processor state control subject
 	stateSetSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectProcessorStateSet, func(msg *nats.Msg) {
@@ -425,6 +533,113 @@ func (a *App) Run() error {
 	a.stateSetSub = stateSetSub
 	log.Printf("[Run] Subscribed to control responder subject: %s", messaging.SubjectProcessorStateSet)
 
+	// Subscribe Core NATS Queue Group workers
+	if err := a.subscribeQueueGroup(); err != nil {
+		return fmt.Errorf("failed to subscribe queue group workers: %w", err)
+	}
+
+	// Subscribe to queue group configuration control subject
+	queueConfigSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectQueueGroupConfigSet, func(msg *nats.Msg) {
+		var req jobs.QueueGroupConfig
+		if err := json.Unmarshal(msg.Data, &req); err != nil {
+			log.Printf("[Processor] Failed to unmarshal queue config payload: %v", err)
+			_ = msg.Respond([]byte(`{"error":"Invalid payload"}`))
+			return
+		}
+
+		if req.Workers < 1 {
+			req.Workers = 1
+		} else if req.Workers > 5 {
+			req.Workers = 5
+		}
+
+		a.queueMu.Lock()
+		a.queueWorkersCount = req.Workers
+		a.queueMu.Unlock()
+
+		if err := a.subscribeQueueGroup(); err != nil {
+			log.Printf("[Processor] Failed to reconfigure queue group subscribers: %v", err)
+			_ = msg.Respond([]byte(fmt.Sprintf(`{"error":"Failed to reconfigure: %v"}`, err)))
+			return
+		}
+
+		a.queueMu.Lock()
+		distCopy := make(map[string]int)
+		for k, v := range a.queueDistribution {
+			distCopy[k] = v
+		}
+		resp := jobs.QueueGroupStatusResponse{
+			Subject:      messaging.SubjectJobQueue,
+			QueueGroup:   messaging.QueueGroupJobWorkers,
+			Workers:      a.queueWorkersCount,
+			Distribution: distCopy,
+		}
+		a.queueMu.Unlock()
+
+		respBytes, _ := json.Marshal(resp)
+		_ = msg.Respond(respBytes)
+		log.Printf("[Processor] Queue Group reconfigured: Subject=%s, QueueGroup=%s, Workers=%d",
+			messaging.SubjectJobQueue, messaging.QueueGroupJobWorkers, req.Workers)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to queue config subject: %w", err)
+	}
+	a.queueConfigSub = queueConfigSub
+	log.Printf("[Run] Subscribed to queue config responder subject: %s", messaging.SubjectQueueGroupConfigSet)
+
+	// Subscribe to queue group status responder subject
+	queueStatusSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectQueueGroupStatus, func(msg *nats.Msg) {
+		a.queueMu.Lock()
+		distCopy := make(map[string]int)
+		for k, v := range a.queueDistribution {
+			distCopy[k] = v
+		}
+		resp := jobs.QueueGroupStatusResponse{
+			Subject:      messaging.SubjectJobQueue,
+			QueueGroup:   messaging.QueueGroupJobWorkers,
+			Workers:      a.queueWorkersCount,
+			Distribution: distCopy,
+		}
+		a.queueMu.Unlock()
+
+		respBytes, _ := json.Marshal(resp)
+		_ = msg.Respond(respBytes)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to queue status subject: %w", err)
+	}
+	a.queueStatusSub = queueStatusSub
+	log.Printf("[Run] Subscribed to queue status responder subject: %s", messaging.SubjectQueueGroupStatus)
+
+	// Subscribe to queue group reset responder subject
+	queueResetSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectQueueGroupReset, func(msg *nats.Msg) {
+		a.queueMu.Lock()
+		a.queueDistribution = make(map[string]int)
+		for i := 1; i <= a.queueWorkersCount; i++ {
+			a.queueDistribution[fmt.Sprintf("processor-%d", i)] = 0
+		}
+		distCopy := make(map[string]int)
+		for k, v := range a.queueDistribution {
+			distCopy[k] = v
+		}
+		resp := jobs.QueueGroupStatusResponse{
+			Subject:      messaging.SubjectJobQueue,
+			QueueGroup:   messaging.QueueGroupJobWorkers,
+			Workers:      a.queueWorkersCount,
+			Distribution: distCopy,
+		}
+		a.queueMu.Unlock()
+
+		respBytes, _ := json.Marshal(resp)
+		_ = msg.Respond(respBytes)
+		log.Printf("[Processor] Core NATS Queue Group distribution reset")
+	})
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to queue reset subject: %w", err)
+	}
+	a.queueResetSub = queueResetSub
+	log.Printf("[Run] Subscribed to queue reset responder subject: %s", messaging.SubjectQueueGroupReset)
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-quit
@@ -461,6 +676,94 @@ func (a *App) unsubscribeCore() {
 		a.sub = nil
 		log.Println("[Processor] Core NATS subscriber deactivated")
 	}
+}
+
+// subscribeQueueGroup configures Core NATS Queue Group subscriptions based on a.queueWorkersCount.
+func (a *App) subscribeQueueGroup() error {
+	a.queueMu.Lock()
+	defer a.queueMu.Unlock()
+
+	for _, sub := range a.queueSubs {
+		if sub != nil {
+			_ = sub.Unsubscribe()
+		}
+	}
+	a.queueSubs = make([]*nats.Subscription, 0, a.queueWorkersCount)
+
+	for i := 1; i <= a.queueWorkersCount; i++ {
+		workerName := fmt.Sprintf("processor-%d", i)
+		wName := workerName
+		sub, err := a.natsClient.Conn.QueueSubscribe(messaging.SubjectJobQueue, messaging.QueueGroupJobWorkers, func(msg *nats.Msg) {
+			a.handleQueueMessage(wName, msg)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to subscribe %s to queue group %s: %w", wName, messaging.QueueGroupJobWorkers, err)
+		}
+		a.queueSubs = append(a.queueSubs, sub)
+		log.Printf("[%s] Subscribed to Core NATS queue group '%s' on subject '%s'",
+			wName, messaging.QueueGroupJobWorkers, messaging.SubjectJobQueue)
+	}
+
+	return nil
+}
+
+// unsubscribeQueueGroup cleans up active Core NATS queue group subscriptions.
+func (a *App) unsubscribeQueueGroup() {
+	a.queueMu.Lock()
+	defer a.queueMu.Unlock()
+
+	for _, sub := range a.queueSubs {
+		if sub != nil {
+			_ = sub.Unsubscribe()
+		}
+	}
+	a.queueSubs = nil
+	log.Println("[Processor] Core NATS queue group subscriptions deactivated")
+}
+
+// handleQueueMessage processes a message delivered by Core NATS to a queue group member.
+func (a *App) handleQueueMessage(workerName string, msg *nats.Msg) {
+	var job jobs.Job
+	if err := json.Unmarshal(msg.Data, &job); err != nil {
+		log.Printf("[%s] [queue-group: %s] Failed to unmarshal message: %v",
+			workerName, messaging.QueueGroupJobWorkers, err)
+		return
+	}
+
+	a.queueMu.Lock()
+	a.queueDistribution[workerName]++
+	currCount := a.queueDistribution[workerName]
+	a.queueMu.Unlock()
+
+	log.Printf("[%s] [queue-group: %s] Received job %s (worker total: %d)",
+		workerName, messaging.QueueGroupJobWorkers, job.JobID, currCount)
+
+	// Publish RECEIVED lifecycle event to jobs.queue.received with worker name
+	_ = a.publisher.PublishJobLifecycle(
+		messaging.SubjectJobQueueReceived,
+		job.JobID,
+		"RECEIVED",
+		1,
+		"",
+		workerName,
+		"CORE",
+		0,
+	)
+
+	// Simulate processing time
+	time.Sleep(150 * time.Millisecond)
+
+	// Publish COMPLETED lifecycle event to jobs.queue.completed with worker name
+	_ = a.publisher.PublishJobLifecycle(
+		messaging.SubjectJobQueueCompleted,
+		job.JobID,
+		"COMPLETED",
+		1,
+		"",
+		workerName,
+		"CORE",
+		0,
+	)
 }
 
 // subscribeValidation registers the jobs.validate Request/Reply handler.
@@ -606,7 +909,7 @@ func (a *App) subscribeJetStream() error {
 		}
 		cinfo, err := js.AddConsumer("JOBS", &nats.ConsumerConfig{
 			Name:          a.consumerName,
-			DeliverPolicy: nats.DeliverAllPolicy,
+			DeliverPolicy: nats.DeliverNewPolicy,
 			AckPolicy:     nats.AckExplicitPolicy,
 			FilterSubject: messaging.SubjectJobSubmitted,
 		})
@@ -759,6 +1062,10 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 		attemptCount = attempts[job.JobID]
 		attemptsMu.Unlock()
 	}
+
+	a.consumerMu.Lock()
+	a.consumerDistribution[workerName]++
+	a.consumerMu.Unlock()
 
 	// 1. Extract Trace Context and start Consumer Receive span
 	parentCtx := telemetry.ExtractTraceContext(context.Background(), msg.Header)
@@ -970,6 +1277,16 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 
 	log.Printf("[%s] JetStream Job %s processed successfully", workerName, job.JobID)
 	_ = a.publisher.PublishJobLifecycle(
+		messaging.SubjectJobCompleted,
+		job.JobID,
+		"COMPLETED",
+		attemptCount,
+		"",
+		workerName,
+		deliveryMode,
+		sequence,
+	)
+	_ = a.publisher.PublishJobLifecycle(
 		messaging.SubjectJobAcked,
 		job.JobID,
 		"ACKED",
@@ -994,6 +1311,18 @@ func (a *App) Stop() {
 	a.unsubscribeCore()
 	a.unsubscribeJetStream()
 
+	log.Println("[Stop] Unsubscribing queue group...")
+	a.unsubscribeQueueGroup()
+	if a.queueConfigSub != nil {
+		_ = a.queueConfigSub.Unsubscribe()
+	}
+	if a.queueStatusSub != nil {
+		_ = a.queueStatusSub.Unsubscribe()
+	}
+	if a.queueResetSub != nil {
+		_ = a.queueResetSub.Unsubscribe()
+	}
+
 	log.Println("[Stop] Unsubscribing validation consumer...")
 	a.unsubscribeValidation()
 
@@ -1013,6 +1342,9 @@ func (a *App) Stop() {
 		} else {
 			log.Println("[Stop] Consumer config responder unsubscribed successfully")
 		}
+	}
+	if a.consumerResetSub != nil {
+		_ = a.consumerResetSub.Unsubscribe()
 	}
 
 	log.Println("[Stop] Unsubscribing control responder...")
