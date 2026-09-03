@@ -51,4 +51,29 @@ const (
 	SubjectJobScheduled  = "jobs.scheduled"
 	SubjectJobNakDelayed = "jobs.nak.delayed"
 	SubjectJobAckTimeout = "jobs.ack.timeout"
+
+	// Saga Orchestration Subjects (Commands & Events)
+	SubjectSagaJobAllocate              = "saga.job.allocate"
+	SubjectSagaJobPrepare               = "saga.job.prepare"
+	SubjectSagaJobExecute               = "saga.job.execute"
+	SubjectSagaJobRelease               = "saga.job.release"
+	SubjectSagaJobStarted               = "saga.job.started"
+	SubjectSagaJobStepCompleted         = "saga.job.step.completed"
+	SubjectSagaJobFailed                = "saga.job.failed"
+	SubjectSagaJobCompensationStarted   = "saga.job.compensation.started"
+	SubjectSagaJobCompensationCompleted = "saga.job.compensation.completed"
+	SubjectSagaJobCompleted             = "saga.job.completed"
+
+	// Event-Driven 2-Operation Saga Subjects
+	SubjectSagaTrigger        = "saga.start"
+	SubjectSagaOp1Reserve     = "saga.op1.reserve"
+	SubjectSagaOp1Completed   = "saga.op1.completed"
+	SubjectSagaOp1Failed      = "saga.op1.failed"
+	SubjectSagaOp2Payment     = "saga.op2.payment"
+	SubjectSagaOp2Completed   = "saga.op2.completed"
+	SubjectSagaOp2Failed      = "saga.op2.failed"
+	SubjectSagaOp1Compensate  = "saga.op1.compensate"
+	SubjectSagaOp1Compensated = "saga.op1.compensated"
+	SubjectSagaCompleted      = "saga.completed"
+	SubjectSagaFailed         = "saga.failed"
 )

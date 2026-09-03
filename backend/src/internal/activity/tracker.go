@@ -38,13 +38,13 @@ func NewTracker() *Tracker {
 
 func getStatusWeight(status string) int {
 	switch status {
-	case "SCHEDULED", "PUBLISHED", "STORED", "REQUEST_SENT", "DEDUPLICATED", "REPROCESSED":
+	case "SCHEDULED", "PUBLISHED", "STORED", "REQUEST_SENT", "DEDUPLICATED", "REPROCESSED", "SAGA_STARTED", "SAGA_TRIGGERED", "OP1_RESERVE", "OP2_PAYMENT":
 		return 1
-	case "RECEIVED", "DELIVERED", "REQUEST_RECEIVED", "REDELIVERED":
+	case "RECEIVED", "DELIVERED", "REQUEST_RECEIVED", "REDELIVERED", "SAGA_STEP", "SAGA_COMPENSATING", "OP1_COMPLETED", "OP1_FAILED", "OP2_COMPLETED", "OP2_FAILED", "OP1_COMPENSATING", "OP1_COMPENSATED":
 		return 2
 	case "PROCESSING", "REPLY_SENT", "NAK_WITH_DELAY", "ACK_TIMEOUT_SIMULATED":
 		return 3
-	case "COMPLETED", "FAILED", "ACKED", "NO CONSUMER", "REPLY_RECEIVED", "REQUEST_TIMEOUT", "REPLAYED", "DLQ_PUBLISHED":
+	case "COMPLETED", "FAILED", "ACKED", "NO CONSUMER", "REPLY_RECEIVED", "REQUEST_TIMEOUT", "REPLAYED", "DLQ_PUBLISHED", "SAGA_COMPLETED", "SAGA_COMPENSATED", "SAGA_FAILED":
 		return 4
 	default:
 		return 0
@@ -182,6 +182,57 @@ func (t *Tracker) ProcessLifecycleEvent(subject string, data []byte, source stri
 	case "jobs.queue.completed":
 		status = "COMPLETED"
 		subject = "jobs.queue"
+	case "saga.job.started":
+		status = "SAGA_STARTED"
+		payload.DeliveryMode = "SAGA"
+	case "saga.job.step.completed":
+		status = "SAGA_STEP"
+		payload.DeliveryMode = "SAGA"
+	case "saga.job.compensation.started":
+		status = "SAGA_COMPENSATING"
+		payload.DeliveryMode = "SAGA"
+	case "saga.job.compensation.completed":
+		status = "SAGA_COMPENSATED"
+		payload.DeliveryMode = "SAGA"
+	case "saga.job.completed":
+		status = "SAGA_COMPLETED"
+		payload.DeliveryMode = "SAGA"
+	case "saga.job.failed":
+		status = "SAGA_FAILED"
+		payload.DeliveryMode = "SAGA"
+	case "saga.start":
+		status = "SAGA_TRIGGERED"
+		payload.DeliveryMode = "SAGA"
+	case "saga.op1.reserve":
+		status = "OP1_RESERVE"
+		payload.DeliveryMode = "SAGA"
+	case "saga.op1.completed":
+		status = "OP1_COMPLETED"
+		payload.DeliveryMode = "SAGA"
+	case "saga.op1.failed":
+		status = "OP1_FAILED"
+		payload.DeliveryMode = "SAGA"
+	case "saga.op2.payment":
+		status = "OP2_PAYMENT"
+		payload.DeliveryMode = "SAGA"
+	case "saga.op2.completed":
+		status = "OP2_COMPLETED"
+		payload.DeliveryMode = "SAGA"
+	case "saga.op2.failed":
+		status = "OP2_FAILED"
+		payload.DeliveryMode = "SAGA"
+	case "saga.op1.compensate":
+		status = "OP1_COMPENSATING"
+		payload.DeliveryMode = "SAGA"
+	case "saga.op1.compensated":
+		status = "OP1_COMPENSATED"
+		payload.DeliveryMode = "SAGA"
+	case "saga.completed":
+		status = "SAGA_COMPLETED"
+		payload.DeliveryMode = "SAGA"
+	case "saga.failed":
+		status = "SAGA_FAILED"
+		payload.DeliveryMode = "SAGA"
 	default:
 		status = payload.Status
 	}

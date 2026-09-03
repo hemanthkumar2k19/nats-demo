@@ -650,6 +650,146 @@ export async function sendJetStreamTestMessages(count: number = 10): Promise<{ p
   return { published: count, jobs: jobIds };
 }
 
+// ============================================================================
+// Saga Orchestration Models & API Functions
+// ============================================================================
+
+export type SagaState = 
+  | 'STARTED' 
+  | 'OP1_PENDING'
+  | 'OP1_COMPLETED'
+  | 'OP2_PENDING'
+  | 'ALLOCATING' 
+  | 'PREPARING' 
+  | 'EXECUTING' 
+  | 'COMPENSATING' 
+  | 'COMPLETED' 
+  | 'FAILED' 
+  | 'COMPENSATION_FAILED' 
+  | 'CANCELLED';
+
+export interface StepRecord {
+  name: string;
+  type: 'FORWARD' | 'COMPENSATION';
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+  started_at: string;
+  completed_at?: string;
+  duration_ms: number;
+  error?: string;
+  details?: string;
+}
+
+export interface FailureConfig {
+  fail_step?: string;
+  fail_compensation?: boolean;
+  step_delay_ms?: number;
+  interactive?: boolean;
+}
+
+export interface SagaInstance {
+  saga_id: string;
+  job_id: string;
+  state: SagaState;
+  current_step?: string;
+  completed_steps: string[];
+  compensated_steps: string[];
+  steps: StepRecord[];
+  failure_config: FailureConfig;
+  created_at: string;
+  updated_at: string;
+  error?: string;
+  payload?: Record<string, any>;
+}
+
+export interface StartSagaRequest {
+  job_id?: string;
+  type?: string;
+  payload?: Record<string, any>;
+  fail_step?: string;
+  fail_compensation?: boolean;
+  step_delay_ms?: number;
+  interactive?: boolean;
+}
+
+export interface AdvanceStepRequest {
+  step: 'op1' | 'op2' | 'reserve' | 'payment';
+  action: 'SUCCESS' | 'FAIL';
+  error?: string;
+  fail_compensation?: boolean;
+}
+
+export interface InjectFailureRequest {
+  fail_step: string;
+  fail_compensation: boolean;
+}
+
+export async function startSaga(req: StartSagaRequest): Promise<SagaInstance> {
+  const response = await fetch(`${JOB_SERVICE_URL}/sagas/jobs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to start saga: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+export async function advanceSagaStep(jobId: string, req: AdvanceStepRequest): Promise<SagaInstance> {
+  const response = await fetch(`${JOB_SERVICE_URL}/sagas/jobs/${jobId}/step`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to advance saga step: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+export async function getSagaStatus(jobId: string): Promise<SagaInstance> {
+  const response = await fetch(`${JOB_SERVICE_URL}/sagas/jobs/${jobId}`);
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to get saga status: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+export async function injectSagaFailure(jobId: string, req: InjectFailureRequest): Promise<SagaInstance> {
+  const response = await fetch(`${JOB_SERVICE_URL}/sagas/jobs/${jobId}/fail`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to inject failure: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+export async function cancelSaga(jobId: string): Promise<SagaInstance> {
+  const response = await fetch(`${JOB_SERVICE_URL}/sagas/jobs/${jobId}/cancel`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to cancel saga: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+export async function listSagas(): Promise<SagaInstance[]> {
+  const response = await fetch(`${JOB_SERVICE_URL}/sagas/jobs`);
+  if (!response.ok) {
+    return [];
+  }
+  return response.json();
+}
+
 
 
 

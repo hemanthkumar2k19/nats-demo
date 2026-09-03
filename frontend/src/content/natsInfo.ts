@@ -358,4 +358,21 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
     trivia:
       "NAK with Delay is useful for transient failures such as rate limits or temporary downstream outages because retry timing can be controlled explicitly.",
   },
+
+  "saga-orchestration": {
+    id: "saga-orchestration",
+    title: "Saga Orchestration Pattern",
+    role: "Coordinates a multi-step distributed transaction with forward execution and backward compensation rollback using NATS.",
+    concepts: [
+      "Saga Pattern: A distributed transaction pattern where a sequence of local operations update state, and compensating actions reverse changes if a later step fails.",
+      "Orchestrator: A central coordinator in job-service that drives step execution order, tracks progress, and executes compensations in reverse order.",
+      "NATS Request / Reply Commands: Decouples the orchestrator from worker step responders over subjects like saga.job.allocate, saga.job.prepare, saga.job.execute, and saga.job.release.",
+      "Lifecycle Events: Broadcaster events published on saga.job.* provide real-time visibility into workflow transitions.",
+      "Eventual Consistency: Compensations return the system to a clean state without requiring distributed 2-phase locks.",
+    ],
+    demoUsage:
+      "Trigger normal sagas or simulate failures at Allocate, Prepare, or Execute steps to observe forward progress, rollback compensation execution, and live state transitions.",
+    trivia:
+      "Sagas do not rely on ACID database locks; instead, business operations are designed with reversible counterparts (e.g. Allocate -> Release).",
+  },
 };

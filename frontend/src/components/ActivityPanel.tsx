@@ -1,6 +1,58 @@
 import React, { useState, useMemo } from 'react';
 import { Activity } from '../api/demoApi';
 
+export type ActivityCategory = 'ALL' | 'BUSINESS' | 'LIFECYCLE';
+
+export const isLifecycleActivity = (act: Activity): boolean => {
+  // Pure worker processing, acknowledgment, transport, and demo simulation events
+  const lifecycleEvents = [
+    'RECEIVED',
+    'DELIVERED',
+    'REQUEST_RECEIVED',
+    'PROCESSING',
+    'ACKED',
+    'STORED',
+    'DEDUPLICATED',
+    'NAK_WITH_DELAY',
+    'ACK_TIMEOUT_SIMULATED',
+    'DLQ_PUBLISHED',
+    'REPLAYED',
+    'NO CONSUMER',
+    'NO_ACTIVE_CONSUMER',
+    'REQUEST_TIMEOUT',
+  ];
+
+  const lifecycleSubjects = [
+    'jobs.received',
+    'jobs.queue.received',
+    'jobs.delivered',
+    'jobs.processing',
+    'jobs.processing.started',
+    'jobs.processing.completed',
+    'jobs.processing.failed',
+    'jobs.acked',
+    'jobs.stored',
+    'jobs.deduplicated',
+    'jobs.nak.delayed',
+    'jobs.ack.timeout',
+    'jobs.dlq',
+    'jobs.dlq.published',
+    'jobs.replayed',
+    'jobs.noconsumer',
+    'jobs.request.received',
+  ];
+
+  const ev = (act.event || '').toUpperCase();
+  const sub = (act.subject || '').toLowerCase();
+
+  return lifecycleEvents.includes(ev) || lifecycleSubjects.includes(sub);
+};
+
+export const isBusinessActivity = (act: Activity): boolean => {
+  // All Saga transactions and domain job submissions are business messages
+  return !isLifecycleActivity(act);
+};
+
 interface ActivityPanelProps {
   activities: Activity[];
   onRefresh: () => void;
@@ -18,11 +70,15 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
   onSelectJob,
   onShowInfo,
 }) => {
+  const [messageCategory, setMessageCategory] = useState<ActivityCategory>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEvent, setSelectedEvent] = useState('ALL');
   const [selectedMode, setSelectedMode] = useState('ALL');
   const [selectedWorker, setSelectedWorker] = useState('ALL');
   const [eventLimit, setEventLimit] = useState<number>(15);
+
+  const businessCount = useMemo(() => activities.filter(isBusinessActivity).length, [activities]);
+  const lifecycleCount = useMemo(() => activities.length - businessCount, [activities, businessCount]);
 
   const getBadgeClass = (event: string) => {
     switch (event.toUpperCase()) {
@@ -42,15 +98,23 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
         return 'badge-delivered';
       case 'PROCESSING':
       case 'REPLY_SENT':
+      case 'SAGA_STARTED':
+      case 'SAGA_STEP':
         return 'badge-processing';
+      case 'COMPENSATING':
+      case 'SAGA_COMPENSATING':
+        return 'badge-retrying';
       case 'COMPLETED':
       case 'ACKED':
       case 'REPLY_RECEIVED':
+      case 'SAGA_COMPLETED':
+      case 'SAGA_COMPENSATED':
         return 'badge-completed';
       case 'FAILED':
       case 'NO CONSUMER':
       case 'NO_ACTIVE_CONSUMER':
       case 'REQUEST_TIMEOUT':
+      case 'SAGA_FAILED':
         return 'badge-failed';
       case 'REPLAYED':
         return 'badge-replayed';
@@ -78,6 +142,12 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
   // Filtered activities
   const filteredActivities = useMemo(() => {
     return activities.filter((act) => {
+      if (messageCategory === 'BUSINESS' && !isBusinessActivity(act)) {
+        return false;
+      }
+      if (messageCategory === 'LIFECYCLE' && isBusinessActivity(act)) {
+        return false;
+      }
       if (selectedEvent !== 'ALL' && act.event !== selectedEvent) {
         return false;
       }
@@ -106,7 +176,7 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
       }
       return true;
     });
-  }, [activities, selectedEvent, selectedMode, selectedWorker, searchQuery]);
+  }, [activities, messageCategory, selectedEvent, selectedMode, selectedWorker, searchQuery]);
 
   // Capped visible activities
   const displayedActivities = useMemo(() => {
@@ -115,13 +185,18 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
   }, [filteredActivities, eventLimit]);
 
   const hasActiveFilters =
-    searchQuery !== '' || selectedEvent !== 'ALL' || selectedMode !== 'ALL' || selectedWorker !== 'ALL';
+    searchQuery !== '' ||
+    selectedEvent !== 'ALL' ||
+    selectedMode !== 'ALL' ||
+    selectedWorker !== 'ALL' ||
+    messageCategory !== 'ALL';
 
   const handleClearFilters = () => {
     setSearchQuery('');
     setSelectedEvent('ALL');
     setSelectedMode('ALL');
     setSelectedWorker('ALL');
+    setMessageCategory('ALL');
   };
 
   const formatCompactId = (id?: string) => {
@@ -175,6 +250,39 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
 
       {/* Search and Filter Toolbar */}
       <div className="activity-toolbar">
+        {/* Category Segmented Switcher (Both / Business A / Lifecycle B) */}
+        <div className="activity-category-bar">
+          <button
+            type="button"
+            className={`activity-cat-btn ${messageCategory === 'ALL' ? 'active' : ''}`}
+            onClick={() => setMessageCategory('ALL')}
+            title="Show all logged events (Both business messages and internal lifecycle events)"
+          >
+            <span>All Messages</span>
+            <span className="cat-count-pill">{activities.length}</span>
+          </button>
+          <button
+            type="button"
+            className={`activity-cat-btn business ${messageCategory === 'BUSINESS' ? 'active' : ''}`}
+            onClick={() => setMessageCategory('BUSINESS')}
+            title="Filter to show only domain business payload messages (A)"
+          >
+            <span className="cat-dot business"></span>
+            <span>Business Messages (A)</span>
+            <span className="cat-count-pill">{businessCount}</span>
+          </button>
+          <button
+            type="button"
+            className={`activity-cat-btn lifecycle ${messageCategory === 'LIFECYCLE' ? 'active' : ''}`}
+            onClick={() => setMessageCategory('LIFECYCLE')}
+            title="Filter to show only internal worker and flow lifecycle events (B)"
+          >
+            <span className="cat-dot lifecycle"></span>
+            <span>Flow / Lifecycle Events (B)</span>
+            <span className="cat-count-pill">{lifecycleCount}</span>
+          </button>
+        </div>
+
         <div className="activity-search-box">
           <svg className="search-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -349,9 +457,14 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
                     {act.delivery_mode || '-'}
                   </td>
                   <td>
-                    <span className={`badge ${getBadgeClass(act.event)}`}>
-                      {act.event}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                      <span className={`badge ${getBadgeClass(act.event)}`}>
+                        {act.event}
+                      </span>
+                      <span className={`event-category-tag ${isBusinessActivity(act) ? 'business' : 'lifecycle'}`}>
+                        {isBusinessActivity(act) ? 'BUSINESS' : 'LIFECYCLE'}
+                      </span>
+                    </div>
                   </td>
                   <td className="mono-cell" style={{ color: 'var(--text-muted)' }}>
                     {act.sequence ? `#${act.sequence}` : '-'}

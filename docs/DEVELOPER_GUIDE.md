@@ -64,7 +64,9 @@ nats-demo/
      4. `Request / Reply`: Synchronous RPC validation testing and timeout simulation.
      5. `Dead Letter Queue`: Poison message failure routing and DLQ message inspection.
      6. `Stream Replay`: Historical time-window and sequence rewind controls.
+     7. `Saga Orchestration`: Interactive 2-Operation distributed transaction workflow (`Reserve Inventory` -> `Process Payment` -> `Completed`) with automated or step-by-step compensating rollback (`Compensate: Release Inventory`) purely over NATS events.
    - Features the **Observability Panel Container** (`ObservabilityPanelContainer.tsx`) with a top-level switcher between `Live Activity Log` and `Subject Addressing & Wildcards`.
+   - Features the **Activity Log Message Classification Switcher** (`ActivityPanel.tsx`): 3-way top-bar toggle between `All Messages`, `Business Messages (A)` (domain payloads & Saga transactions), and `Flow / Lifecycle Events (B)` (worker telemetry, ACKs, retries).
    - Features the **Modal Job Inspector** (`JobInspectorPanel.tsx`) opening directly as a focused pop-up overlay upon clicking any row in the Activity Log, with event display limits (15, 30, 50, all) keeping the view clean and compact.
    - Contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
 
@@ -88,6 +90,7 @@ nats-demo/
 | **JetStream Deduplication** | Publishes with `Nats-Msg-Id` within the 2-minute deduplication window recognize duplicates (`DEDUPLICATED`). |
 | **Request/Reply** | Sync job validation is processed on the subject `jobs.validate` with a 2-second requester timeout. |
 | **Replay / Rewind** | Replays historical stream events from the `JOBS` stream based on sequence number or time constraints via an ephemeral consumer without modifying stored stream entries. |
+| **Distributed Saga Pattern** | Demonstrates 2-Operation distributed transaction coordination (`saga.op1.reserve`, `saga.op2.payment`) with automatic compensating rollback (`saga.op1.compensate` -> release) upon downstream failure, running entirely via NATS message events. |
 | **Observability (LGTM Stack)** | Complete NATS metrics surface (Prometheus), centralized NATS server logs (Fluent Bit -> Loki), NATS operational events/advisories ($SYS & JetStream -> Loki), and application distributed tracing (Tempo). |
 | **Dead Letter Queue (DLQ)** | Demonstrates application-level DLQ routing on JetStream: messages failing repeatedly are NAKed until reaching `max_delivery_attempts` (default: 3), then routed to stream `JOBS_DLQ` (`jobs.dlq`), emitting `DLQ_PUBLISHED` and inspected by consumer `dlq-inspector`. |
 
@@ -232,6 +235,44 @@ UI                 job-service           NATS          processor-service
 - `publisher.RequestJobValidation` converts this to `messaging.ErrRequestTimeout`.
 - The HTTP handler detects this sentinel error and returns HTTP `504 Gateway Timeout`.
 - No artificial timeout generation is used; the behavior is an authentic NATS timeout.
+
+### Saga Orchestration Flow
+
+Demonstrates the Saga Pattern for multi-step distributed operations using NATS Request/Reply commands and Pub/Sub lifecycle events:
+
+```text
+UI                 job-service (Orchestrator)     NATS          processor-service (Worker)
+|                              |                    |                    |
+| POST /sagas/jobs             |                    |                    |
+|----------------------------->|                    |                    |
+|                              | Publish started    |                    |
+|                              |-- saga.job.started |                    |
+|                              | Request            |                    |
+|                              |-- saga.job.allocate->                   |
+|                              |                    |-- Deliver -------->|
+|                              |                    |<-- Reply (OK) -----|
+|                              | Request            |                    |
+|                              |-- saga.job.prepare -->                  |
+|                              |                    |-- Deliver -------->|
+|                              |                    |<-- Reply (OK) -----|
+|                              | Request            |                    |
+|                              |-- saga.job.execute ->                   |
+|                              |                    |-- Deliver -------->|
+|                              |                    |<-- Reply (FAIL) ---|
+|                              | State: COMPENSATING|                    |
+|                              | Request            |                    |
+|                              |-- saga.job.release ->                   |
+|                              |                    |-- Deliver -------->|
+|                              |                    |<-- Reply (OK) -----|
+|                              | Publish failed     |                    |
+|                              |-- saga.job.failed->|                    |
+| 200 OK (State: FAILED)       |                    |                    |
+|<-----------------------------|                    |                    |
+```
+
+- **Commands (`saga.job.*`)**: Handled via NATS Request/Reply (`allocate`, `prepare`, `execute`, and `release`).
+- **Compensation**: If a forward step fails, completed steps are compensated in reverse order.
+- **Independence**: All subjects are isolated under `saga.*` and all HTTP endpoints are under `/sagas/*`, guaranteeing zero impact on existing `jobs.*` flows.
 
 ---
 

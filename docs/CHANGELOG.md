@@ -4,6 +4,67 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-03
 
+### Fixed
+- Fixed Go compilation error in `internal/saga` (`undefined: StepAllocate`, `undefined: SagaCommandPayload`, etc.) by restoring worker command step constants (`StepAllocate`, `StepPrepare`, `StepExecute`, `StepRelease`) and structs (`SagaCommandPayload`, `SagaCommandResponse`) in `backend/src/internal/saga/model.go`.
+- Fixed TypeScript compiler error `Type 'boolean | null' is not assignable to type 'boolean | undefined'` in `frontend/src/components/SagaPanel.tsx` by wrapping `isOp1Active`, `isOp2Active`, and `isTerminal` expressions with `Boolean(...)`.
+- Fixed TypeScript compiler error `Cannot find namespace 'NodeJS'` in `frontend/src/components/SagaPanel.tsx` by changing `NodeJS.Timeout` to `ReturnType<typeof setInterval>`.
+
+### Documentation
+- **Improvised README.md for First-Time Evaluators**:
+  - Overhauled root `README.md` with an evaluation matrix of all 12 NATS capabilities, ASCII architectural diagram, 3-minute quickstart guide, ports/endpoints reference table, interactive UI guided tour (Tours 1 through 5), and CLI testing curl commands.
+- **Synchronized Developer Guide (`docs/DEVELOPER_GUIDE.md`)**:
+  - Added the 7th Capability Studio tab (`Saga Orchestration`) and the Saga distributed transaction mapping row.
+  - Added documentation for the Activity Log Message Classification Switcher (`Business Messages [A]` vs `Flow / Lifecycle Events [B]`).
+
+### Added (Activity Log Message Classification Switcher)
+- **Top-Bar Message Category Switcher (`ActivityPanel.tsx`, `index.css`)**:
+  - Added a 3-way segmented toggle bar (`All Messages`, `Business Messages (A)`, `Flow / Lifecycle Events (B)`) to the top toolbar of the Activity Log.
+  - Implemented automatic classification engine separating domain business payload messages (`jobs.submitted`, `jobs.queue`, `saga.start`, `jobs.validate`, etc.) from demo lifecycle and telemetry events (`jobs.received`, `jobs.processing`, `jobs.acked`, `jobs.completed`, `jobs.stored`, `jobs.dlq`, etc.).
+  - Ensured all distributed Saga orchestration transitions (`OP1_COMPLETED`, `OP2_COMPLETED`, `SAGA_COMPLETED`, `OP1_COMPENSATED`, `SAGA_FAILED`) are accurately categorized under Business Messages (A) as core transaction domain events.
+  - Added live pill counters for each category dynamically displaying count totals.
+  - Added visual category badges (`[BUSINESS]` in blue, `[LIFECYCLE]` in purple) directly beneath the Event pill in each table row for clarity.
+
+### Changed (Saga Panel UI/UX Redesign)
+- **Unified Design Tokens & Aesthetic Refactoring (`SagaPanel.tsx`, `index.css`)**:
+  - Redesigned the Saga Orchestration panel to match the visual language, typography, and spacing of other studio panels (`ConsumerLabPanel`, `QueueGroupPanel`, `DelayedRetryPanel`).
+  - Added structured metadata summary chips (`queue-meta-row`, `queue-meta-chip`) detailing the 2-Op Saga Pattern, Forward Path (`saga.op1.reserve -> saga.op2.payment`), Rollback Compensation (`saga.op1.compensate -> release`), and Core NATS event transport.
+  - Replaced unstyled radio controls and text inputs with standard `.form-label`, `.form-input`, and segmented toggle buttons (`btn-worker-toggle`).
+  - Added Quick Scenario demo presets (`Normal Success Flow`, `Payment Declined (Triggers Rollback)`, `Inventory Out of Stock`) for single-click demonstrations.
+  - Eliminated vertical height distortion in the visual pipeline by replacing the nested compensation branch with a balanced 3-card horizontal forward pipeline and a dedicated, full-width Compensating Rollback Track.
+  - Upgraded step action buttons with clean inline SVG icons (check / cross / undo) and subtle hover effects instead of bracketed text.
+  - Refactored the event transmission stream into an aligned ledger table with monospace timestamps, NATS subject badges, and latency metrics.
+
+### Added (Interactive Event-Driven 2-Op Saga Pattern)
+- **Interactive 2-Operation Workflow (`saga.start` -> `Op 1: Reserve` -> `Op 2: Payment` -> `Completed` / `Compensate: Release`)**:
+  - Implemented event-driven Saga flow purely over NATS: `saga.start` -> `saga.op1.reserve` -> `saga.op1.completed` -> `saga.op2.payment` -> `saga.op2.completed` -> `saga.completed`.
+  - Added rollback compensation for Op 1 on Op 2 failure: `saga.op2.failed` -> `saga.op1.compensate` -> `saga.op1.compensated` -> `saga.failed`.
+  - Added `POST /sagas/jobs/:job_id/step` to allow the UI to manually advance or fail each stage interactively.
+  - Rebuilt `SagaPanel.tsx` with interactive buttons directly on the Op 1 and Op 2 cards (`[Complete Op 1]`, `[Fail Op 1]`, `[Complete Op 2]`, `[Fail Op 2]`), allowing step-by-step presentation of both happy and unhappy rollback paths.
+  - Added mode toggle between `Interactive Buttons` (manual presenter step-through) and `Auto Run`.
+
+### Added (Saga Orchestration Pattern - docs/feature.md)
+- **Saga Orchestrator Engine (`backend/src/internal/saga/`)**:
+  - Implemented multi-step Saga Orchestrator in `internal/saga/orchestrator.go` with forward step progression (`STARTED` -> `ALLOCATING` -> `PREPARING` -> `EXECUTING` -> `COMPLETED`) and compensating rollback (`COMPENSATING` -> `FAILED` / `COMPENSATION_FAILED`).
+  - Added data models in `internal/saga/model.go` for Saga instances, step logs, failure injection configurations, and event payloads.
+  - Implemented worker command responders in `internal/saga/worker.go` for command subjects `saga.job.allocate`, `saga.job.prepare`, `saga.job.execute`, and `saga.job.release`.
+- **Saga HTTP REST APIs (`api/http/saga_handler.go`, `routes.go`)**:
+  - `POST /sagas/jobs`: Initiates new Saga workflow.
+  - `GET /sagas/jobs/:job_id`: Queries active or completed Saga status and step execution timeline.
+  - `POST /sagas/jobs/:job_id/fail`: Injects controlled failure at a designated step or compensation stage.
+  - `POST /sagas/jobs/:job_id/cancel`: Requests cancellation of an active Saga and initiates compensation for completed steps.
+  - `GET /sagas/jobs`: Lists recent Saga transactions.
+- **NATS Subjects for Saga Pattern (`internal/messaging/subjects.go`)**:
+  - Commands: `saga.job.allocate`, `saga.job.prepare`, `saga.job.execute`, `saga.job.release`.
+  - Events: `saga.job.started`, `saga.job.step.completed`, `saga.job.failed`, `saga.job.compensation.started`, `saga.job.compensation.completed`, `saga.job.completed`.
+  - Guaranteed zero collision or interference with existing `jobs.*` flows.
+- **React UI Component & Studio Integration (`SagaPanel.tsx`, `CapabilityStudio.tsx`, `demoApi.ts`, `index.css`)**:
+  - Added dedicated **Saga Orchestration** tab in NATS Capability Studio.
+  - Built interactive test launcher for 5 demo scenarios (Normal Success, Fail at Execute, Fail at Prepare, Fail at Allocate, and Compensation Failure).
+  - Built visual state machine pipeline depicting forward steps and rollback compensation nodes with live polling.
+  - Added step execution timeline table and recent Saga inspect cards.
+  - Added explanatory info modal card in `natsInfo.ts`.
+  - Integrated `saga.job.*` events into the global `Activity Tracker` (`demo-control-service`) so that Saga transitions (`SAGA_STARTED`, `SAGA_STEP`, `SAGA_COMPENSATING`, `SAGA_COMPLETED`, `SAGA_FAILED`) also stream into the main Activity Log.
+
 ### Added (Complete NATS Observability Setup: Metrics, Logs, Events, Tracing - docs/fix.md)
 - **Complete NATS Prometheus Metrics Surface (`docker-compose.yaml`)**:
   - Expanded `nats-exporter` flags to include all required NATS monitoring categories without filtering: `-varz`, `-connz`, `-connz_detailed`, `-subz`, `-routez`, `-gatewayz`, `-leafz`, `-accountz`, `-accstatz`, `-healthz`, `-jsz=all`.

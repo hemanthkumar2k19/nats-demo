@@ -17,6 +17,7 @@ import (
 	"nats-demo/internal/jobs"
 	"nats-demo/internal/messaging"
 	"nats-demo/internal/natsclient"
+	"nats-demo/internal/saga"
 	"nats-demo/internal/telemetry"
 
 	"github.com/nats-io/nats.go"
@@ -42,6 +43,7 @@ type App struct {
 	consumerConfig    jobs.ConsumerConfig
 	consumerName      string
 	workerCancels     []context.CancelFunc
+	sagaWorkers       *saga.WorkerResponders
 	otelShutdown      func(context.Context) error
 
 	// JetStream Consumer distribution tracking
@@ -115,6 +117,14 @@ func (a *App) Init() error {
 		"processor-3": 0,
 		"processor-4": 0,
 		"processor-5": 0,
+	}
+
+	// Initialize Saga worker responders (Allocate, Prepare, Execute, Release)
+	a.sagaWorkers = saga.NewWorkerResponders(a.natsClient.Conn)
+	if err := a.sagaWorkers.Start(); err != nil {
+		log.Printf("[Init] Warning: failed to start Saga worker responders: %v", err)
+	} else {
+		log.Println("[Init] Successfully registered Saga worker command responders")
 	}
 
 	return nil
@@ -1435,6 +1445,11 @@ func (a *App) Stop() {
 	}
 
 	log.Println("[Stop] Closing NATS connection...")
+	if a.sagaWorkers != nil {
+		log.Println("[Stop] Unregistering Saga worker command responders...")
+		a.sagaWorkers.Stop()
+	}
+
 	if a.natsClient != nil {
 		a.natsClient.Close()
 		log.Println("[Stop] NATS connection closed successfully")

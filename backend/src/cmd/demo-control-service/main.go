@@ -31,6 +31,7 @@ type App struct {
 	activityTracker  *activity.Tracker
 	observer         *messaging.Observer
 	lifecycleSub     *nats.Subscription
+	sagaSub          *nats.Subscription
 	observerSubs     []*nats.Subscription
 	advisoryListener *events.AdvisoryListener
 	jobServiceURL    string
@@ -112,6 +113,25 @@ func (a *App) Run() error {
 	a.lifecycleSub = sub
 	log.Println("[Run] Subscribed to jobs.> NATS wildcard events")
 
+	// Subscribe to saga.> to capture Saga lifecycle events in the Activity Log
+	sagaSub, err := a.natsClient.Conn.Subscribe("saga.>", func(msg *nats.Msg) {
+		if msg.Reply != "" {
+			return
+		}
+		source := msg.Header.Get("X-Source")
+		msgID := msg.Header.Get("Nats-Msg-Id")
+		if msgID == "" {
+			msgID = msg.Header.Get("X-Message-Id")
+		}
+		if err := a.activityTracker.ProcessLifecycleEvent(msg.Subject, msg.Data, source, msgID); err != nil {
+			log.Printf("[App] Failed to process saga lifecycle event: %v", err)
+		}
+	})
+	if err == nil {
+		a.sagaSub = sagaSub
+		log.Println("[Run] Subscribed to saga.> NATS wildcard events")
+	}
+
 	// Subscribe to NATS observer subjects for subject addressing demo
 	a.observerSubs = make([]*nats.Subscription, 0)
 	subsConfig := []struct {
@@ -186,6 +206,12 @@ func (a *App) Stop() error {
 
 	if a.lifecycleSub != nil {
 		if err := a.lifecycleSub.Unsubscribe(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	if a.sagaSub != nil {
+		if err := a.sagaSub.Unsubscribe(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
