@@ -4,6 +4,59 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-04
 
+### Fixed (JobDetailResponse Payload Type and Model Alignment)
+- **Frontend API (`frontend/src/api/demoApi.ts`)**:
+  - Added optional `payload?: Record<string, any>` to `JobDetailResponse` interface, resolving the TypeScript compiler error on `payload: saga.payload` in `getJobDetail`.
+- **Backend Job Model and Store (`internal/jobs/model.go`, `internal/jobs/store.go`)**:
+  - Added `DeliveryMode`, `Worker`, and `Payload` fields to `JobDetailResponse` struct in `model.go`, aligning with `JobHandler` response mapping.
+  - Updated in-memory `JobStore.AddJob` to preserve `DeliveryMode` and `Payload` from submitted jobs for inspection.
+
+### Fixed (Job Details Inspector for Saga Workflow Orders)
+- **Backend Job Handler Saga Resolution (`api/http/job_handler.go`, `cmd/job-service/main.go`)**:
+  - Connected `sagaOrchestrator` to `JobHandler` via `.WithSagaOrchestrator(a.sagaOrchestrator)`.
+  - Updated `GET /jobs/:job_id` to fall back to `sagaOrchestrator.GetSaga(jobID)` when a requested ID is a Saga order, adapting the `SagaInstance` (steps, timeline, payload) into a standard `JobDetailResponse`.
+- **Frontend API & Inspector Fallback (`frontend/src/api/demoApi.ts`, `App.tsx`, `JobInspectorPanel.tsx`)**:
+  - Updated `getJobDetail` to fall back to `/sagas/jobs/${jobId}`.
+  - Added seamless fallback in `handleSelectJob` to synthesize timeline details from known in-memory activity events if backend is temporarily restarted.
+  - Added badge mapping for Saga states (`SAGA_STARTED`, `OP1_COMPLETED`, `OP2_COMPLETED`, `COMPENSATING`, `COMPENSATED`, `SAGA_COMPLETED`, `SAGA_FAILED`).
+
+### Fixed (Demo Setup Core NATS Queue Group Subscriber Dynamic Status)
+- **Demo Topology View (`frontend/src/components/DemoSetup/DemoTopology.tsx`)**:
+  - Replaced hardcoded `pill-green` on Core NATS Queue Group subscriber cards with dynamic state tracking (`pill-green` when active, `pill-amber` when paused/idle, `pill-red` when offline).
+  - Updated card container class to apply `worker-paused` when processing is paused, matching JetStream pull workers.
+  - Made the compartment header badge dynamically indicate `OFFLINE` when the Processor Service is disconnected.
+
+### Fixed (Dead Letter Queue Double-Push and Double-Reprocessing)
+- **JOBS_DLQ Stream Subject Isolation (`internal/natsclient/client.go`)**:
+  - Restricted `JOBS_DLQ` stream subjects from `[]string{"jobs.dlq", "jobs.dlq.>"}` to `[]string{"jobs.dlq"}`.
+  - Eliminated unintentional capture of `jobs.dlq.published` lifecycle telemetry events into the DLQ stream, ensuring exactly 1 message is stored per dead-lettered job.
+- **Activity Tracker Event Deduplication (`internal/activity/tracker.go`)**:
+  - Explicitly ignored raw `jobs.dlq` stream messages in `ProcessLifecycleEvent` (matching `jobs.validate` behavior) while preserving `jobs.dlq.published` as the single `DLQ_PUBLISHED` event.
+- **DLQ Reprocessing & Inspection Hardening (`api/http/control_handler.go`)**:
+  - Filtered telemetry and non-payload entries from `GetDLQMessages`.
+  - Added in-memory deduplication (`seenJobs`) to `ReprocessDLQ` to ensure each distinct job is re-injected into `jobs.submitted` exactly once even if duplicate or corrupt records pre-existed in the DLQ store.
+  - Removed duplicate direct call to `activityTracker.AddEvent` during reprocessing, relying on NATS publication to `SubjectJobReprocessed` (`jobs.reprocessed`) to record the event once via wildcard listener.
+
+### Changed (Activity Log UX: NATS Business Messages vs. Platform Telemetry Separation)
+- **Backend Activity Tracker (`internal/activity/tracker.go`)**:
+  - Enhanced `Activity` model with `Category` (`"BUSINESS"` vs `"LIFECYCLE"`) and human-readable `Action`.
+  - Added `DetermineCategory` and `DetermineAction` helper functions to classify events automatically upon ingestion.
+  - Provided descriptive operational action labels (`"JetStream Stream Ingestion"`, `"Worker Pull / Delivery"`, `"Message Acknowledged (msg.Ack())"`, `"Retry Delay Requested (msg.NakWithDelay())"`, `"AckWait Missing ACK Timeout"`, `"Poison Pill Routed to DLQ"`).
+- **Frontend Activity Log (`ActivityPanel.tsx`, `demoApi.ts`, `index.css`)**:
+  - Added top explanatory **Legend Banner** clarifying that `NATS Message` represents domain payloads on topics, while `Platform Telemetry` represents internal worker and broker execution signals.
+  - Enhanced top-bar switcher with descriptive subtitles (`All Stream`, `NATS Business Messages (A)`, `Platform & Worker Telemetry (B)`).
+  - **Section A (NATS Business Messages)**:
+    - Displays exactly one row per published payload on business topics (`jobs.submitted`, `jobs.queue`, `saga.*`).
+    - Added interactive **Inline Message Journey**: clicking `[+] Journey` expands a vertical timeline directly underneath the message showing each execution milestone from stream ingestion to worker ACK.
+  - **Section B (Platform & Worker Telemetry)**:
+    - Replaced confusing `Subject` column with primary `Platform Action`, displaying target stream/topic as secondary context to eliminate the misconception that internal signals are business channels.
+
+### Fixed
+- **JetStream Publish Activity Capture (`cmd/demo-control-service/main.go`)**:
+  - Resolved issue where JetStream publishes to `jobs.submitted` (such as 1st publish and 2nd duplicate publish in Message Deduplication) were discarded by the activity log subscriber.
+  - Replaced overly broad `if msg.Reply != ""` check with explicit `if msg.Subject == "jobs.validate"`, ensuring all JetStream messages containing internal `PubAck` reply inboxes are properly captured as Section A business messages.
+  - Added `category: 'BUSINESS'` and `action: 'Published by Client'` to frontend optimistic activity dispatch in `App.tsx`.
+
 ### Changed (Modern NATS JetStream API Migration)
 - **Centralized JetStream Client Initialization (`internal/natsclient/client.go`)**:
   - Replaced legacy `nc.JetStream()` context initialization with modern `jetstream.New(nc)`.

@@ -692,6 +692,10 @@ func (h *ControlHandler) GetDLQMessages(c *gin.Context) {
 
 		var item DLQMessage
 		if err := json.Unmarshal(rawMsg.Data, &item); err == nil {
+			// Skip entries that do not have a valid job payload or failure reason
+			if item.JobID == "" || (item.Payload == nil && item.FailureReason == "") {
+				continue
+			}
 			item.Sequence = seq
 			if item.Timestamp == "" {
 				item.Timestamp = rawMsg.Time.UTC().Format(time.RFC3339)
@@ -724,7 +728,7 @@ func (h *ControlHandler) ReprocessDLQ(c *gin.Context) {
 		req.JobID = c.Query("job_id")
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
 	stream, err := h.natsClient.JS.Stream(ctx, "JOBS_DLQ")
@@ -744,6 +748,7 @@ func (h *ControlHandler) ReprocessDLQ(c *gin.Context) {
 	}
 
 	reprocessedJobs := make([]string, 0)
+	seenJobs := make(map[string]bool)
 	for seq := sinfo.State.FirstSeq; seq <= sinfo.State.LastSeq; seq++ {
 		rawMsg, err := stream.GetMsg(ctx, seq)
 		if err != nil || rawMsg == nil {
@@ -758,6 +763,19 @@ func (h *ControlHandler) ReprocessDLQ(c *gin.Context) {
 		if req.JobID != "" && item.JobID != req.JobID {
 			continue
 		}
+
+		// If entry is not a valid DLQ job payload, delete from stream and skip
+		if item.JobID == "" || item.Payload == nil {
+			_ = stream.DeleteMsg(ctx, seq)
+			continue
+		}
+
+		// Prevent republishing duplicate entries for the same job in a single run
+		if seenJobs[item.JobID] {
+			_ = stream.DeleteMsg(ctx, seq)
+			continue
+		}
+		seenJobs[item.JobID] = true
 
 		// Rebuild repaired job payload with simulate_failure cleared
 		repairedPayload := make(map[string]interface{})
@@ -800,27 +818,16 @@ func (h *ControlHandler) ReprocessDLQ(c *gin.Context) {
 		// Delete from JOBS_DLQ stream
 		_ = stream.DeleteMsg(ctx, seq)
 
-		// Record in Activity Tracker and emit NATS event
-		h.activityTracker.AddEvent(
-			item.JobID,
-			"REPROCESSED",
-			1,
-			messaging.SubjectJobReprocessed,
-			"demo-control",
-			"JETSTREAM",
-			seq,
-			fmt.Sprintf("msg-rep-%s", item.JobID),
-			item.Type,
-		)
-
+		// Emit NATS REPROCESSED event (picked up by wildcard subscription to record in Activity Tracker)
 		evtMsg := nats.NewMsg(messaging.SubjectJobReprocessed)
 		evtMsg.Header.Set("Nats-Msg-Id", item.JobID)
 		evtMsg.Header.Set("X-Source", "demo-control")
 		evtPayload, _ := json.Marshal(map[string]any{
-			"job_id":        item.JobID,
-			"status":        "REPROCESSED",
-			"delivery_mode": "JETSTREAM",
-			"type":          item.Type,
+			"job_id":         item.JobID,
+			"status":         "REPROCESSED",
+			"delivery_mode":  "JETSTREAM",
+			"type":           item.Type,
+			"delivery_count": 1,
 		})
 		evtMsg.Data = evtPayload
 		_ = h.natsClient.Conn.PublishMsg(evtMsg)

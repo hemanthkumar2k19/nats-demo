@@ -66,7 +66,11 @@ nats-demo/
      6. `Stream Replay`: Historical time-window and sequence rewind controls.
      7. `Saga Orchestration`: Interactive 2-Operation distributed transaction workflow (`Reserve Inventory` -> `Process Payment` -> `Completed`) with automated or step-by-step compensating rollback (`Compensate: Release Inventory`) purely over NATS events.
    - Features the **Observability Panel Container** (`ObservabilityPanelContainer.tsx`) with a top-level switcher between `Live Activity Log` and `Subject Addressing & Wildcards`.
-   - Features the **Activity Log Message Classification Switcher** (`ActivityPanel.tsx`): 3-way top-bar toggle between `All Messages`, `Business Messages (A)` (domain payloads & Saga transactions), and `Flow / Lifecycle Events (B)` (worker telemetry, ACKs, retries).
+   - Features the **Activity Log Message Classification Switcher** (`ActivityPanel.tsx`): 3-way top-bar toggle between:
+     - `All Stream`: Consolidated view of all messages and telemetry events.
+     - `NATS Business Messages (A)`: Displays actual business payloads published to domain topics (`jobs.submitted`, `jobs.queue`, `saga.*`) with an interactive **Inline Lifecycle Journey** showing the message's progression from stream ingestion to worker ACK.
+     - `Platform & Worker Telemetry (B)`: Displays broker stream ingestion, worker pull, explicit ACK/NAK, backoff retry, and DLQ routing machinery with human-readable **Platform Actions** instead of confusing viewers with artificial subject channels.
+   - Explanatory **Activity Legend Banner**: Highlighting the distinction between real NATS Messages (`jobs.submitted`, `jobs.queue`) and internal platform observability telemetry.
    - Features the **Modal Job Inspector** (`JobInspectorPanel.tsx`) opening directly as a focused pop-up overlay upon clicking any row in the Activity Log, with event display limits (15, 30, 50, all) keeping the view clean and compact.
    - Contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
 
@@ -185,7 +189,9 @@ JetStream
 - NATS does not require DLQ to be a special server-side component; DLQ is an application-level architectural pattern built using JetStream primitives (persistence, NAK, redelivery counters, stream routing).
 - When a JetStream job fails processing, the worker issues `msg.Nak()`. JetStream increments `NumDelivered` and redelivers the message.
 - Once `NumDelivered` reaches `max_delivery_attempts` (default: 3), the worker isolates the failed message into stream `JOBS_DLQ` on subject `jobs.dlq`, publishes `jobs.dlq.published` (status `DLQ_PUBLISHED`), and issues `msg.Ack()` on the original `JOBS` stream message to halt redeliveries.
+- The `JOBS_DLQ` stream is configured strictly on subject `jobs.dlq` so that telemetry events on `jobs.dlq.published` do not pollute the DLQ store.
 - Consumer `dlq-inspector` monitors `JOBS_DLQ`, allowing administrators to inspect failed messages without altering the primary business stream.
+- Replaying or reprocessing from DLQ (`POST /control/dlq/reprocess`) strips simulated failure flags, deduplicates in-flight entries, republishes to `jobs.submitted`, deletes the message from `JOBS_DLQ`, and publishes a `jobs.reprocessed` event.
 
 ### Durable Consumer Lifecycle
 To prevent the client library from deleting the durable consumer on shutdown, the consumer is created explicitly on NATS during initialization using `stream.CreateOrUpdateConsumer(...)`, and workers pull from the resulting `jetstream.Consumer` directly:

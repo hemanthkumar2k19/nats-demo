@@ -42,12 +42,15 @@ type JobHistoryItem struct {
 
 // JobDetailResponse contains comprehensive details about a job.
 type JobDetailResponse struct {
-	JobID         string           `json:"job_id"`
-	Type          string           `json:"type,omitempty"`
-	Status        string           `json:"status"`
-	DeliveryCount int              `json:"delivery_count"`
-	TraceID       string           `json:"trace_id,omitempty"`
-	History       []JobHistoryItem `json:"history"`
+	JobID         string                 `json:"job_id"`
+	Type          string                 `json:"type,omitempty"`
+	Status        string                 `json:"status"`
+	DeliveryCount int                    `json:"delivery_count"`
+	DeliveryMode  string                 `json:"delivery_mode,omitempty"`
+	Worker        string                 `json:"worker,omitempty"`
+	Payload       map[string]interface{} `json:"payload,omitempty"`
+	TraceID       string                 `json:"trace_id,omitempty"`
+	History       []JobHistoryItem       `json:"history"`
 }
 
 // ConsumerConfig represents the consumer configuration parameters for Consumer Lab.

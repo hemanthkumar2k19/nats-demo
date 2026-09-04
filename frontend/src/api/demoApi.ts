@@ -24,6 +24,8 @@ export interface Activity {
   msg_id?: string;
   job_type?: string;
   trace_id?: string;
+  category?: 'BUSINESS' | 'LIFECYCLE';
+  action?: string;
 }
 
 export interface ServiceStatus {
@@ -276,6 +278,7 @@ export interface JobDetailResponse {
   type?: string;
   delivery_mode?: string;
   worker?: string;
+  payload?: Record<string, any>;
   history: JobHistoryItem[];
 }
 
@@ -303,11 +306,35 @@ export interface ReplayResponse {
  */
 export async function getJobDetail(jobId: string): Promise<JobDetailResponse> {
   const response = await fetch(`${JOB_SERVICE_URL}/jobs/${jobId}`);
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => 'Unknown error');
-    throw new Error(`Failed to fetch job detail for "${jobId}": ${response.status} ${response.statusText}. ${errorText}`);
+  if (response.ok) {
+    return response.json();
   }
-  return response.json();
+
+  // Fallback: check if this is an active Saga workflow instance
+  try {
+    const sagaRes = await fetch(`${JOB_SERVICE_URL}/sagas/jobs/${jobId}`);
+    if (sagaRes.ok) {
+      const saga = await sagaRes.json();
+      return {
+        job_id: saga.job_id,
+        type: 'saga-orchestration',
+        status: saga.state,
+        delivery_count: 1,
+        delivery_mode: 'SAGA',
+        worker: 'saga-orchestrator',
+        history: (saga.steps || []).map((st: any) => ({
+          status: `${(st.name || 'step').toUpperCase()}: ${st.status}`,
+          timestamp: st.started_at,
+        })),
+        payload: saga.payload,
+      };
+    }
+  } catch {
+    // Ignore and proceed to surface primary error
+  }
+
+  const errorText = await response.text().catch(() => 'Unknown error');
+  throw new Error(`Failed to fetch job detail for "${jobId}": ${response.status} ${response.statusText}. ${errorText}`);
 }
 
 /**

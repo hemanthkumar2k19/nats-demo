@@ -564,7 +564,9 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
             <div className="worker-compartment-header">
               <span className="worker-compartment-title">Core NATS Queue Group</span>
               <span className="competing-badge" style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', borderColor: 'rgba(59, 130, 246, 0.3)' }}>
-                {queueWorkers === 1 ? '1 SUBSCRIBER' : `${queueWorkers} SUBSCRIBERS (1-OF-N)`}
+                {isProcessorOnline
+                  ? (queueWorkers === 1 ? '1 SUBSCRIBER' : `${queueWorkers} SUBSCRIBERS (1-OF-N)`)
+                  : 'OFFLINE'}
               </span>
             </div>
             <div className="worker-subtext">
@@ -576,11 +578,13 @@ export const DemoTopology: React.FC<DemoTopologyProps> = ({
                 return (
                   <div
                     key={wName}
-                    className={`topology-worker-card ${isProcessorOnline ? 'worker-active' : 'worker-offline'}`}
+                    className={`topology-worker-card ${isProcessorOnline ? (isProcessing ? 'worker-active' : 'worker-paused') : 'worker-offline'}`}
                   >
                     <div className="worker-header">
                       <span className="font-mono worker-name" style={{ fontSize: '0.75rem' }}>{wName}</span>
-                      <span className="worker-pill pill-green">Sub</span>
+                      <span className={`worker-pill ${isProcessorOnline ? (isProcessing ? 'pill-green' : 'pill-amber') : 'pill-red'}`}>
+                        {isProcessorOnline ? (isProcessing ? 'Sub' : 'Idle') : 'Off'}
+                      </span>
                     </div>
                     <div className="worker-detail font-mono" style={{ fontSize: '0.625rem' }}>jobs.queue</div>
                   </div>

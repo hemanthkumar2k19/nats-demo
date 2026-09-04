@@ -93,8 +93,8 @@ func (a *App) Init() error {
 func (a *App) Run() error {
 	// Subscribe to jobs.> to capture all NATS lifecycle events in-memory for the UI activity log
 	sub, err := a.natsClient.Conn.Subscribe("jobs.>", func(msg *nats.Msg) {
-		if msg.Reply != "" {
-			// Skip Request/Reply messages
+		if msg.Subject == "jobs.validate" {
+			// Skip synchronous validation request payload; separate lifecycle events are emitted
 			return
 		}
 		source := msg.Header.Get("X-Source")
@@ -147,7 +147,7 @@ func (a *App) Run() error {
 		subName := cfg.name
 		subSubject := cfg.subject
 		oSub, err := a.natsClient.Conn.Subscribe(subSubject, func(msg *nats.Msg) {
-			if msg.Reply != "" {
+			if msg.Subject == "jobs.validate" {
 				return
 			}
 			msgID := msg.Header.Get("X-Message-Id")

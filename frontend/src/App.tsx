@@ -202,6 +202,8 @@ export const App: React.FC = () => {
         worker: '',
         delivery_count: 1,
         delivery_mode: job.delivery_mode,
+        category: 'BUSINESS',
+        action: 'Published by Client',
       };
       setActivities((prev) => [newActivity, ...prev]);
 
@@ -260,7 +262,25 @@ export const App: React.FC = () => {
       const detail = await getJobDetail(jobId);
       setSelectedJobDetail(detail);
     } catch (err: any) {
-      setInspectorError(err.message || 'Failed to load job details');
+      // Fallback: Synthesize timeline from activity tracker events if available
+      const jobActivities = activities.filter((a) => a.job_id === jobId);
+      if (jobActivities.length > 0) {
+        const latest = jobActivities[0];
+        setSelectedJobDetail({
+          job_id: jobId,
+          type: latest.type || (latest.delivery_mode === 'SAGA' ? 'saga-orchestration' : 'general'),
+          status: latest.event || 'RECORDED',
+          delivery_count: latest.delivery_count || 1,
+          delivery_mode: latest.delivery_mode || 'SAGA',
+          worker: latest.worker || 'saga-orchestrator',
+          history: [...jobActivities].reverse().map((a) => ({
+            status: a.event,
+            timestamp: a.timestamp,
+          })),
+        });
+      } else {
+        setInspectorError(err.message || 'Failed to load job details');
+      }
     } finally {
       setIsLoadingInspector(false);
     }

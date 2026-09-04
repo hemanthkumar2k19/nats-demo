@@ -74,18 +74,18 @@ func (a *App) Init() error {
 		log.Println("[Init] Guaranteed JOBS JetStream stream exists")
 	}
 
-	publisher := messaging.NewPublisher(a.natsClient)
-	a.jobService = jobs.NewService(publisher)
-	jobHandler := apihttp.NewJobHandler(a.jobService)
-
-	router := gin.Default()
-	apihttp.RegisterJobRoutes(router, jobHandler)
-
 	// Initialize Saga Orchestration engine
 	a.sagaOrchestrator = saga.NewOrchestrator(a.natsClient.Conn)
 	sagaHandler := apihttp.NewSagaHandler(a.sagaOrchestrator)
+
+	publisher := messaging.NewPublisher(a.natsClient)
+	a.jobService = jobs.NewService(publisher)
+	jobHandler := apihttp.NewJobHandler(a.jobService).WithSagaOrchestrator(a.sagaOrchestrator)
+
+	router := gin.Default()
+	apihttp.RegisterJobRoutes(router, jobHandler)
 	apihttp.RegisterSagaRoutes(router, sagaHandler)
-	log.Println("[Init] Registered Saga Orchestration routes on /sagas/jobs")
+	log.Println("[Init] Registered Job and Saga Orchestration routes")
 
 	a.httpServer = &http.Server{
 		Addr:    ":" + a.port,

@@ -499,6 +499,152 @@ body {
   border: 1px solid rgba(168, 85, 247, 0.25);
 }
 
+/* Activity Legend Explanatory Banner */
+.activity-legend-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 6px;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--text-secondary);
+}
+
+.activity-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.activity-legend-pill {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.activity-legend-pill.nats-msg {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60A5FA;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.activity-legend-pill.telemetry {
+  background: rgba(168, 85, 247, 0.18);
+  color: #C084FC;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+.activity-cat-subtext {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
+
+/* Inline Message Journey Timeline Styles */
+.btn-journey-toggle {
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #93C5FD;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-journey-toggle:hover {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #FFFFFF;
+}
+
+.btn-journey-toggle.open {
+  background: rgba(168, 85, 247, 0.2);
+  border-color: rgba(168, 85, 247, 0.4);
+  color: #D8B4FE;
+}
+
+.journey-timeline-row td {
+  padding: 0 !important;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.25) !important;
+  background: rgba(15, 23, 42, 0.8) !important;
+}
+
+.journey-timeline-container {
+  padding: 0.75rem 1rem 0.75rem 2rem;
+  border-left: 3px solid #3B82F6;
+  margin: 0.25rem 0.5rem 0.5rem 0.5rem;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 0 6px 6px 0;
+}
+
+.journey-timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #93C5FD;
+}
+
+.journey-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  position: relative;
+}
+
+.journey-step-node {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  position: relative;
+}
+
+.journey-step-time {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  width: 58px;
+  flex-shrink: 0;
+}
+
+.journey-step-connector {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #60A5FA;
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.6);
+  flex-shrink: 0;
+}
+
+.journey-step-action {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.journey-step-detail {
+  font-size: 0.7125rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
 .activity-search-box {
   position: relative;
   display: flex;

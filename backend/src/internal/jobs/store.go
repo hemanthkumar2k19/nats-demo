@@ -26,10 +26,12 @@ func (s *JobStore) AddJob(job Job, status string) {
 	detail, exists := s.jobs[job.JobID]
 	if !exists {
 		detail = &JobDetailResponse{
-			JobID:   job.JobID,
-			Type:    job.Type,
-			TraceID: job.TraceID,
-			History: make([]JobHistoryItem, 0),
+			JobID:        job.JobID,
+			Type:         job.Type,
+			TraceID:      job.TraceID,
+			DeliveryMode: job.DeliveryMode,
+			Payload:      job.Payload,
+			History:      make([]JobHistoryItem, 0),
 		}
 		s.jobs[job.JobID] = detail
 	}

@@ -90,7 +90,7 @@ func (c *Client) EnsureDLQStream() error {
 
 	stream, err := c.JS.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name:     "JOBS_DLQ",
-		Subjects: []string{"jobs.dlq", "jobs.dlq.>"},
+		Subjects: []string{"jobs.dlq"},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to add or update JOBS_DLQ stream: %w", err)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -21,18 +22,123 @@ type Activity struct {
 	MsgID         string `json:"msg_id,omitempty"`
 	JobType       string `json:"job_type,omitempty"`
 	TraceID       string `json:"trace_id,omitempty"`
+	Category      string `json:"category,omitempty"` // "BUSINESS" vs "LIFECYCLE"
+	Action        string `json:"action,omitempty"`   // Human-readable action name
 }
 
 // Tracker maintains an in-memory capped ring-buffer of observed lifecycle activities.
 type Tracker struct {
 	mu         sync.RWMutex
 	activities []Activity
+	jobTypes   map[string]string
 }
 
 // NewTracker initializes a new Activity Tracker.
 func NewTracker() *Tracker {
 	return &Tracker{
 		activities: make([]Activity, 0),
+		jobTypes:   make(map[string]string),
+	}
+}
+
+// DetermineCategory classifies an activity into BUSINESS (actual payloads published to topics)
+// or LIFECYCLE (broker ingestion, worker execution, ack/nak telemetry).
+func DetermineCategory(subject string, status string) string {
+	switch status {
+	case "PUBLISHED", "SCHEDULED", "REPROCESSED", "REQUEST_SENT", "REPLY_RECEIVED",
+		"SAGA_TRIGGERED", "SAGA_STARTED", "OP1_RESERVE", "OP2_PAYMENT",
+		"OP1_COMPLETED", "OP1_FAILED", "OP2_COMPLETED", "OP2_FAILED",
+		"OP1_COMPENSATING", "OP1_COMPENSATED", "SAGA_COMPLETED", "SAGA_FAILED":
+		return "BUSINESS"
+	case "STORED", "DEDUPLICATED", "RECEIVED", "DELIVERED", "PROCESSING",
+		"COMPLETED", "FAILED", "ACKED", "NO CONSUMER", "NAK_WITH_DELAY",
+		"ACK_TIMEOUT_SIMULATED", "DLQ_PUBLISHED", "REPLAYED", "REQUEST_RECEIVED",
+		"REPLY_SENT", "SAGA_STEP", "SAGA_COMPENSATING":
+		return "LIFECYCLE"
+	default:
+		if subject == "jobs.submitted" || subject == "jobs.queue" || subject == "jobs.validate" {
+			return "BUSINESS"
+		}
+		return "LIFECYCLE"
+	}
+}
+
+// DetermineAction assigns a descriptive operational action label.
+func DetermineAction(subject string, status string) string {
+	switch status {
+	case "PUBLISHED":
+		if subject == "jobs.queue" {
+			return "Published to Queue Group"
+		}
+		return "Published by Client"
+	case "SCHEDULED":
+		return "Scheduled for Publishing"
+	case "REPROCESSED":
+		return "Reprocessed from DLQ"
+	case "STORED":
+		return "JetStream Stream Ingestion"
+	case "DEDUPLICATED":
+		return "JetStream Deduplication Discard"
+	case "DELIVERED":
+		return "Worker Pull / Delivery"
+	case "RECEIVED":
+		if subject == "jobs.queue" || subject == "jobs.queue.received" {
+			return "Queue Group Worker Received"
+		}
+		return "Message Received by Worker"
+	case "PROCESSING":
+		return "Worker Task Processing"
+	case "COMPLETED":
+		if subject == "jobs.queue" || subject == "jobs.queue.completed" {
+			return "Queue Group Task Completed"
+		}
+		return "Task Completed"
+	case "FAILED":
+		return "Task Failed"
+	case "ACKED":
+		return "Message Acknowledged (msg.Ack())"
+	case "NAK_WITH_DELAY":
+		return "Retry Delay Requested (msg.NakWithDelay())"
+	case "ACK_TIMEOUT_SIMULATED":
+		return "AckWait Missing ACK Timeout"
+	case "DLQ_PUBLISHED":
+		return "Poison Pill Routed to DLQ"
+	case "REPLAYED":
+		return "Ephemeral Stream Replay"
+	case "NO CONSUMER":
+		return "No Active Consumer"
+	case "REQUEST_SENT":
+		return "Sync Request Sent"
+	case "REQUEST_RECEIVED":
+		return "Request Received by Worker"
+	case "REPLY_SENT":
+		return "Sync Reply Dispatched"
+	case "REPLY_RECEIVED":
+		return "Sync Reply Received"
+	case "SAGA_TRIGGERED", "SAGA_STARTED":
+		return "Saga Workflow Triggered"
+	case "OP1_RESERVE":
+		return "Op1: Inventory Reserved"
+	case "OP1_COMPLETED":
+		return "Op1: Reservation Confirmed"
+	case "OP1_FAILED":
+		return "Op1: Reservation Failed"
+	case "OP2_PAYMENT":
+		return "Op2: Payment Charged"
+	case "OP2_COMPLETED":
+		return "Op2: Payment Settled"
+	case "OP2_FAILED":
+		return "Op2: Payment Declined"
+	case "OP1_COMPENSATING":
+		return "Op1: Compensating Release"
+	case "OP1_COMPENSATED":
+		return "Op1: Compensation Finished"
+	case "SAGA_COMPLETED":
+		return "Saga Transaction Succeeded"
+	case "SAGA_FAILED":
+		return "Saga Transaction Aborted"
+	default:
+		return status
 	}
 }
 
@@ -56,6 +162,15 @@ func (t *Tracker) AddEvent(jobID string, status string, deliveryCount int, subje
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	if jobType != "" {
+		t.jobTypes[jobID] = jobType
+	} else if cachedType, ok := t.jobTypes[jobID]; ok {
+		jobType = cachedType
+	}
+
+	category := DetermineCategory(subject, status)
+	action := DetermineAction(subject, status)
+
 	timestamp := time.Now().Format("15:04:05")
 	t.activities = append([]Activity{{
 		Timestamp:     timestamp,
@@ -68,6 +183,8 @@ func (t *Tracker) AddEvent(jobID string, status string, deliveryCount int, subje
 		Sequence:      sequence,
 		MsgID:         msgID,
 		JobType:       jobType,
+		Category:      category,
+		Action:        action,
 	}}, t.activities...)
 
 	// Cap activities at 200 items to prevent unbounded memory growth
@@ -82,6 +199,7 @@ func (t *Tracker) ClearActivities() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.activities = make([]Activity, 0)
+	t.jobTypes = make(map[string]string)
 }
 
 // GetActivities returns a copy of the activity buffer sorted by timestamp and status weight.
@@ -169,7 +287,11 @@ func (t *Tracker) ProcessLifecycleEvent(subject string, data []byte, source stri
 		status = "REPLY_SENT"
 	case "jobs.replayed":
 		status = "REPLAYED"
-	case "jobs.dlq", "jobs.dlq.published":
+	case "jobs.dlq":
+		// jobs.dlq is the raw message payload routed to the JOBS_DLQ stream.
+		// The lifecycle transition event is emitted separately on jobs.dlq.published.
+		return nil
+	case "jobs.dlq.published":
 		status = "DLQ_PUBLISHED"
 	case "jobs.reprocessed", "jobs.dlq.reprocessed":
 		status = "REPROCESSED"
@@ -237,8 +359,20 @@ func (t *Tracker) ProcessLifecycleEvent(subject string, data []byte, source stri
 		status = payload.Status
 	}
 
-	if payload.DeliveryMode == "" && (subject == "jobs.queue" || subject == "jobs.queue.received" || subject == "jobs.queue.completed") {
-		payload.DeliveryMode = "CORE"
+	if source == "" {
+		if subject == "jobs.submitted" {
+			source = "job-service"
+		} else if strings.HasPrefix(subject, "saga.") {
+			source = "saga-orchestrator"
+		}
+	}
+
+	if payload.DeliveryMode == "" {
+		if subject == "jobs.queue" || subject == "jobs.queue.received" || subject == "jobs.queue.completed" {
+			payload.DeliveryMode = "CORE"
+		} else if subject == "jobs.submitted" {
+			payload.DeliveryMode = "JETSTREAM"
+		}
 	}
 
 	if payload.DeliveryCount <= 0 {

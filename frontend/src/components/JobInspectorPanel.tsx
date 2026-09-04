@@ -32,13 +32,24 @@ export const JobInspectorPanel: React.FC<JobInspectorPanelProps> = ({
     switch (status.toUpperCase()) {
       case 'SUBMITTED':
       case 'PUBLISHED':
+      case 'SAGA_STARTED':
+      case 'STARTED':
+      case 'OP1_PENDING':
+      case 'OP2_PENDING':
         return 'badge-submitted';
       case 'PROCESSING':
+      case 'OP1_COMPLETED':
+      case 'OP2_COMPLETED':
+      case 'COMPENSATING':
         return 'badge-processing';
       case 'COMPLETED':
       case 'ACKED':
+      case 'COMPENSATED':
+      case 'SAGA_COMPLETED':
         return 'badge-completed';
       case 'FAILED':
+      case 'COMPENSATION_FAILED':
+      case 'SAGA_FAILED':
         return 'badge-failed';
       case 'DLQ_PUBLISHED':
         return 'badge-dlq';
