@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-04
 
+### Added (Comprehensive JetStream Deliver and Ack Policies in Consumer Lab)
+- **Backend Domain and Controls (`internal/jobs/model.go`, `cmd/processor-service/main.go`, `api/http/control_handler.go`)**:
+  - Extended `ConsumerConfig` and `ConsumerStatusResponse` with configurable `deliver_policy` (`all`, `new`, `last`, `last_per_subject`) and `ack_policy` (`explicit`, `none`, `all`).
+  - Added dynamic mapping to `jetstream.DeliverPolicy` and `jetstream.AckPolicy` in `subscribeJetStream()`.
+  - Added clean recreation handling for durable consumers when policies change, satisfying NATS JetStream immutability rules.
+  - Guarded worker `msg.Ack()` and DLQ routing calls so `msg.Ack()` is bypassed when `AckPolicy == "none"`.
+- **Frontend API and Consumer Lab UI (`frontend/src/api/demoApi.ts`, `frontend/src/components/ConsumerLabPanel.tsx`)**:
+  - Added interactive toggle groups for all 4 Deliver Policies and all 3 Ack Policies with descriptive explanations.
+  - Added live NATS Consumer status badge bar displaying active consumer name, durability type, deliver policy, and ack policy.
+
 ### Fixed (JobDetailResponse Payload Type and Model Alignment)
 - **Frontend API (`frontend/src/api/demoApi.ts`)**:
   - Added optional `payload?: Record<string, any>` to `JobDetailResponse` interface, resolving the TypeScript compiler error on `payload: saga.payload` in `getJobDetail`.

@@ -428,6 +428,8 @@ export interface ConsumerConfig {
   type: 'durable' | 'ephemeral';
   workers: number;
   ordering: 'normal' | 'ordered';
+  deliver_policy?: 'all' | 'new' | 'last' | 'last_per_subject';
+  ack_policy?: 'explicit' | 'none' | 'all';
 }
 
 export interface ConsumerStatus {
@@ -435,6 +437,8 @@ export interface ConsumerStatus {
   type: string;
   workers: number;
   ordering: string;
+  deliver_policy?: string;
+  ack_policy?: string;
   delivery: string;
   status: string;
   pending: number;

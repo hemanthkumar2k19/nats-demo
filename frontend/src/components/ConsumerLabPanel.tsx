@@ -35,6 +35,8 @@ export const ConsumerLabPanel: React.FC<ConsumerLabPanelProps> = ({
   const [consumerType, setConsumerType] = useState<'durable' | 'ephemeral'>('durable');
   const [workers, setWorkers] = useState<number>(1);
   const [ordering, setOrdering] = useState<'normal' | 'ordered'>('normal');
+  const [deliverPolicy, setDeliverPolicy] = useState<'all' | 'new' | 'last' | 'last_per_subject'>('all');
+  const [ackPolicy, setAckPolicy] = useState<'explicit' | 'none' | 'all'>('explicit');
   const [status, setStatus] = useState<ConsumerStatus | null>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [messageCount, setMessageCount] = useState<number>(10);
@@ -69,10 +71,22 @@ export const ConsumerLabPanel: React.FC<ConsumerLabPanelProps> = ({
       if (status.ordering === 'normal' || status.ordering === 'ordered') {
         setOrdering(status.ordering);
       }
+      if (status.deliver_policy) {
+        setDeliverPolicy(status.deliver_policy as any);
+      }
+      if (status.ack_policy) {
+        setAckPolicy(status.ack_policy as any);
+      }
     }
-  }, [status?.name, status?.type, status?.workers, status?.ordering]);
+  }, [status?.name, status?.type, status?.workers, status?.ordering, status?.deliver_policy, status?.ack_policy]);
 
-  const handleReconfigure = async (newType: 'durable' | 'ephemeral', newOrdering: 'normal' | 'ordered', newWorkers: number) => {
+  const handleReconfigure = async (
+    newType: 'durable' | 'ephemeral',
+    newOrdering: 'normal' | 'ordered',
+    newWorkers: number,
+    newDeliverPolicy: 'all' | 'new' | 'last' | 'last_per_subject' = deliverPolicy,
+    newAckPolicy: 'explicit' | 'none' | 'all' = ackPolicy,
+  ) => {
     if (isApplying) return;
     setIsApplying(true);
     try {
@@ -80,13 +94,17 @@ export const ConsumerLabPanel: React.FC<ConsumerLabPanelProps> = ({
         type: newType,
         workers: newOrdering === 'ordered' ? 1 : newWorkers,
         ordering: newOrdering,
+        deliver_policy: newDeliverPolicy,
+        ack_policy: newAckPolicy,
       });
       setStatus(updated);
       setConsumerType(updated.type as any);
       setOrdering(updated.ordering as any);
       setWorkers(updated.workers);
+      if (updated.deliver_policy) setDeliverPolicy(updated.deliver_policy as any);
+      if (updated.ack_policy) setAckPolicy(updated.ack_policy as any);
       onConfigChanged?.(updated);
-      onAlert?.('success', `Consumer reconfigured: ${updated.type.toUpperCase()} with ${updated.workers} worker(s) [${updated.ordering}]`);
+      onAlert?.('success', `Consumer reconfigured: ${updated.type.toUpperCase()} [Deliver: ${newDeliverPolicy.toUpperCase()}, Ack: ${newAckPolicy.toUpperCase()}] with ${updated.workers} worker(s)`);
     } catch (err: any) {
       onAlert?.('error', `Failed to update consumer: ${err.message || 'Unknown error'}`);
     } finally {
@@ -232,24 +250,137 @@ export const ConsumerLabPanel: React.FC<ConsumerLabPanelProps> = ({
         </div>
       </div>
 
-      {/* Internal NATS Consumer Policy Inspector */}
+      {/* Deliver Policy Selector */}
+      <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+          <label className="form-label" style={{ fontWeight: 600, fontSize: '0.75rem', margin: 0 }}>
+            Deliver Policy:
+          </label>
+          <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Where consumer begins reading</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.25rem' }}>
+          <button
+            type="button"
+            className={`btn-worker-toggle ${deliverPolicy === 'all' ? 'active' : ''}`}
+            style={{ padding: '0.35rem 0.2rem', justifyContent: 'center', fontSize: '0.6875rem' }}
+            onClick={() => handleReconfigure(consumerType, ordering, workers, 'all', ackPolicy)}
+            disabled={isApplying}
+            title="DeliverAll: Replays all historical stream messages from sequence 1"
+          >
+            <span>DeliverAll</span>
+          </button>
+          <button
+            type="button"
+            className={`btn-worker-toggle ${deliverPolicy === 'new' ? 'active' : ''}`}
+            style={{ padding: '0.35rem 0.2rem', justifyContent: 'center', fontSize: '0.6875rem' }}
+            onClick={() => handleReconfigure(consumerType, ordering, workers, 'new', ackPolicy)}
+            disabled={isApplying}
+            title="DeliverNew: Ignores history; only delivers messages published after consumer creation"
+          >
+            <span>DeliverNew</span>
+          </button>
+          <button
+            type="button"
+            className={`btn-worker-toggle ${deliverPolicy === 'last' ? 'active' : ''}`}
+            style={{ padding: '0.35rem 0.2rem', justifyContent: 'center', fontSize: '0.6875rem' }}
+            onClick={() => handleReconfigure(consumerType, ordering, workers, 'last', ackPolicy)}
+            disabled={isApplying}
+            title="DeliverLast: Delivers only the single most recent message in the stream"
+          >
+            <span>DeliverLast</span>
+          </button>
+          <button
+            type="button"
+            className={`btn-worker-toggle ${deliverPolicy === 'last_per_subject' ? 'active' : ''}`}
+            style={{ padding: '0.35rem 0.2rem', justifyContent: 'center', fontSize: '0.6875rem' }}
+            onClick={() => handleReconfigure(consumerType, ordering, workers, 'last_per_subject', ackPolicy)}
+            disabled={isApplying}
+            title="DeliverLastPerSubject: Delivers the latest message for each distinct subject"
+          >
+            <span>LastPerSubject</span>
+          </button>
+        </div>
+        <p className="form-hint" style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', marginTop: '0.25rem', marginBottom: 0 }}>
+          {deliverPolicy === 'all' && 'DeliverAll: Delivers entire stream history from sequence 1 to all competing workers.'}
+          {deliverPolicy === 'new' && 'DeliverNew: Skips historical stream messages; delivers only newly arriving messages.'}
+          {deliverPolicy === 'last' && 'DeliverLast: Starts from the single latest message published in the stream.'}
+          {deliverPolicy === 'last_per_subject' && 'DeliverLastPerSubject: Starts with the latest message for each individual subject.'}
+        </p>
+      </div>
+
+      {/* Ack Policy Selector */}
+      <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+          <label className="form-label" style={{ fontWeight: 600, fontSize: '0.75rem', margin: 0 }}>
+            Acknowledgment (Ack) Policy:
+          </label>
+          <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Worker confirmation contract</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.25rem' }}>
+          <button
+            type="button"
+            className={`btn-worker-toggle ${ackPolicy === 'explicit' ? 'active' : ''}`}
+            style={{ padding: '0.35rem 0.2rem', justifyContent: 'center', fontSize: '0.6875rem' }}
+            onClick={() => handleReconfigure(consumerType, ordering, workers, deliverPolicy, 'explicit')}
+            disabled={isApplying}
+            title="Explicit: Each message must be individually confirmed with msg.Ack()"
+          >
+            <span>Explicit (1:1)</span>
+          </button>
+          <button
+            type="button"
+            className={`btn-worker-toggle ${ackPolicy === 'none' ? 'active' : ''}`}
+            style={{ padding: '0.35rem 0.2rem', justifyContent: 'center', fontSize: '0.6875rem' }}
+            onClick={() => handleReconfigure(consumerType, ordering, workers, deliverPolicy, 'none')}
+            disabled={isApplying}
+            title="None: Fire-and-forget; server considers messages ACKed immediately upon dispatch"
+          >
+            <span>None (Fire & Forget)</span>
+          </button>
+          <button
+            type="button"
+            className={`btn-worker-toggle ${ackPolicy === 'all' ? 'active' : ''}`}
+            style={{ padding: '0.35rem 0.2rem', justifyContent: 'center', fontSize: '0.6875rem' }}
+            onClick={() => handleReconfigure(consumerType, ordering, workers, deliverPolicy, 'all')}
+            disabled={isApplying}
+            title="All: Cumulative ACK; confirming message N automatically acknowledges 1..N"
+          >
+            <span>Cumulative (All)</span>
+          </button>
+        </div>
+        <p className="form-hint" style={{ fontSize: '0.6875rem', color: 'var(--text-secondary)', marginTop: '0.25rem', marginBottom: 0 }}>
+          {ackPolicy === 'explicit' && 'Explicit ACK: Standard at-least-once. Workers must call msg.Ack() per message.'}
+          {ackPolicy === 'none' && 'AckNone: Fire-and-forget. Server marks messages delivered immediately without worker ACKs.'}
+          {ackPolicy === 'all' && 'Cumulative AckAll: Acknowledging message sequence N acknowledges all messages up to N.'}
+        </p>
+      </div>
+
+      {/* Live NATS Consumer State Badge Bar */}
       <div style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.5rem 0.75rem', marginBottom: '1rem', fontSize: '0.6875rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
           <span style={{ fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Internal Consumer Policy ({consumerType.toUpperCase()})
+            Active NATS Consumer: <span style={{ color: 'var(--accent-cyan)' }}>{status?.name || (consumerType === 'durable' ? 'job-processor' : 'ephemeral')}</span>
           </span>
-          <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Auto-configured</span>
+          <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)' }}>Configured via NATS Go SDK</span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', fontFamily: 'var(--font-mono)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem', fontFamily: 'var(--font-mono)' }}>
+          <div>
+            <span style={{ color: 'var(--text-secondary)' }}>Type: </span>
+            <span style={{ color: consumerType === 'durable' ? '#A78BFA' : '#38BDF8', fontWeight: 600 }}>
+              {consumerType.toUpperCase()}
+            </span>
+          </div>
           <div>
             <span style={{ color: 'var(--text-secondary)' }}>DeliverPolicy: </span>
-            <span style={{ color: consumerType === 'durable' ? '#A78BFA' : '#38BDF8', fontWeight: 600 }}>
-              {consumerType === 'durable' ? 'DeliverAll' : 'DeliverNew'}
+            <span style={{ color: '#FCD34D', fontWeight: 600 }}>
+              {(status?.deliver_policy || deliverPolicy).toUpperCase()}
             </span>
           </div>
           <div>
             <span style={{ color: 'var(--text-secondary)' }}>AckPolicy: </span>
-            <span style={{ color: '#34D399', fontWeight: 600 }}>Explicit</span>
+            <span style={{ color: '#34D399', fontWeight: 600 }}>
+              {(status?.ack_policy || ackPolicy).toUpperCase()}
+            </span>
           </div>
           <div>
             <span style={{ color: 'var(--text-secondary)' }}>FilterSubject: </span>

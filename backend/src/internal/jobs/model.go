@@ -55,23 +55,27 @@ type JobDetailResponse struct {
 
 // ConsumerConfig represents the consumer configuration parameters for Consumer Lab.
 type ConsumerConfig struct {
-	Type     string `json:"type"`     // "durable" | "ephemeral"
-	Workers  int    `json:"workers"`  // Number of worker instances: 1 or 2
-	Ordering string `json:"ordering"` // "normal" | "ordered"
+	Type          string `json:"type"`           // "durable" | "ephemeral"
+	Workers       int    `json:"workers"`        // Number of worker instances: 1 to 5
+	Ordering      string `json:"ordering"`       // "normal" | "ordered"
+	DeliverPolicy string `json:"deliver_policy"` // "all" | "new" | "last" | "last_per_subject"
+	AckPolicy     string `json:"ack_policy"`     // "explicit" | "none" | "all"
 }
 
 // ConsumerStatusResponse represents consumer state and metrics for GET /consumer.
 type ConsumerStatusResponse struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Workers     int    `json:"workers"`
-	Ordering    string `json:"ordering"`
-	Delivery    string `json:"delivery"`
-	Status      string `json:"status"`
-	Pending      uint64         `json:"pending"`
-	AckPending   int            `json:"ack_pending"`
-	Redelivered  int            `json:"redelivered"`
-	Distribution map[string]int `json:"distribution,omitempty"`
+	Name          string         `json:"name"`
+	Type          string         `json:"type"`
+	Workers       int            `json:"workers"`
+	Ordering      string         `json:"ordering"`
+	DeliverPolicy string         `json:"deliver_policy"`
+	AckPolicy     string         `json:"ack_policy"`
+	Delivery      string         `json:"delivery"`
+	Status        string         `json:"status"`
+	Pending       uint64         `json:"pending"`
+	AckPending    int            `json:"ack_pending"`
+	Redelivered   int            `json:"redelivered"`
+	Distribution  map[string]int `json:"distribution,omitempty"`
 }
 
 // QueueGroupConfig represents the configuration payload for Core NATS queue group workers.

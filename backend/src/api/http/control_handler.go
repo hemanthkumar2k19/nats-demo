@@ -450,6 +450,8 @@ func (h *ControlHandler) GetConsumerStatus(c *gin.Context) {
 	consumerType := "durable"
 	workers := 1
 	ordering := "normal"
+	deliverPolicy := "all"
+	ackPolicy := "explicit"
 	var distribution map[string]int = map[string]int{
 		"processor-1": 0,
 		"processor-2": 0,
@@ -462,13 +464,15 @@ func (h *ControlHandler) GetConsumerStatus(c *gin.Context) {
 		reply, err := h.natsClient.Conn.Request("status.processor", nil, 500*time.Millisecond)
 		if err == nil && len(reply.Data) > 0 {
 			var procStatus struct {
-				Status       string         `json:"status"`
-				Processing   bool           `json:"processing"`
-				Workers      int            `json:"workers"`
-				ConsumerName string         `json:"consumer_name"`
-				ConsumerType string         `json:"consumer_type"`
-				Ordering     string         `json:"ordering"`
-				Distribution map[string]int `json:"distribution"`
+				Status        string         `json:"status"`
+				Processing    bool           `json:"processing"`
+				Workers       int            `json:"workers"`
+				ConsumerName  string         `json:"consumer_name"`
+				ConsumerType  string         `json:"consumer_type"`
+				Ordering      string         `json:"ordering"`
+				DeliverPolicy string         `json:"deliver_policy"`
+				AckPolicy     string         `json:"ack_policy"`
+				Distribution  map[string]int `json:"distribution"`
 			}
 			if err := json.Unmarshal(reply.Data, &procStatus); err == nil {
 				if procStatus.ConsumerName != "" {
@@ -482,6 +486,12 @@ func (h *ControlHandler) GetConsumerStatus(c *gin.Context) {
 				}
 				if procStatus.Ordering != "" {
 					ordering = procStatus.Ordering
+				}
+				if procStatus.DeliverPolicy != "" {
+					deliverPolicy = procStatus.DeliverPolicy
+				}
+				if procStatus.AckPolicy != "" {
+					ackPolicy = procStatus.AckPolicy
 				}
 				if procStatus.Distribution != nil {
 					distribution = procStatus.Distribution
@@ -510,16 +520,18 @@ func (h *ControlHandler) GetConsumerStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"name":         consumerName,
-		"type":         consumerType,
-		"workers":      workers,
-		"ordering":     ordering,
-		"delivery":     "PULL",
-		"status":       "ACTIVE",
-		"pending":      pending,
-		"ack_pending":  ackPending,
-		"redelivered":  redelivered,
-		"distribution": distribution,
+		"name":           consumerName,
+		"type":           consumerType,
+		"workers":        workers,
+		"ordering":       ordering,
+		"deliver_policy": deliverPolicy,
+		"ack_policy":     ackPolicy,
+		"delivery":       "PULL",
+		"status":         "ACTIVE",
+		"pending":        pending,
+		"ack_pending":    ackPending,
+		"redelivered":    redelivered,
+		"distribution":   distribution,
 	})
 }
 

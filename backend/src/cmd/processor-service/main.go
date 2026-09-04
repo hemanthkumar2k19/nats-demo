@@ -94,9 +94,11 @@ func (a *App) Init() error {
 	a.publisher = messaging.NewPublisher(a.natsClient)
 	a.processingEnabled = true
 	a.consumerConfig = jobs.ConsumerConfig{
-		Type:     "durable",
-		Workers:  1,
-		Ordering: "normal",
+		Type:          "durable",
+		Workers:       1,
+		Ordering:      "normal",
+		DeliverPolicy: "all",
+		AckPolicy:     "explicit",
 	}
 	a.consumerName = "job-processor"
 
@@ -335,6 +337,8 @@ func (a *App) Run() error {
 		cName := a.consumerName
 		cWorkers := a.consumerConfig.Workers
 		cOrdering := a.consumerConfig.Ordering
+		cDeliver := a.consumerConfig.DeliverPolicy
+		cAck := a.consumerConfig.AckPolicy
 		a.mu.RUnlock()
 
 		a.consumerMu.Lock()
@@ -345,8 +349,8 @@ func (a *App) Run() error {
 		a.consumerMu.Unlock()
 		distJSON, _ := json.Marshal(distCopy)
 
-		respBytes := []byte(fmt.Sprintf(`{"status":"ACTIVE","processing":%t,"consumer_type":"%s","consumer_name":"%s","workers":%d,"ordering":"%s","distribution":%s}`,
-			enabled, cType, cName, cWorkers, cOrdering, string(distJSON)))
+		respBytes := []byte(fmt.Sprintf(`{"status":"ACTIVE","processing":%t,"consumer_type":"%s","consumer_name":"%s","workers":%d,"ordering":"%s","deliver_policy":"%s","ack_policy":"%s","distribution":%s}`,
+			enabled, cType, cName, cWorkers, cOrdering, cDeliver, cAck, string(distJSON)))
 		if err := msg.Respond(respBytes); err != nil {
 			log.Printf("[Processor] Failed to send status reply: %v", err)
 		}
@@ -379,6 +383,16 @@ func (a *App) Run() error {
 		}
 		if req.Ordering == "ordered" {
 			req.Workers = 1
+		}
+		if req.DeliverPolicy == "" {
+			if req.Type == "ephemeral" {
+				req.DeliverPolicy = "new"
+			} else {
+				req.DeliverPolicy = "all"
+			}
+		}
+		if req.AckPolicy == "" {
+			req.AckPolicy = "explicit"
 		}
 
 		a.mu.Lock()
@@ -426,21 +440,23 @@ func (a *App) Run() error {
 		a.consumerMu.Unlock()
 
 		resp := jobs.ConsumerStatusResponse{
-			Name:         a.consumerName,
-			Type:         req.Type,
-			Workers:      req.Workers,
-			Ordering:     req.Ordering,
-			Delivery:     "at-least-once",
-			Status:       statusVal,
-			Pending:      pending,
-			AckPending:   ackPending,
-			Redelivered:  redelivered,
-			Distribution: distCopy,
+			Name:          a.consumerName,
+			Type:          req.Type,
+			Workers:       req.Workers,
+			Ordering:      req.Ordering,
+			DeliverPolicy: req.DeliverPolicy,
+			AckPolicy:     req.AckPolicy,
+			Delivery:      "at-least-once",
+			Status:        statusVal,
+			Pending:       pending,
+			AckPending:    ackPending,
+			Redelivered:   redelivered,
+			Distribution:  distCopy,
 		}
 		respBytes, _ := json.Marshal(resp)
 		_ = msg.Respond(respBytes)
-		log.Printf("[Processor] Consumer reconfigured: Type=%s, Name=%s, Workers=%d, Ordering=%s",
-			req.Type, a.consumerName, req.Workers, req.Ordering)
+		log.Printf("[Processor] Consumer reconfigured: Type=%s, Name=%s, Workers=%d, Ordering=%s, Deliver=%s, Ack=%s",
+			req.Type, a.consumerName, req.Workers, req.Ordering, req.DeliverPolicy, req.AckPolicy)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to consumer config subject: %w", err)
@@ -470,6 +486,8 @@ func (a *App) Run() error {
 		cType := a.consumerConfig.Type
 		wCount := a.consumerConfig.Workers
 		ordering := a.consumerConfig.Ordering
+		cDeliver := a.consumerConfig.DeliverPolicy
+		cAck := a.consumerConfig.AckPolicy
 		a.mu.RUnlock()
 
 		var pending uint64
@@ -487,16 +505,18 @@ func (a *App) Run() error {
 		}
 
 		resp := jobs.ConsumerStatusResponse{
-			Name:         cName,
-			Type:         cType,
-			Workers:      wCount,
-			Ordering:     ordering,
-			Delivery:     "at-least-once",
-			Status:       statusVal,
-			Pending:      pending,
-			AckPending:   ackPending,
-			Redelivered:  redelivered,
-			Distribution: distCopy,
+			Name:          cName,
+			Type:          cType,
+			Workers:       wCount,
+			Ordering:      ordering,
+			DeliverPolicy: cDeliver,
+			AckPolicy:     cAck,
+			Delivery:      "at-least-once",
+			Status:        statusVal,
+			Pending:       pending,
+			AckPending:    ackPending,
+			Redelivered:   redelivered,
+			Distribution:  distCopy,
 		}
 		respBytes, _ := json.Marshal(resp)
 		_ = msg.Respond(respBytes)
@@ -923,14 +943,44 @@ func (a *App) subscribeJetStream() error {
 		cType = "durable"
 	}
 
+	deliverPolicy := jetstream.DeliverAllPolicy
+	switch a.consumerConfig.DeliverPolicy {
+	case "new":
+		deliverPolicy = jetstream.DeliverNewPolicy
+	case "last":
+		deliverPolicy = jetstream.DeliverLastPolicy
+	case "last_per_subject":
+		deliverPolicy = jetstream.DeliverLastPerSubjectPolicy
+	case "all":
+		deliverPolicy = jetstream.DeliverAllPolicy
+	default:
+		if cType == "ephemeral" {
+			deliverPolicy = jetstream.DeliverNewPolicy
+		} else {
+			deliverPolicy = jetstream.DeliverAllPolicy
+		}
+	}
+
+	ackPolicy := jetstream.AckExplicitPolicy
+	switch a.consumerConfig.AckPolicy {
+	case "none":
+		ackPolicy = jetstream.AckNonePolicy
+	case "all":
+		ackPolicy = jetstream.AckAllPolicy
+	case "explicit":
+		ackPolicy = jetstream.AckExplicitPolicy
+	default:
+		ackPolicy = jetstream.AckExplicitPolicy
+	}
+
 	if cType == "ephemeral" {
 		if a.consumerName == "" || a.consumerName == "job-processor" || a.consumerName == "processor-durable" {
 			a.consumerName = fmt.Sprintf("ephemeral-%d", time.Now().UnixNano()%100000)
 		}
 		consumer, err := stream.CreateConsumer(ctx, jetstream.ConsumerConfig{
 			Name:          a.consumerName,
-			DeliverPolicy: jetstream.DeliverNewPolicy,
-			AckPolicy:     jetstream.AckExplicitPolicy,
+			DeliverPolicy: deliverPolicy,
+			AckPolicy:     ackPolicy,
 			AckWait:       5 * time.Second,
 			FilterSubject: messaging.SubjectJobSubmitted,
 		})
@@ -938,16 +988,28 @@ func (a *App) subscribeJetStream() error {
 			return fmt.Errorf("failed to add ephemeral consumer: %w", err)
 		}
 		a.jsConsumer = consumer
-		log.Printf("[Processor] Bound to ephemeral consumer: %s", a.consumerName)
+		log.Printf("[Processor] Bound to ephemeral consumer: %s (Deliver=%v, Ack=%v)", a.consumerName, deliverPolicy, ackPolicy)
 		return nil
 	}
 
 	// Durable consumer
 	a.consumerName = "job-processor"
+
+	// If the durable consumer already exists with a different DeliverPolicy or AckPolicy,
+	// delete it first because DeliverPolicy and AckPolicy are immutable on existing NATS consumers.
+	if existing, err := stream.Consumer(ctx, a.consumerName); err == nil && existing != nil {
+		if info, err := existing.Info(ctx); err == nil && info != nil {
+			if info.Config.DeliverPolicy != deliverPolicy || info.Config.AckPolicy != ackPolicy {
+				log.Printf("[Processor] Deliver/Ack policy changed on durable consumer; recreating %s", a.consumerName)
+				_ = stream.DeleteConsumer(ctx, a.consumerName)
+			}
+		}
+	}
+
 	consumer, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
 		Durable:       a.consumerName,
-		DeliverPolicy: jetstream.DeliverAllPolicy,
-		AckPolicy:     jetstream.AckExplicitPolicy,
+		DeliverPolicy: deliverPolicy,
+		AckPolicy:     ackPolicy,
 		AckWait:       5 * time.Second,
 		FilterSubject: messaging.SubjectJobSubmitted,
 	})
@@ -955,7 +1017,7 @@ func (a *App) subscribeJetStream() error {
 		return fmt.Errorf("failed to create or update durable consumer %s: %w", a.consumerName, err)
 	}
 	a.jsConsumer = consumer
-	log.Printf("[Processor] JetStream consumer bound to %s Pull subscriber", a.consumerName)
+	log.Printf("[Processor] JetStream consumer bound to %s Pull subscriber (Deliver=%v, Ack=%v)", a.consumerName, deliverPolicy, ackPolicy)
 	return nil
 }
 
@@ -1260,8 +1322,10 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts 
 			)
 
 			// 3. Acknowledge original message from JOBS stream so it does not redeliver
-			if err := msg.Ack(); err != nil {
-				log.Printf("[%s] Failed to ACK original message %s after DLQ routing: %v", workerName, job.JobID, err)
+			if a.consumerConfig.AckPolicy != "none" {
+				if err := msg.Ack(); err != nil {
+					log.Printf("[%s] Failed to ACK original message %s after DLQ routing: %v", workerName, job.JobID, err)
+				}
 			}
 			return
 		}
@@ -1335,8 +1399,10 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts 
 	}
 
 	// ACK on success
-	if err := msg.Ack(); err != nil {
-		log.Printf("[%s] Failed to ACK message %s: %v", workerName, job.JobID, err)
+	if a.consumerConfig.AckPolicy != "none" {
+		if err := msg.Ack(); err != nil {
+			log.Printf("[%s] Failed to ACK message %s: %v", workerName, job.JobID, err)
+		}
 	}
 
 	procSpan.SetStatus(codes.Ok, "success")
