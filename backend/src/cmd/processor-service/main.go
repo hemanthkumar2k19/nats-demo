@@ -21,6 +21,7 @@ import (
 	"nats-demo/internal/telemetry"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -38,7 +39,7 @@ type App struct {
 	statusSub         *nats.Subscription
 	stateSetSub       *nats.Subscription
 	consumerConfigSub *nats.Subscription
-	jsSub             *nats.Subscription
+	jsConsumer        jetstream.Consumer
 	processingEnabled bool
 	consumerConfig    jobs.ConsumerConfig
 	consumerName      string
@@ -400,13 +401,15 @@ func (a *App) Run() error {
 
 		var pending uint64
 		var ackPending, redelivered int
-		js, err := a.natsClient.Conn.JetStream()
-		if err == nil {
-			cinfo, err := js.ConsumerInfo("JOBS", a.consumerName)
-			if err == nil && cinfo != nil {
-				pending = cinfo.NumPending
-				ackPending = cinfo.NumAckPending
-				redelivered = cinfo.NumRedelivered
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if stream, err := a.natsClient.JS.Stream(ctx, "JOBS"); err == nil && stream != nil {
+			if cons, err := stream.Consumer(ctx, a.consumerName); err == nil && cons != nil {
+				if cinfo, err := cons.Info(ctx); err == nil && cinfo != nil {
+					pending = cinfo.NumPending
+					ackPending = cinfo.NumAckPending
+					redelivered = cinfo.NumRedelivered
+				}
 			}
 		}
 
@@ -471,11 +474,15 @@ func (a *App) Run() error {
 
 		var pending uint64
 		var ackPending, redelivered int
-		if js, err := a.natsClient.Conn.JetStream(); err == nil {
-			if cinfo, err := js.ConsumerInfo("JOBS", cName); err == nil && cinfo != nil {
-				pending = cinfo.NumPending
-				ackPending = cinfo.NumAckPending
-				redelivered = cinfo.NumRedelivered
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if stream, err := a.natsClient.JS.Stream(ctx, "JOBS"); err == nil && stream != nil {
+			if cons, err := stream.Consumer(ctx, cName); err == nil && cons != nil {
+				if cinfo, err := cons.Info(ctx); err == nil && cinfo != nil {
+					pending = cinfo.NumPending
+					ackPending = cinfo.NumAckPending
+					redelivered = cinfo.NumRedelivered
+				}
 			}
 		}
 
@@ -894,18 +901,21 @@ func (a *App) unsubscribeValidation() {
 	}
 }
 
-// subscribeJetStream registers JetStream pull subscriber based on a.consumerConfig
+// subscribeJetStream registers JetStream pull consumer based on a.consumerConfig
 func (a *App) subscribeJetStream() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if a.jsSub != nil {
+	if a.jsConsumer != nil {
 		return nil
 	}
 
-	js, err := a.natsClient.Conn.JetStream()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	stream, err := a.natsClient.JS.Stream(ctx, "JOBS")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get JOBS stream: %w", err)
 	}
 
 	cType := a.consumerConfig.Type
@@ -917,67 +927,46 @@ func (a *App) subscribeJetStream() error {
 		if a.consumerName == "" || a.consumerName == "job-processor" || a.consumerName == "processor-durable" {
 			a.consumerName = fmt.Sprintf("ephemeral-%d", time.Now().UnixNano()%100000)
 		}
-		cinfo, err := js.AddConsumer("JOBS", &nats.ConsumerConfig{
+		consumer, err := stream.CreateConsumer(ctx, jetstream.ConsumerConfig{
 			Name:          a.consumerName,
-			DeliverPolicy: nats.DeliverNewPolicy,
-			AckPolicy:     nats.AckExplicitPolicy,
+			DeliverPolicy: jetstream.DeliverNewPolicy,
+			AckPolicy:     jetstream.AckExplicitPolicy,
 			AckWait:       5 * time.Second,
 			FilterSubject: messaging.SubjectJobSubmitted,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to add ephemeral consumer: %w", err)
 		}
-		sub, err := js.PullSubscribe(messaging.SubjectJobSubmitted, cinfo.Name, nats.Bind("JOBS", cinfo.Name))
-		if err != nil {
-			return fmt.Errorf("failed to bind ephemeral consumer %s: %w", cinfo.Name, err)
-		}
-		a.jsSub = sub
+		a.jsConsumer = consumer
 		log.Printf("[Processor] Bound to ephemeral consumer: %s", a.consumerName)
 		return nil
 	}
 
 	// Durable consumer
 	a.consumerName = "job-processor"
-	_, err = js.ConsumerInfo("JOBS", a.consumerName)
+	consumer, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+		Durable:       a.consumerName,
+		DeliverPolicy: jetstream.DeliverAllPolicy,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		AckWait:       5 * time.Second,
+		FilterSubject: messaging.SubjectJobSubmitted,
+	})
 	if err != nil {
-		_, err = js.AddConsumer("JOBS", &nats.ConsumerConfig{
-			Durable:       a.consumerName,
-			DeliverPolicy: nats.DeliverAllPolicy,
-			AckPolicy:     nats.AckExplicitPolicy,
-			AckWait:       5 * time.Second,
-			FilterSubject: messaging.SubjectJobSubmitted,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create durable consumer %s: %w", a.consumerName, err)
-		}
-	} else {
-		_, _ = js.UpdateConsumer("JOBS", &nats.ConsumerConfig{
-			Durable:       a.consumerName,
-			DeliverPolicy: nats.DeliverAllPolicy,
-			AckPolicy:     nats.AckExplicitPolicy,
-			AckWait:       5 * time.Second,
-			FilterSubject: messaging.SubjectJobSubmitted,
-		})
+		return fmt.Errorf("failed to create or update durable consumer %s: %w", a.consumerName, err)
 	}
-
-	sub, err := js.PullSubscribe(messaging.SubjectJobSubmitted, a.consumerName, nats.Bind("JOBS", a.consumerName))
-	if err != nil {
-		return fmt.Errorf("failed to bind durable consumer %s: %w", a.consumerName, err)
-	}
-	a.jsSub = sub
+	a.jsConsumer = consumer
 	log.Printf("[Processor] JetStream consumer bound to %s Pull subscriber", a.consumerName)
 	return nil
 }
 
-// unsubscribeJetStream deactivates JetStream subscription
+// unsubscribeJetStream deactivates JetStream consumer
 func (a *App) unsubscribeJetStream() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if a.jsSub != nil {
-		_ = a.jsSub.Unsubscribe()
-		a.jsSub = nil
-		log.Println("[Processor] JetStream pull subscriber deactivated")
+	if a.jsConsumer != nil {
+		a.jsConsumer = nil
+		log.Println("[Processor] JetStream consumer deactivated")
 	}
 }
 
@@ -1019,16 +1008,16 @@ func (a *App) jsPullLoop(ctx context.Context, workerName string, attempts map[st
 		default:
 			a.mu.RLock()
 			enabled := a.processingEnabled
-			jsSub := a.jsSub
+			jsConsumer := a.jsConsumer
 			a.mu.RUnlock()
 
-			if !enabled || jsSub == nil {
+			if !enabled || jsConsumer == nil {
 				time.Sleep(200 * time.Millisecond)
 				continue
 			}
 
 			// Try to fetch 1 message with a short timeout
-			msgs, err := jsSub.Fetch(1, nats.MaxWait(500*time.Millisecond))
+			batch, err := jsConsumer.Fetch(1, jetstream.FetchMaxWait(500*time.Millisecond))
 			if err != nil {
 				if errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
 					continue
@@ -1038,7 +1027,7 @@ func (a *App) jsPullLoop(ctx context.Context, workerName string, attempts map[st
 				continue
 			}
 
-			for _, msg := range msgs {
+			for msg := range batch.Messages() {
 				a.handleJetStreamMsg(msg, workerName, attempts, attemptsMu)
 			}
 		}
@@ -1046,14 +1035,14 @@ func (a *App) jsPullLoop(ctx context.Context, workerName string, attempts map[st
 }
 
 // handleJetStreamMsg processes a pulled JetStream message
-func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[string]int, attemptsMu *sync.Mutex) {
-	deliveryMode := msg.Header.Get("X-Delivery-Mode")
+func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts map[string]int, attemptsMu *sync.Mutex) {
+	deliveryMode := msg.Headers().Get("X-Delivery-Mode")
 	if deliveryMode == "" {
 		deliveryMode = "CORE"
 	}
 
 	var job jobs.Job
-	if err := json.Unmarshal(msg.Data, &job); err != nil {
+	if err := json.Unmarshal(msg.Data(), &job); err != nil {
 		log.Printf("[%s JS] Failed to unmarshal message: %v", workerName, err)
 		_ = msg.Ack()
 		return
@@ -1088,7 +1077,7 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 	a.consumerMu.Unlock()
 
 	// 1. Extract Trace Context and start Consumer Receive span
-	parentCtx := telemetry.ExtractTraceContext(context.Background(), msg.Header)
+	parentCtx := telemetry.ExtractTraceContext(context.Background(), msg.Headers())
 	recvCtx, recvSpan := telemetry.StartSpan(parentCtx, "Consumer Receive",
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(
@@ -1239,26 +1228,23 @@ func (a *App) handleJetStreamMsg(msg *nats.Msg, workerName string, attempts map[
 			telemetry.RecordJobFailed(procCtx, deliveryMode, workerName)
 
 			// 1. Publish failed message to JOBS_DLQ stream on subject jobs.dlq
-			js, jsErr := a.natsClient.Conn.JetStream()
-			if jsErr == nil {
-				dlqPayload, _ := json.Marshal(map[string]any{
-					"job_id":            job.JobID,
-					"type":              job.Type,
-					"original_subject":  messaging.SubjectJobSubmitted,
-					"delivery_attempts": attemptCount,
-					"failure_reason":    dlqReason,
-					"timestamp":         time.Now().UTC().Format(time.RFC3339),
-					"worker":            workerName,
-					"payload":           job.Payload,
-				})
-				dlqMsg := nats.NewMsg(messaging.SubjectJobDLQ)
-				dlqMsg.Data = dlqPayload
-				dlqMsg.Header.Set("X-Delivery-Attempts", fmt.Sprintf("%d", attemptCount))
-				dlqMsg.Header.Set("X-Original-Subject", messaging.SubjectJobSubmitted)
-				dlqMsg.Header.Set("Nats-Msg-Id", fmt.Sprintf("dlq-%s-%d", job.JobID, attemptCount))
-				if _, pubErr := js.PublishMsg(dlqMsg); pubErr != nil {
-					log.Printf("[%s] Failed to publish message %s to JOBS_DLQ: %v", workerName, job.JobID, pubErr)
-				}
+			dlqPayload, _ := json.Marshal(map[string]any{
+				"job_id":            job.JobID,
+				"type":              job.Type,
+				"original_subject":  messaging.SubjectJobSubmitted,
+				"delivery_attempts": attemptCount,
+				"failure_reason":    dlqReason,
+				"timestamp":         time.Now().UTC().Format(time.RFC3339),
+				"worker":            workerName,
+				"payload":           job.Payload,
+			})
+			dlqMsg := nats.NewMsg(messaging.SubjectJobDLQ)
+			dlqMsg.Data = dlqPayload
+			dlqMsg.Header.Set("X-Delivery-Attempts", fmt.Sprintf("%d", attemptCount))
+			dlqMsg.Header.Set("X-Original-Subject", messaging.SubjectJobSubmitted)
+			dlqMsg.Header.Set("Nats-Msg-Id", fmt.Sprintf("dlq-%s-%d", job.JobID, attemptCount))
+			if _, pubErr := a.natsClient.JS.PublishMsg(context.Background(), dlqMsg); pubErr != nil {
+				log.Printf("[%s] Failed to publish message %s to JOBS_DLQ: %v", workerName, job.JobID, pubErr)
 			}
 
 			// 2. Publish DLQ_PUBLISHED lifecycle event

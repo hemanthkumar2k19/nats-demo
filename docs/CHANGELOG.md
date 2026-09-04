@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-09-04
+
+### Changed (Modern NATS JetStream API Migration)
+- **Centralized JetStream Client Initialization (`internal/natsclient/client.go`)**:
+  - Replaced legacy `nc.JetStream()` context initialization with modern `jetstream.New(nc)`.
+  - Added `JS jetstream.JetStream` directly to `Client` struct for centralized, thread-safe access.
+  - Replaced manual `StreamInfo` / `AddStream` / `UpdateStream` branching with modern, idempotent `c.JS.CreateOrUpdateStream(...)` for `JOBS` and `JOBS_DLQ`.
+  - Configured durable consumers (`job-processor`, `processor-durable`, `dlq-inspector`) via idempotent `stream.CreateOrUpdateConsumer(...)`.
+- **JetStream Message Publishing (`internal/messaging/publisher.go`)**:
+  - Migrated `PublishJobSubmitted` from `js.PublishMsg(msg)` to modern `p.client.JS.PublishMsg(pubCtx, msg)`, passing active OpenTelemetry trace context.
+  - Kept sequence numbers (`ack.Sequence`) and deduplication recognition (`ack.Duplicate`) fully compatible.
+- **Worker Pull Loop & Consumer Engine (`cmd/processor-service/main.go`)**:
+  - Replaced legacy `*nats.Subscription` (`js.PullSubscribe`) with first-class `jetstream.Consumer` (`a.jsConsumer`).
+  - Updated worker pull loop from `jsSub.Fetch(1)` to `a.jsConsumer.Fetch(1, jetstream.FetchMaxWait(500*time.Millisecond))`, reading messages via `batch.Messages()`.
+  - Updated `handleJetStreamMsg` signature to accept `jetstream.Msg`, retrieving headers via `msg.Headers()`, payload via `msg.Data()`, and delivery count via `msg.Metadata()`.
+  - Retained native `msg.Ack()`, `msg.Nak()`, and `msg.NakWithDelay(...)` handling.
+  - Updated DLQ failure routing to publish directly via `a.natsClient.JS.PublishMsg(...)`.
+  - Migrated dynamic consumer configuration and distribution reset responders to query `stream.Consumer(...)` and `cons.Info(...)`.
+- **Observability Tap & UI Control Gateway (`api/http/control_handler.go`)**:
+  - Replaced legacy `js.StreamInfo` and `js.ConsumerInfo` in `GetStatus` and `GetConsumerStatus` with modern `stream.Info(ctx)` and `cons.Info(ctx)`.
+  - Updated `ReplayStream` to instantiate ephemeral replay consumers via `stream.CreateConsumer(ctx, consumerCfg)` and teardown cleanly via `stream.DeleteConsumer(...)`.
+  - Updated `GetDLQStatus`, `GetDLQMessages`, and `ReprocessDLQ` to use `stream.GetMsg(ctx, seq)` on `JOBS_DLQ`.
+  - Updated `PurgeDLQ` to invoke `stream.Purge(ctx)`.
+
+### Documentation
+- Updated `docs/DEVELOPER_GUIDE.md` under `Durable Consumer Lifecycle` to showcase `stream.CreateOrUpdateConsumer` and `consumer.Fetch(...)`.
+
 ## 2026-09-03
 
 ### Fixed

@@ -58,13 +58,7 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job) error
 
 	if job.DeliveryMode == "JETSTREAM" {
 		pubSpan.SetAttributes(attribute.String("jetstream.stream", "JOBS"))
-		js, err := p.client.Conn.JetStream()
-		if err != nil {
-			pubSpan.RecordError(err)
-			pubSpan.SetStatus(codes.Error, err.Error())
-			return fmt.Errorf("failed to get JetStream context: %w", err)
-		}
-		ack, err := js.PublishMsg(msg)
+		ack, err := p.client.JS.PublishMsg(pubCtx, msg)
 		if err != nil {
 			pubSpan.RecordError(err)
 			pubSpan.SetStatus(codes.Error, err.Error())

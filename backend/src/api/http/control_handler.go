@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // ControlHandler handles HTTP requests for demo inspection and UI controls in demo-control-service.
@@ -98,13 +99,14 @@ func (h *ControlHandler) GetStatus(c *gin.Context) {
 	// Fetch JetStream JOBS stream metrics and consumer pending count
 	var jsInfo gin.H
 	if natsStatus == "CONNECTED" {
-		js, err := h.natsClient.Conn.JetStream()
-		if err == nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+		if stream, err := h.natsClient.JS.Stream(ctx, "JOBS"); err == nil && stream != nil {
 			var totalMsgs uint64
 			var totalBytes uint64
 			var firstSeq, lastSeq uint64
 
-			sinfo, err := js.StreamInfo("JOBS")
+			sinfo, err := stream.Info(ctx)
 			if err == nil && sinfo != nil {
 				totalMsgs = sinfo.State.Msgs
 				totalBytes = sinfo.State.Bytes
@@ -114,15 +116,17 @@ func (h *ControlHandler) GetStatus(c *gin.Context) {
 
 			// Query active consumer stats
 			var pending uint64 = totalMsgs
-			cinfo, err := js.ConsumerInfo("JOBS", consumerName)
+			cons, err := stream.Consumer(ctx, consumerName)
 			if err != nil && consumerName != "job-processor" {
-				cinfo, err = js.ConsumerInfo("JOBS", "job-processor")
+				cons, err = stream.Consumer(ctx, "job-processor")
 			}
 			if err != nil {
-				cinfo, err = js.ConsumerInfo("JOBS", "processor-durable")
+				cons, err = stream.Consumer(ctx, "processor-durable")
 			}
-			if err == nil && cinfo != nil {
-				pending = cinfo.NumPending
+			if err == nil && cons != nil {
+				if cinfo, err := cons.Info(ctx); err == nil && cinfo != nil {
+					pending = cinfo.NumPending
+				}
 			}
 
 			jsInfo = gin.H{
@@ -273,63 +277,60 @@ func (h *ControlHandler) ReplayJobs(c *gin.Context) {
 		}
 	}
 
-	js, err := h.natsClient.Conn.JetStream()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to get JetStream context: %v", err)})
-		return
-	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
 
-	_, err = js.StreamInfo("JOBS")
+	stream, err := h.natsClient.JS.Stream(ctx, "JOBS")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "JOBS stream does not exist in JetStream"})
 		return
 	}
 
 	consumerName := fmt.Sprintf("replay-%d", time.Now().UnixNano()%1000000)
-	inbox := nats.NewInbox()
 
-	consumerCfg := &nats.ConsumerConfig{
-		Name:           consumerName,
-		DeliverSubject: inbox,
-		FilterSubject:  messaging.SubjectJobSubmitted,
-		AckPolicy:      nats.AckNonePolicy,
+	consumerCfg := jetstream.ConsumerConfig{
+		Name:          consumerName,
+		FilterSubject: messaging.SubjectJobSubmitted,
+		AckPolicy:     jetstream.AckNonePolicy,
 	}
 
 	if isTimeMode {
-		consumerCfg.DeliverPolicy = nats.DeliverByStartTimePolicy
+		consumerCfg.DeliverPolicy = jetstream.DeliverByStartTimePolicy
 		consumerCfg.OptStartTime = &parsedStartTime
 	} else {
-		consumerCfg.DeliverPolicy = nats.DeliverByStartSequencePolicy
+		consumerCfg.DeliverPolicy = jetstream.DeliverByStartSequencePolicy
 		consumerCfg.OptStartSeq = req.StartSequence
 	}
 
 	if req.ReplayMode == "original" {
-		consumerCfg.ReplayPolicy = nats.ReplayOriginalPolicy
+		consumerCfg.ReplayPolicy = jetstream.ReplayOriginalPolicy
 	} else {
-		consumerCfg.ReplayPolicy = nats.ReplayInstantPolicy
+		consumerCfg.ReplayPolicy = jetstream.ReplayInstantPolicy
 	}
 
-	cinfo, err := js.AddConsumer("JOBS", consumerCfg)
+	cons, err := stream.CreateConsumer(ctx, consumerCfg)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to create replay consumer: %v", err)})
 		return
 	}
 
-	// Consume replayed messages from delivery inbox in a background routine
+	// Consume replayed messages from the ephemeral consumer in a background routine
 	go func() {
 		timeout := 30 * time.Second
 		if req.ReplayMode == "original" {
 			timeout = 60 * time.Second
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
+		replayCtx, replayCancel := context.WithTimeout(context.Background(), timeout)
+		defer replayCancel()
 
 		defer func() {
-			_ = js.DeleteConsumer("JOBS", cinfo.Name)
-			log.Printf("[Replay] Teardown complete for ephemeral consumer %s", cinfo.Name)
+			tdCtx, tdCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer tdCancel()
+			_ = stream.DeleteConsumer(tdCtx, consumerName)
+			log.Printf("[Replay] Teardown complete for ephemeral consumer %s", consumerName)
 		}()
 
-		sub, err := h.natsClient.Conn.Subscribe(inbox, func(msg *nats.Msg) {
+		cc, err := cons.Consume(func(msg jetstream.Msg) {
 			meta, err := msg.Metadata()
 			if err != nil {
 				return
@@ -343,7 +344,7 @@ func (h *ControlHandler) ReplayJobs(c *gin.Context) {
 			}
 
 			var job jobs.Job
-			if err := json.Unmarshal(msg.Data, &job); err != nil {
+			if err := json.Unmarshal(msg.Data(), &job); err != nil {
 				job.JobID = fmt.Sprintf("seq-%d", meta.Sequence.Stream)
 				job.Type = "unknown"
 			}
@@ -367,20 +368,20 @@ func (h *ControlHandler) ReplayJobs(c *gin.Context) {
 			replayMsg.Header.Set("Nats-Msg-Id", fmt.Sprintf("replay-seq-%d", meta.Sequence.Stream))
 
 			_ = h.natsClient.Conn.PublishMsg(replayMsg)
-			log.Printf("[Replay] Replayed sequence #%d (Job: %s) via %s", meta.Sequence.Stream, job.JobID, cinfo.Name)
+			log.Printf("[Replay] Replayed sequence #%d (Job: %s) via %s", meta.Sequence.Stream, job.JobID, consumerName)
 		})
 		if err != nil {
-			log.Printf("[Replay] Failed to subscribe to replay inbox: %v", err)
+			log.Printf("[Replay] Failed to start consuming: %v", err)
 			return
 		}
-		defer sub.Unsubscribe()
+		defer cc.Stop()
 
-		<-ctx.Done()
+		<-replayCtx.Done()
 	}()
 
 	c.JSON(http.StatusAccepted, gin.H{
 		"status":   "REPLAY_STARTED",
-		"consumer": cinfo.Name,
+		"consumer": consumerName,
 	})
 }
 
@@ -491,16 +492,19 @@ func (h *ControlHandler) GetConsumerStatus(c *gin.Context) {
 
 	var pending, ackPending, redelivered int
 	if natsStatus == "CONNECTED" {
-		js, err := h.natsClient.Conn.JetStream()
-		if err == nil {
-			cinfo, err := js.ConsumerInfo("JOBS", consumerName)
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+		if stream, err := h.natsClient.JS.Stream(ctx, "JOBS"); err == nil && stream != nil {
+			cons, err := stream.Consumer(ctx, consumerName)
 			if err != nil && consumerName != "processor-durable" {
-				cinfo, err = js.ConsumerInfo("JOBS", "processor-durable")
+				cons, err = stream.Consumer(ctx, "processor-durable")
 			}
-			if err == nil && cinfo != nil {
-				pending = int(cinfo.NumPending)
-				ackPending = cinfo.NumAckPending
-				redelivered = cinfo.NumRedelivered
+			if err == nil && cons != nil {
+				if cinfo, err := cons.Info(ctx); err == nil && cinfo != nil {
+					pending = int(cinfo.NumPending)
+					ackPending = cinfo.NumAckPending
+					redelivered = cinfo.NumRedelivered
+				}
 			}
 		}
 	}
@@ -615,16 +619,19 @@ func (h *ControlHandler) GetDLQStatus(c *gin.Context) {
 		return
 	}
 
-	js, err := h.natsClient.Conn.JetStream()
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+
+	stream, err := h.natsClient.JS.Stream(ctx, "JOBS_DLQ")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JetStream context"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JOBS_DLQ stream"})
 		return
 	}
 
 	var totalMsgs uint64
 	var totalBytes uint64
 	var firstSeq, lastSeq uint64
-	sinfo, err := js.StreamInfo("JOBS_DLQ")
+	sinfo, err := stream.Info(ctx)
 	if err == nil && sinfo != nil {
 		totalMsgs = sinfo.State.Msgs
 		totalBytes = sinfo.State.Bytes
@@ -634,10 +641,12 @@ func (h *ControlHandler) GetDLQStatus(c *gin.Context) {
 
 	var pending uint64 = totalMsgs
 	var ackPending int
-	cinfo, err := js.ConsumerInfo("JOBS_DLQ", "dlq-inspector")
-	if err == nil && cinfo != nil {
-		pending = cinfo.NumPending
-		ackPending = cinfo.NumAckPending
+	cons, err := stream.Consumer(ctx, "dlq-inspector")
+	if err == nil && cons != nil {
+		if cinfo, err := cons.Info(ctx); err == nil && cinfo != nil {
+			pending = cinfo.NumPending
+			ackPending = cinfo.NumAckPending
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -659,13 +668,16 @@ func (h *ControlHandler) GetDLQMessages(c *gin.Context) {
 		return
 	}
 
-	js, err := h.natsClient.Conn.JetStream()
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	stream, err := h.natsClient.JS.Stream(ctx, "JOBS_DLQ")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JetStream context"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JOBS_DLQ stream"})
 		return
 	}
 
-	sinfo, err := js.StreamInfo("JOBS_DLQ")
+	sinfo, err := stream.Info(ctx)
 	if err != nil || sinfo == nil || sinfo.State.Msgs == 0 {
 		c.JSON(http.StatusOK, []DLQMessage{})
 		return
@@ -673,7 +685,7 @@ func (h *ControlHandler) GetDLQMessages(c *gin.Context) {
 
 	messages := make([]DLQMessage, 0, sinfo.State.Msgs)
 	for seq := sinfo.State.FirstSeq; seq <= sinfo.State.LastSeq; seq++ {
-		rawMsg, err := js.GetMsg("JOBS_DLQ", seq)
+		rawMsg, err := stream.GetMsg(ctx, seq)
 		if err != nil || rawMsg == nil {
 			continue
 		}
@@ -712,13 +724,16 @@ func (h *ControlHandler) ReprocessDLQ(c *gin.Context) {
 		req.JobID = c.Query("job_id")
 	}
 
-	js, err := h.natsClient.Conn.JetStream()
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	stream, err := h.natsClient.JS.Stream(ctx, "JOBS_DLQ")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JetStream context"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JOBS_DLQ stream"})
 		return
 	}
 
-	sinfo, err := js.StreamInfo("JOBS_DLQ")
+	sinfo, err := stream.Info(ctx)
 	if err != nil || sinfo == nil || sinfo.State.Msgs == 0 {
 		c.JSON(http.StatusOK, gin.H{
 			"reprocessed": 0,
@@ -730,7 +745,7 @@ func (h *ControlHandler) ReprocessDLQ(c *gin.Context) {
 
 	reprocessedJobs := make([]string, 0)
 	for seq := sinfo.State.FirstSeq; seq <= sinfo.State.LastSeq; seq++ {
-		rawMsg, err := js.GetMsg("JOBS_DLQ", seq)
+		rawMsg, err := stream.GetMsg(ctx, seq)
 		if err != nil || rawMsg == nil {
 			continue
 		}
@@ -777,13 +792,13 @@ func (h *ControlHandler) ReprocessDLQ(c *gin.Context) {
 		pubMsg.Header.Set("X-Delivery-Mode", "JETSTREAM")
 		pubMsg.Data = jobData
 
-		if _, pubErr := js.PublishMsg(pubMsg); pubErr != nil {
+		if _, pubErr := h.natsClient.JS.PublishMsg(ctx, pubMsg); pubErr != nil {
 			log.Printf("[Control] Failed to re-publish DLQ job %s: %v", item.JobID, pubErr)
 			continue
 		}
 
 		// Delete from JOBS_DLQ stream
-		_ = js.DeleteMsg("JOBS_DLQ", seq)
+		_ = stream.DeleteMsg(ctx, seq)
 
 		// Record in Activity Tracker and emit NATS event
 		h.activityTracker.AddEvent(
@@ -827,13 +842,16 @@ func (h *ControlHandler) PurgeDLQ(c *gin.Context) {
 		return
 	}
 
-	js, err := h.natsClient.Conn.JetStream()
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	stream, err := h.natsClient.JS.Stream(ctx, "JOBS_DLQ")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JetStream context"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JOBS_DLQ stream"})
 		return
 	}
 
-	if err := js.PurgeStream("JOBS_DLQ"); err != nil {
+	if err := stream.Purge(ctx); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to purge JOBS_DLQ stream: " + err.Error()})
 		return
 	}

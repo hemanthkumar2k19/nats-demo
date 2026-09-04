@@ -188,9 +188,16 @@ JetStream
 - Consumer `dlq-inspector` monitors `JOBS_DLQ`, allowing administrators to inspect failed messages without altering the primary business stream.
 
 ### Durable Consumer Lifecycle
-To prevent the client library from deleting the durable consumer on shutdown, the consumer is created explicitly on NATS during initialization (`AddConsumer`), and the subscriber binds to it explicitly using:
+To prevent the client library from deleting the durable consumer on shutdown, the consumer is created explicitly on NATS during initialization using `stream.CreateOrUpdateConsumer(...)`, and workers pull from the resulting `jetstream.Consumer` directly:
 ```go
-js.PullSubscribe(subject, "processor-durable", nats.Bind("JOBS", "processor-durable"))
+consumer, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+    Durable:       "job-processor",
+    DeliverPolicy: jetstream.DeliverAllPolicy,
+    AckPolicy:     jetstream.AckExplicitPolicy,
+    AckWait:       5 * time.Second,
+    FilterSubject: "jobs.submitted",
+})
+batch, err := consumer.Fetch(1, jetstream.FetchMaxWait(500*time.Millisecond))
 ```
 
 ### Stable Dashboard Log Ordering
