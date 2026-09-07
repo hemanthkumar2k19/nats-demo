@@ -1,8 +1,13 @@
 export interface Job {
   job_id: string;
-  type: string;
-  payload: Record<string, any>;
+  type?: string;
+  subject?: string;
   delivery_mode?: string;
+  msg_id?: string;
+  source?: string;
+  content_type?: string;
+  headers?: Record<string, string>;
+  payload: Record<string, any>;
   trace_id?: string;
 }
 
@@ -76,6 +81,77 @@ export interface DLQMessage {
 
 const DEMO_CONTROL_URL = 'http://localhost:8080';
 const JOB_SERVICE_URL = 'http://localhost:8081';
+const PROCESSOR_SERVICE_URL = 'http://localhost:8082';
+
+export interface ProcessorDirectEvent {
+  job_id: string;
+  job_type: string;
+  tag: string;
+  tag_color: string;
+  details?: string;
+  timestamp: string;
+  delivery_mode: string;
+  attempt: number;
+}
+
+export interface ProcessorDirectStatus {
+  status: string;
+  processing: boolean;
+  consumer: string;
+  stream: string;
+  workers: number;
+}
+
+/**
+ * Fetches recent execution events directly from processor-service (Port 8082).
+ */
+export async function getProcessorDirectEvents(): Promise<ProcessorDirectEvent[]> {
+  const response = await fetch(`${PROCESSOR_SERVICE_URL}/processor/events`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch processor events: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Clears the event buffer directly on processor-service (Port 8082).
+ */
+export async function clearProcessorDirectEvents(): Promise<void> {
+  const response = await fetch(`${PROCESSOR_SERVICE_URL}/processor/events`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to clear processor events: ${response.statusText}`);
+  }
+}
+
+/**
+ * Fetches worker and consumer state directly from processor-service (Port 8082).
+ */
+export async function getProcessorDirectStatus(): Promise<ProcessorDirectStatus> {
+  const response = await fetch(`${PROCESSOR_SERVICE_URL}/processor/status`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch processor status: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Updates processingEnabled state directly on processor-service (Port 8082).
+ */
+export async function updateProcessorDirectState(enabled: boolean): Promise<{ status: string; processing: boolean }> {
+  const response = await fetch(`${PROCESSOR_SERVICE_URL}/processor/state`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to update processor state: ${response.statusText}`);
+  }
+  return response.json();
+}
 
 /**
  * Submits a job to the pure business job-service API.

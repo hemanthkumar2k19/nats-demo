@@ -10,36 +10,35 @@ interface CoreFlowNatsCliProps {
 
 interface SetupSnippet {
   id: string;
+  title: string;
   scope: string;
   badgeColor: string;
   badgeBg: string;
   cmd: string;
-  description: string;
 }
 
 interface CliCommandSnippet {
   id: string;
   title: string;
   cmd: string;
-  description: string;
 }
 
 const SETUP_SNIPPETS: SetupSnippet[] = [
   {
     id: 'setup-local-app',
+    title: 'Application Context',
     scope: 'local-app',
     badgeColor: '#60A5FA',
     badgeBg: 'rgba(59, 130, 246, 0.15)',
     cmd: 'export NATS_CONTEXT=local-app',
-    description: 'Sets terminal context for application streams, consumers, and messaging workflows.',
   },
   {
     id: 'setup-sys-admin',
+    title: 'System Admin Context',
     scope: 'sys-admin',
     badgeColor: '#F87171',
     badgeBg: 'rgba(239, 68, 68, 0.15)',
     cmd: 'export NATS_CONTEXT=sys-admin',
-    description: 'Sets terminal context for NATS server health, cluster inspection, and system admin.',
   },
 ];
 
@@ -48,37 +47,31 @@ const OPERATIONAL_COMMANDS: CliCommandSnippet[] = [
     id: 'view-streams',
     title: 'View Streams',
     cmd: 'nats stream ls',
-    description: 'Lists all active JetStream streams, message counts, storage usage, and retention limits.',
   },
   {
     id: 'view-stream-info',
     title: 'View Stream Info (JOBS)',
     cmd: 'nats stream info JOBS',
-    description: 'Displays detailed stream state, first/last sequence bounds, byte size, and subject filter config.',
   },
   {
     id: 'view-stream-messages',
     title: 'Stream View - Messages in JOBS',
     cmd: 'nats stream view JOBS 5',
-    description: 'Displays messages stored in the JOBS stream with sequence numbers, headers, payload, and pagination (5 per page).',
   },
   {
     id: 'view-consumers',
     title: 'View Durable Consumers',
     cmd: 'nats consumer ls JOBS',
-    description: 'Lists all active consumers attached to the JOBS stream (verifying durable job-processor).',
   },
   {
     id: 'view-consumer-data',
     title: 'Consumer State, Cursor & ACK',
     cmd: 'nats consumer info JOBS job-processor',
-    description: 'Inspects consumer cursor watermark (Last Delivered vs Last Ack sequence), In-Flight Ack Pending, and redeliveries.',
   },
   {
     id: 'view-consumer-report',
     title: 'Consumer Processing Report & Backlog',
     cmd: 'nats consumer report JOBS',
-    description: 'Summarizes delivery lag, unprocessed backlog count, and real-time worker consumption rate across consumers.',
   },
 ];
 
@@ -158,12 +151,12 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
                   padding: '0.45rem 0.6rem',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '0.2rem',
+                  gap: '0.25rem',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    {snip.description}
+                  <span style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-bright)' }}>
+                    {snip.title}
                   </span>
                   <span style={{ 
                     fontSize: '0.62rem', 
@@ -235,17 +228,13 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
                   padding: '0.45rem 0.6rem',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '0.2rem',
+                  gap: '0.25rem',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-bright)' }}>
                     {snip.title}
                   </span>
-                </div>
-
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  {snip.description}
                 </div>
 
                 <div style={{ 
@@ -282,17 +271,6 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
             ))}
           </div>
         </div>
-      </div>
-
-      {/* Panel Footer Tip */}
-      <div style={{ 
-        borderTop: '1px solid var(--border-color)', 
-        padding: '0.5rem 1rem', 
-        background: 'rgba(0, 0, 0, 0.2)', 
-        fontSize: '0.68rem', 
-        color: 'var(--text-dim)' 
-      }}>
-        Tip: Exporting <code>NATS_CONTEXT=local-app</code> applies to all commands in your terminal tab automatically.
       </div>
     </div>
   );

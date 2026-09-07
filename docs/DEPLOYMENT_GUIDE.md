@@ -34,16 +34,20 @@ docker compose -f deploy/docker-compose.yaml up -d
 
 ## 3. Backend Deployment
 
-The backend consists of three Go services located under `backend/src`.
+The backend is organized into two completely decoupled, independent Go modules:
+1. **`backend/services` (`nats-demo/services`)**: Houses the production-grade business services (`job-service` and `processor-service`) and direct NATS client integrations.
+2. **`backend/control` (`nats-demo/control`)**: Houses `demo-control-service`, isolating Capability Studio support, DLQ management, activity ring-buffers, and $SYS event monitoring.
 
-### Configuration (`backend/src/.env`)
-The Go services load settings from environment variables or a local `.env` file. Initialize it by copying `.env.example`:
+### Configuration
+The Go services load settings from environment variables or local `.env` files. Initialize them by copying `.env.example`:
 ```bash
-cp backend/src/.env.example backend/src/.env
+cp backend/services/.env.example backend/services/.env
+cp backend/control/.env.example backend/control/.env
 ```
 Default parameters:
 - `PORT=8080` (HTTP port for `demo-control-service`)
 - `JOB_SERVICE_PORT=8081` (HTTP port for `job-service`)
+- `PROCESSOR_PORT=8082` (HTTP port for `processor-service`)
 - `NATS_URL=nats://localhost:4222` (connection string for NATS client)
 - `NATS_USER=app_user` (tenant user for JetStream and business messaging)
 - `NATS_PASSWORD=app_user_pwd!` (tenant password)
@@ -53,19 +57,19 @@ Default parameters:
 
 ### Starting Backend Services
 In separate terminal windows, run the following commands:
-1. **Demo Control Service** (UI Gateway & Observability Tap):
+1. **Demo Control Service** (UI Gateway, Activity Logs, & Capability Studio Support):
    ```bash
-   cd backend/src
-   go run cmd/demo-control-service/main.go
+   cd backend/control
+   go run ./cmd/demo-control-service
    ```
-2. **Job Service** (Pure Business REST API):
+2. **Job Service** (Pure Business REST API & NATS Publisher):
    ```bash
-   cd backend/src
-   go run cmd/job-service/main.go
+   cd backend/services
+   go run ./cmd/job-service
    ```
-3. **Processor Service** (Worker Daemon):
+3. **Processor Service** (Worker Daemon & Stage 3 Inspector):
    ```bash
-   cd backend/src
+   cd backend/services
    go run ./cmd/processor-service
    ```
 

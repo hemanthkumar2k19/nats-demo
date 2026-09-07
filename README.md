@@ -115,16 +115,10 @@ If using the official `nats` CLI tool, configure user contexts for the `SYS` and
 
 ```bash
 # 1. Admin context for `nats server ...` commands
-nats context add sys-admin \
-  --server localhost:4222 \
-  --user sys_admin \
-  --password "sys_admin_pwd!"
+nats context add sys-admin --server localhost:4222 --user sys_admin --password "sys_admin_pwd!"
 
 # 2. App context for streams, KV buckets, pub/sub
-nats context add local-app \
-  --server localhost:4222 \
-  --user app_user \
-  --password "app_user_pwd!"
+nats context add local-app --server localhost:4222 --user app_user --password "app_user_pwd!"
 ```
 
 Quick CLI test commands:
@@ -140,31 +134,32 @@ nats --context local-app stream ls
 
 Copy the environment configuration template:
 ```bash
-cp backend/src/.env.example backend/src/.env
+cp backend/services/.env.example backend/services/.env
+cp backend/control/.env.example backend/control/.env
 ```
 
 Open three terminal windows to launch the backend services:
 
 **Terminal 1 -- Demo Control Service (UI Gateway & Observability Hub)**:
 ```bash
-cd backend/src
-go run cmd/demo-control-service/main.go
+cd backend/control
+go run ./cmd/demo-control-service
 ```
-*Listening on port `:8080`.*
+*Listening on port `:8080` (Go module: `nats-demo/control`).*
 
-**Terminal 2 -- Job Service (Pure Business REST API)**:
+**Terminal 2 -- Job Service (Pure Business REST API & NATS Publisher)**:
 ```bash
-cd backend/src
-go run cmd/job-service/main.go
+cd backend/services
+go run ./cmd/job-service
 ```
-*Listening on port `:8081`.*
+*Listening on port `:8081` (Go module: `nats-demo/services`).*
 
-**Terminal 3 -- Processor Service (Worker Daemon Pool)**:
+**Terminal 3 -- Processor Service (Worker Daemon Pool & Stage 3 Inspector)**:
 ```bash
-cd backend/src
+cd backend/services
 go run ./cmd/processor-service
 ```
-*Connected to NATS, listening on `jobs.submitted`, `jobs.validate`, and `saga.*`.*
+*Connected to NATS, listening on `jobs.submitted`, `jobs.validate`, and exposing `:8082` processor API.*
 
 ---
 
@@ -188,6 +183,7 @@ Open **http://localhost:5173** in your web browser.
 | **React Dashboard** | `5173` | Interactive demo UI | http://localhost:5173 |
 | **Demo Control Service** | `8080` | Observability gateway & activity stream | http://localhost:8080 |
 | **Job Service** | `8081` | Pure business REST API | http://localhost:8081 |
+| **Processor Service** | `8082` | Stage 3 worker events & direct pause API | http://localhost:8082 |
 | **NATS Server** | `4222` | NATS client protocol | `nats://localhost:4222` |
 | **NATS Monitoring** | `8222` | Internal NATS server statistics | http://localhost:8222 |
 | **NATS Exporter** | `7777` | Prometheus metrics surface | http://localhost:7777/metrics |

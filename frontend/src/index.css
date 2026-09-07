@@ -1353,28 +1353,11 @@ body {
   border-color: rgba(245, 158, 11, 0.5);
 }
 
-/* ==========================================================================
-   Current Demo Setup & NATS Information Styles
-   ========================================================================== */
-.demo-setup-panel {
-  margin-bottom: 1.25rem;
-  border-color: rgba(255, 255, 255, 0.08);
-}
-
-.demo-setup-header {
-  margin-bottom: 0.875rem;
-}
-
 .panel-subtitle {
   display: block;
   font-size: 0.75rem;
   color: var(--text-secondary);
   margin-top: 0.125rem;
-}
-
-.demo-setup-layout {
-  display: flex;
-  flex-direction: column;
 }
 
 .form-row-2col {

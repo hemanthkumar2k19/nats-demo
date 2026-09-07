@@ -5,9 +5,8 @@ import { CapabilityStudio } from './components/CapabilityStudio';
 import { CoreFlowView } from './components/CoreFlow/CoreFlowView';
 import { ObservabilityPanelContainer } from './components/ObservabilityPanelContainer';
 import { JobInspectorPanel } from './components/JobInspectorPanel';
-import { DemoSetupPanel } from './components/DemoSetup/DemoSetupPanel';
 import { ObservabilityPanel } from './components/ObservabilityPanel';
-import { InfoPopover } from './components/DemoSetup/InfoPopover';
+import { InfoPopover } from './components/InfoPopover';
 import { NATS_COMPONENTS_INFO } from './content/natsInfo';
 import { 
   Job, 
@@ -342,16 +341,6 @@ export const App: React.FC = () => {
 
       {activeView === 'studio' ? (
         <>
-          {/* Current Demo Setup & NATS Information Topology */}
-          <DemoSetupPanel
-            services={services}
-            jetstreamInfo={jetstreamInfo}
-            consumerStatus={consumerStatus}
-            dlqStatus={dlqStatus}
-            queueGroupStatus={queueGroupStatus}
-            onShowInfo={setActiveInfoKey}
-          />
-
           <main className="dashboard-grid">
             {/* Left Column: NATS CAPABILITY STUDIO */}
             <div className="left-column">

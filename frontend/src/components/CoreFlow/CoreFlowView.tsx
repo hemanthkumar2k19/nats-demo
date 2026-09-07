@@ -50,7 +50,7 @@ export const CoreFlowView: React.FC<CoreFlowViewProps> = ({
             NATS Platform Job Lifecycle
           </h3>
           <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            End-to-end trace: Submit Job to NATS JetStream -&gt; Broker persists to JOBS stream -&gt; Processor worker pulls and processes job.
+            End-to-end trace: Publish Message to NATS -&gt; Broker persists/routes message -&gt; Processor worker pulls and processes message.
           </p>
         </div>
 
@@ -63,7 +63,7 @@ export const CoreFlowView: React.FC<CoreFlowViewProps> = ({
             borderRadius: '4px',
             border: '1px solid rgba(59, 130, 246, 0.3)'
           }}>
-            1. Submit Job
+            1. Publish Message
           </span>
           <span style={{ color: 'var(--text-dim)' }}>-&gt;</span>
           <span style={{ 

@@ -21,10 +21,15 @@ nats-demo/
 |   +-- CHANGELOG.md                # Log of repository changes
 |   +-- *.md                # API and component specs
 +-- deploy/                 # Docker Compose and NATS configuration files
-+-- backend/                # Go Backend Service Workspace
-|   +-- src/
-|       +-- cmd/            # Entry points (demo-control-service, job-service, processor-service)
-|       +-- internal/       # Common configurations, jobs, and messaging clients
++-- backend/                # Two Independent Go Backend Modules
+|   +-- services/           # Go Module: nats-demo/services (Business & NATS Go Client)
+|   |   +-- cmd/            # Entry points (job-service, processor-service)
+|   |   +-- internal/       # Business models, store, messaging publisher, saga, telemetry
+|   |   +-- api/http/       # Pure business HTTP REST handlers
+|   +-- control/            # Go Module: nats-demo/control (Demo & Capability Studio)
+|       +-- cmd/            # Entry point (demo-control-service)
+|       +-- internal/       # Activity tracker, $SYS advisory listener
+|       +-- api/http/       # Demo inspection & control HTTP REST handlers
 +-- frontend/               # React SPA Dashboard application
 ```
 
@@ -32,45 +37,45 @@ nats-demo/
 
 ## 3. Service Responsibilities
 
-### Backend Services
-1. **Job Service (`cmd/job-service`)**:
-   - Pure business microservice listening on `:8081`.
-   - Accepts job submissions (`POST /jobs`), validation requests (`POST /jobs/validate`), and job status queries (`GET /jobs`).
-   - Publishes jobs to NATS (`jobs.submitted`).
-   - Injects standard W3C OpenTelemetry trace context into message headers.
-   - Contains zero demo harness code and zero in-memory activity ring buffers.
-2. **Demo Control Service (`cmd/demo-control-service`)**:
-   - Dedicated UI gateway and observability harness listening on `:8080`.
-   - Passively taps NATS lifecycle events (`jobs.>`) to maintain the live activity stream.
-   - Powers the wildcard subject addressing comparison (`Observer`).
-   - Manages ephemeral JetStream replay consumers (`POST /jobs/replay`).
-   - Relays processor state and consumer lab configuration changes over NATS.
-3. **Processor Service (`cmd/processor-service`)**:
-   - Background worker service simulating task execution.
-   - Subscribes to `jobs.submitted` to receive jobs.
-   - Subscribes to `jobs.validate` to answer validation requests.
-   - Publishes lifecycle events (`jobs.received`, `jobs.completed`, `jobs.failed`,
-     `jobs.request.received`, `jobs.reply.sent`, etc.) to track processing.
-   - Dynamically toggles processing state (ON/OFF) via control NATS subjects.
+### Backend Modules & Services
+1. **Module: `nats-demo/services` (`backend/services`)**:
+   - **Job Service (`cmd/job-service`)**:
+     - Pure business microservice listening on `:8081`.
+     - Accepts job submissions (`POST /jobs`), validation requests (`POST /jobs/validate`), and job queries (`GET /jobs`).
+     - Publishes jobs to NATS (`jobs.submitted`).
+     - Injects standard W3C OpenTelemetry trace context into message headers.
+     - Contains zero demo harness code and zero in-memory activity ring buffers.
+   - **Processor Service (`cmd/processor-service`)**:
+     - Background worker daemon simulating task execution, listening on HTTP `:8082`.
+     - Subscribes to `jobs.submitted` to receive jobs via durable pull consumer `job-processor`.
+     - Subscribes to `jobs.validate` to answer synchronous validation requests.
+     - Maintains an in-memory execution event buffer (`GET /processor/events`) and direct pause/resume control (`PUT /processor/state`) on `:8082` for Stage 3 of the **NATS Demo** view.
+2. **Module: `nats-demo/control` (`backend/control`)**:
+   - **Demo Control Service (`cmd/demo-control-service`)**:
+     - Dedicated UI gateway and demo harness listening on `:8080`.
+     - Passively taps NATS lifecycle events (`jobs.>`) to maintain the live activity stream for Capability Studio.
+     - Powers the wildcard subject addressing comparison (`Observer`).
+     - Manages ephemeral JetStream replay consumers (`POST /jobs/replay`).
+     - Manages DLQ administration (`/dlq/*`), burst test publishers, and platform status aggregation.
 
 ### Frontend
 - **React SPA Dashboard (`frontend`)**:
-   - Displays interactive **Current Demo Setup** pairing runtime topology on the left with embedded **Consumer Lab** controls and live metrics on the right.
-   - Accurately visualizes a three-tier architecture: Tier 1 with **React UI** and **Demo Control Service**, Tier 2 with **Job Service** and a wide dual-engine **NATS Server** (side-by-side **Core NATS** and **JetStream** engines), and Tier 3 with **Processor Service** worker pool directly beneath NATS, clearly distinguishing deployed services from internal broker resources (`JOBS Stream`, `JOBS_DLQ Stream`, `job-processor Consumer`, `dlq-inspector Consumer`).
+  - Cleaned of legacy `CURRENT DEMO SETUP` panel to focus attention on live capabilities.
    - Features a **Top-Level View Switcher** in the Header:
      - `Capability Studio`: The comprehensive feature exploration workspace with all NATS capabilities.
      - `Platform Core Flow (Stage 1-2-3)`: A focused 3-column platform lifecycle inspection view:
-       1. **Publisher View**: Message envelope inspector (subject, headers, delivery mode, payload) with rich preset cards and segmented transport switcher.
-       2. **NATS View & CLI Guide**: Live JetStream stream & consumer metrics paired with copyable CLI inspection commands (`nats --context local-app ...`).
-       3. **Processor View**: Business worker execution, domain outcome events, processed message details, and processor pause/resume controls.
+        1. **Publisher View (Stage 1 - Publish Message)**: JetStream message publisher targeting stream `JOBS` on subject `jobs.submitted`, with custom identity headers (`Nats-Msg-Id`, `X-Source`, `Content-Type`), custom key-value headers builder, JSON payload editor, and live wire envelope inspector.
+        2. **NATS View & CLI Guide**: Live JetStream stream & consumer metrics paired with copyable CLI inspection commands (`nats --context local-app ...`).
+        3. **Processor View**: Direct connection to `processor-service` (:8082) displaying real-time execution log (`[PULLED]`, `[PROCESSING]`, `[COMPLETED]`, `[ACK SENT]`) and direct pause/resume toggle without broker telemetry pollution.
    - Features the **NATS Capability Studio** (`CapabilityStudio.tsx`) unifying all demo action triggers into segmented tabs:
      1. `Pub/Sub & Stream`: Standard job submissions with instant switch to JetStream deduplication test bench.
      2. `Delayed & Retry`: Dedicated test lab for NAK with Delay, AckWait missing ACK timeout, and Application Scheduled Delivery.
      3. `Queue Groups`: Core NATS server-side load balancing and worker distribution without JetStream.
-     4. `Request / Reply`: Synchronous RPC validation testing and timeout simulation.
-     5. `Dead Letter Queue`: Poison message failure routing and DLQ message inspection.
-     6. `Stream Replay`: Historical time-window and sequence rewind controls.
-     7. `Saga Orchestration`: Interactive 2-Operation distributed transaction workflow (`Reserve Inventory` -> `Process Payment` -> `Completed`) with automated or step-by-step compensating rollback (`Compensate: Release Inventory`) purely over NATS events.
+     4. `Consumer Lab`: Interactive JetStream pull consumer tuning (concurrency, competing workers, AckWait, MaxDeliver).
+     5. `Request / Reply`: Synchronous RPC validation testing and timeout simulation.
+     6. `Dead Letter Queue`: Poison message failure routing and DLQ message inspection.
+     7. `Stream Replay`: Historical time-window and sequence rewind controls.
+     8. `Saga Orchestration`: Interactive 2-Operation distributed transaction workflow (`Reserve Inventory` -> `Process Payment` -> `Completed`) with automated or step-by-step compensating rollback (`Compensate: Release Inventory`) purely over NATS events.
    - Features the **Observability Panel Container** (`ObservabilityPanelContainer.tsx`) with a top-level switcher between `Live Activity Log` and `Subject Addressing & Wildcards`.
    - Features the **Activity Log Message Classification Switcher** (`ActivityPanel.tsx`): 3-way top-bar toggle between:
      - `All Stream`: Consolidated view of all messages and telemetry events.
@@ -79,7 +84,7 @@ nats-demo/
    - Explanatory **Activity Legend Banner**: Highlighting the distinction between real NATS Messages (`jobs.submitted`, `jobs.queue`) and internal platform observability telemetry.
    - Features the **Modal Job Inspector** (`JobInspectorPanel.tsx`) opening directly as a focused pop-up overlay upon clicking any row in the Activity Log, with event display limits (15, 30, 50, all) keeping the view clean and compact.
    - Contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
-   - **Collapsible Dashboard Panels**: **Current Demo Setup**, **Activity Log**, and **Observability Setup (LGTM Architecture)** panels feature top-to-down collapsibility with default collapsed states on initial load, allowing developers to focus on capability testing and selectively expand panels on intent.
+   - **Collapsible Dashboard Panels**: **Activity Log** and **Observability Setup (LGTM Architecture)** panels feature top-to-down collapsibility with default collapsed states on initial load, allowing developers to focus on capability testing and selectively expand panels on intent.
 
 ---
 

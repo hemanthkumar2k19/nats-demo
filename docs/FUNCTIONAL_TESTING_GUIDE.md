@@ -13,13 +13,13 @@ Open terminal windows to launch the demo components:
 docker compose -f deploy/docker-compose.yaml up -d
 
 # Terminal 1: Demo Control Service (UI Gateway, Activity Taps, Replay & Consumer Control)
-cd backend/src && go run cmd/demo-control-service/main.go
+cd backend/control && go run cmd/demo-control-service/main.go
 
 # Terminal 2: Job Service (Pure Business REST API, Publisher, Trace Context Injection)
-cd backend/src && go run cmd/job-service/main.go
+cd backend/services && go run cmd/job-service/main.go
 
 # Terminal 3: Processor Service (Consumers, Workers, Request/Reply Responder)
-cd backend/src && go run ./cmd/processor-service
+cd backend/services && go run ./cmd/processor-service
 
 # Terminal 4: Demonstration UI (React SPA)
 cd frontend && npm run dev
@@ -75,7 +75,7 @@ NATS CONNECTED (Port 4222)
    - Click **Submit Job**.
 
 #### What to Observe:
-* **Current Demo Setup Topology**: The `JOBS Stream` card updates its message counter.
+* **Platform Status & Stream Metrics**: The `JOBS` stream metrics update with the latest message counter.
 * **Activity Log**:
   - `PUBLISHED` with Mode: `JETSTREAM` and a global stream sequence (e.g. `#1`, `#2`).
   - `STORED`: Confirms message stored in `JOBS` stream.
@@ -99,20 +99,18 @@ NATS CONNECTED (Port 4222)
 #### Steps:
 1. In **Platform Status** bar at the top, find **Processing: ON**.
 2. Click **[ Turn OFF ]**.
-3. Observe **CURRENT DEMO SETUP** topology:
-   - The connector between Consumer and Processor turns amber with badge: `[ PAUSED ]`.
-   - The worker nodes transition to `Paused` status.
+3. Observe in **Platform Status** and the **Platform Core Flow** (Stage 3 Processor view) that the processor state transitions to `OFF` (Paused).
 4. **Submit a Core NATS Job**:
    - Select **Core NATS (Transient)** and click **Submit Job**.
    - **Observation**: Activity log logs `NO CONSUMER` or message is lost. Core NATS has nowhere to buffer it.
 5. **Submit a JetStream Job**:
    - Select **JetStream (Durable)** and click **Submit Job**.
    - **Observation**: Activity log logs `STORED` (e.g. `#3`).
-   - In **Consumer Status** (inside Consumer Lab), notice **Pending Messages** increments to `1` (or more).
+   - In **Consumer Status** (inside Consumer Lab tab), notice **Pending Messages** increments to `1` (or more).
 6. **Resume Processing**:
    - In Platform Status, click **[ Turn ON ]**.
 7. **Observation**:
-   - The topology connector immediately lights up green `---> v`.
+   - The processor resumes immediately.
    - The pending JetStream message is instantly pulled, processed, and marked `COMPLETED` and `ACKED`!
    - **Pending Messages** drops back to `0`.
 
@@ -152,19 +150,12 @@ NATS CONNECTED (Port 4222)
 * Demonstrates load distribution across competing workers without message duplication.
 
 #### Steps:
-1. In **CURRENT DEMO SETUP** -> **Consumer Lab** (right side):
+1. In **Capability Studio** -> **Consumer Lab** tab:
    - Set **Workers**: `2 Workers (Competing)`.
    - Click **Apply Configuration**.
-2. Observe **Demo Topology** (left side):
-   - The single shared `Consumer` branches into two distinct worker cards side-by-side: `processor-1` and `processor-2` with a `COMPETING` badge:
-     ```text
-                  [ Consumer: job-processor ]
-                               |
-                +--------------+--------------+
-                |          COMPETING          |
-                v                             v
-      [ processor-1: ACTIVE ]       [ processor-2: ACTIVE ]
-     ```
+2. Observe **Consumer Metrics & Status**:
+   - The active pull workers count updates to `2 Competing Workers`.
+   - Both worker routines pull concurrently from the same durable pull consumer `job-processor`.
 3. Submit 4 jobs in rapid succession:
    - Click **Submit Job** 4 times.
 4. Filter **Activity Log**:

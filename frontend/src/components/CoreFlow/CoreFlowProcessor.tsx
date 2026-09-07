@@ -1,106 +1,88 @@
-import React, { useMemo, useState } from 'react';
-import { Activity, ConsumerStatus, JetStreamInfo } from '../../api/demoApi';
+import React, { useEffect, useState } from 'react';
+import {
+  Activity,
+  ConsumerStatus,
+  JetStreamInfo,
+  ProcessorDirectEvent,
+  ProcessorDirectStatus,
+  clearProcessorDirectEvents,
+  getProcessorDirectEvents,
+  getProcessorDirectStatus,
+  updateProcessorDirectState,
+} from '../../api/demoApi';
 
 export interface CoreFlowProcessorProps {
-  activities: Activity[];
-  isProcessing: boolean;
-  onToggleProcessor: (enabled: boolean) => Promise<void>;
-  onClearActivity: () => void;
-  onSelectJob: (jobId: string) => void;
+  activities?: Activity[];
+  isProcessing?: boolean;
+  onToggleProcessor?: (enabled: boolean) => Promise<void>;
+  onClearActivity?: () => void;
+  onSelectJob?: (jobId: string) => void;
   onShowInfo?: (key: string) => void;
   consumerStatus?: ConsumerStatus | null;
   jetstreamInfo?: JetStreamInfo | null;
 }
 
-interface ProcessorLogEvent {
-  jobId: string;
-  jobType: string;
-  tag: string;
-  tagColor: string;
-  timestamp: string;
-}
-
 export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
-  activities,
-  isProcessing,
-  onToggleProcessor,
-  onClearActivity,
   onSelectJob,
   onShowInfo,
   consumerStatus,
   jetstreamInfo,
 }) => {
+  const [events, setEvents] = useState<ProcessorDirectEvent[]>([]);
+  const [directStatus, setDirectStatus] = useState<ProcessorDirectStatus | null>(null);
+  const [isProcessing, setIsProcessing] = useState<boolean>(true);
   const [isToggling, setIsToggling] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
 
-  // Extract the 4 processor lifecycle events per message: Pulled -> Processing -> Completed -> ACK Sent
-  const processorEvents = useMemo(() => {
-    const events: ProcessorLogEvent[] = [];
-
-    for (const act of activities) {
-      if (!act.job_id) continue;
-
-      const rawEvent = (act.event || '').toUpperCase();
-      let tag = '';
-      let tagColor = '';
-
-      if (rawEvent.includes('ACK') && !rawEvent.includes('TIMEOUT')) {
-        // Step 4: ACK Sent
-        tag = '[ACK SENT]';
-        tagColor = '#10B981';
-      } else if (rawEvent.includes('COMPLETED')) {
-        // Step 3: Completed
-        tag = '[COMPLETED]';
-        tagColor = '#34D399';
-      } else if (rawEvent.includes('PROCESSING')) {
-        // Step 2: Processing
-        tag = '[PROCESSING]';
-        tagColor = '#FBBF24';
-      } else if (rawEvent.includes('DELIVER') || rawEvent.includes('RECEIVE')) {
-        // Step 1: Pulled
-        tag = '[PULLED]';
-        tagColor = '#60A5FA';
-      } else if (rawEvent.includes('NAK')) {
-        tag = '[NAK SENT]';
-        tagColor = '#F87171';
-      } else if (rawEvent.includes('FAIL')) {
-        tag = '[FAILED]';
-        tagColor = '#EF4444';
-      } else if (rawEvent.includes('TIMEOUT')) {
-        tag = '[NO ACK / TIMEOUT]';
-        tagColor = '#FB923C';
-      } else {
-        // Skip publisher/broker-only events (e.g. PUBLISHED, STORED, DEDUPLICATED)
-        continue;
-      }
-
-      events.push({
-        jobId: act.job_id,
-        jobType: act.job_type || 'default',
-        tag,
-        tagColor,
-        timestamp: act.timestamp,
-      });
-
-      if (events.length >= 40) break;
+  // Poll direct processor HTTP API on port 8082
+  const refreshDirectData = async () => {
+    try {
+      const [evts, status] = await Promise.all([
+        getProcessorDirectEvents(),
+        getProcessorDirectStatus(),
+      ]);
+      setEvents(evts);
+      setDirectStatus(status);
+      setIsProcessing(status.processing);
+      setIsConnected(true);
+    } catch {
+      setIsConnected(false);
     }
+  };
 
-    return events;
-  }, [activities]);
-
+  useEffect(() => {
+    refreshDirectData();
+    const interval = setInterval(refreshDirectData, 1500);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleToggle = async () => {
     setIsToggling(true);
     try {
-      await onToggleProcessor(!isProcessing);
+      const nextState = !isProcessing;
+      const res = await updateProcessorDirectState(nextState);
+      setIsProcessing(res.processing);
+      await refreshDirectData();
+    } catch (err) {
+      console.error('Failed to toggle processor state:', err);
     } finally {
       setIsToggling(false);
     }
   };
 
+  const handleClear = async () => {
+    try {
+      await clearProcessorDirectEvents();
+      setEvents([]);
+    } catch (err) {
+      console.error('Failed to clear processor events:', err);
+    }
+  };
+
   const consumerType = consumerStatus?.type ? consumerStatus.type.toUpperCase() : 'DURABLE';
-  const consumerName = consumerStatus?.name || 'job-processor';
-  const streamName = jetstreamInfo?.stream || 'JOBS';
-  const workerCount = consumerStatus?.workers || 1;
+  const consumerName = directStatus?.consumer || consumerStatus?.name || 'job-processor';
+  const streamName = directStatus?.stream || jetstreamInfo?.stream || 'JOBS';
+  const workerCount = directStatus?.workers || consumerStatus?.workers || 1;
 
   return (
     <div className="panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -124,9 +106,9 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
           <button
             type="button"
             className="btn-secondary"
-            onClick={onClearActivity}
+            onClick={handleClear}
             style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px' }}
-            title="Clear list"
+            title="Clear processor execution log"
           >
             Clear
           </button>
@@ -143,141 +125,226 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
         </div>
       </div>
 
-      <div style={{ padding: '0.75rem 1rem 0 1rem' }}>
-        <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          Business worker microservice. Consumes domain messages from NATS JetStream, executes business logic, and acknowledges messages.
-        </p>
-
-        {/* 1. Microservice Identity & NATS Consumer Card */}
+      <div style={{ padding: '0.75rem 1rem 0 1rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+        {/* 1. Microservice Plane: processor-service (Application Level) */}
         <div style={{
           background: 'rgba(15, 23, 42, 0.75)',
           border: '1px solid var(--border-color)',
           borderRadius: '6px',
-          padding: '0.6rem 0.75rem',
-          marginBottom: '0.75rem',
+          padding: '0.65rem 0.75rem',
           fontSize: '0.72rem'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
               <span style={{ 
                 width: '7px', 
                 height: '7px', 
                 borderRadius: '50%', 
-                background: isProcessing ? '#10B981' : '#F87171' 
+                background: isConnected ? (isProcessing ? '#10B981' : '#F59E0B') : '#F87171',
+                boxShadow: isConnected && isProcessing ? '0 0 8px rgba(16, 185, 129, 0.8)' : 'none'
               }} />
-              <strong style={{ color: 'var(--text-bright)', fontSize: '0.78rem' }}>
+              <strong style={{ color: 'var(--text-bright)', fontSize: '0.8rem' }}>
                 processor-service
               </strong>
-              <span style={{ color: 'var(--text-dim)', fontSize: '0.68rem' }}>
-                (Go Microservice)
+              <span style={{ 
+                fontSize: '0.62rem', 
+                color: 'var(--text-dim)', 
+                background: 'rgba(255, 255, 255, 0.05)',
+                padding: '1px 5px',
+                borderRadius: '3px',
+                fontFamily: 'var(--font-mono)'
+              }}>
+                :8082
+              </span>
+            </div>
+            <span style={{ 
+              background: isConnected ? (isProcessing ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)') : 'rgba(239, 68, 68, 0.15)', 
+              color: isConnected ? (isProcessing ? '#34D399' : '#FBBF24') : '#F87171', 
+              padding: '1px 7px', 
+              borderRadius: '4px',
+              fontWeight: 600,
+              fontSize: '0.65rem',
+              letterSpacing: '0.04em'
+            }}>
+              {isConnected ? (isProcessing ? 'ACTIVE WORKER' : 'PAUSED WORKER') : 'OFFLINE'}
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem', color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+            <div>
+              Role: <strong style={{ color: 'var(--text-secondary)' }}>Go Worker Daemon</strong>
+            </div>
+            <div>
+              Consuming From: <strong style={{ color: '#60A5FA' }}>job-processor (Pull)</strong>
+            </div>
+            <div>
+              Worker Pool: <strong style={{ color: 'var(--text-secondary)' }}>{workerCount} Worker(s)</strong>
+            </div>
+            <div>
+              HTTP Control Port: <strong style={{ color: '#34D399' }}>:8082 (Direct)</strong>
+            </div>
+          </div>
+
+          {/* Modern Tactile Segmented Toggle Switch */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.4rem 0.6rem',
+            background: isProcessing ? 'rgba(16, 185, 129, 0.05)' : 'rgba(245, 158, 11, 0.05)',
+            border: `1px solid ${isProcessing ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`,
+            borderRadius: '5px',
+            marginTop: '0.5rem',
+            transition: 'all 0.2s ease'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              <span style={{ 
+                width: '6px', 
+                height: '6px', 
+                borderRadius: '50%', 
+                background: isProcessing ? '#10B981' : '#F59E0B',
+                boxShadow: isProcessing ? '0 0 6px rgba(16, 185, 129, 0.8)' : 'none',
+                animation: isProcessing ? 'pulse 1.5s infinite' : 'none'
+              }} />
+              <div>
+                <span style={{ fontSize: '0.74rem', fontWeight: 600, color: isProcessing ? '#34D399' : '#FBBF24' }}>
+                  {isProcessing ? 'Worker Pull Loop: ACTIVE' : 'Worker Pull Loop: PAUSED'}
+                </span>
+                <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>
+                  {isProcessing 
+                    ? 'Pulling and executing messages from NATS JetStream' 
+                    : 'Paused. Inbound messages buffer safely in NATS stream'}
+                </div>
+              </div>
+            </div>
+
+            {/* Segmented Pill Toggle Buttons */}
+            <div style={{
+              display: 'inline-flex',
+              background: '#0D1117',
+              border: '1px solid #30363D',
+              borderRadius: '16px',
+              padding: '2px',
+              gap: '2px'
+            }}>
+              <button
+                type="button"
+                disabled={isToggling || !isConnected}
+                onClick={() => { if (!isProcessing) handleToggle(); }}
+                style={{
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '2px 9px',
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                  cursor: isToggling || !isConnected ? 'not-allowed' : 'pointer',
+                  background: isProcessing ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
+                  color: isProcessing ? '#34D399' : 'var(--text-dim)',
+                  boxShadow: isProcessing ? '0 0 6px rgba(16, 185, 129, 0.25)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                ON
+              </button>
+              <button
+                type="button"
+                disabled={isToggling || !isConnected}
+                onClick={() => { if (isProcessing) handleToggle(); }}
+                style={{
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '2px 9px',
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                  cursor: isToggling || !isConnected ? 'not-allowed' : 'pointer',
+                  background: !isProcessing ? 'rgba(239, 68, 68, 0.25)' : 'transparent',
+                  color: !isProcessing ? '#F87171' : 'var(--text-dim)',
+                  boxShadow: !isProcessing ? '0 0 6px rgba(239, 68, 68, 0.25)' : 'none',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                OFF
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Visual Link showing how processor-service connects to the NATS Consumer */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '0.4rem',
+          fontSize: '0.64rem',
+          color: 'var(--text-dim)',
+          margin: '-0.3rem 0'
+        }}>
+          <span>|</span>
+          <span>Binds via NATS Go Client: <code>CreateOrUpdateConsumer("{consumerName}")</code></span>
+          <span>|</span>
+        </div>
+
+        {/* 2. Broker Plane: NATS JetStream Consumer Object */}
+        <div style={{
+          background: 'rgba(15, 23, 42, 0.75)',
+          border: '1px solid rgba(59, 130, 246, 0.2)',
+          borderRadius: '6px',
+          padding: '0.65rem 0.75rem',
+          fontSize: '0.72rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              <span style={{ 
+                width: '7px', 
+                height: '7px', 
+                borderRadius: '50%', 
+                background: '#60A5FA'
+              }} />
+              <strong style={{ color: 'var(--text-bright)', fontSize: '0.8rem' }}>
+                {consumerName}
+              </strong>
+              <span style={{ 
+                fontSize: '0.62rem', 
+                color: '#60A5FA', 
+                background: 'rgba(59, 130, 246, 0.12)',
+                padding: '1px 5px',
+                borderRadius: '3px',
+                fontFamily: 'var(--font-mono)'
+              }}>
+                NATS Object
               </span>
             </div>
             <span style={{ 
               background: 'rgba(59, 130, 246, 0.15)', 
               color: '#93C5FD', 
-              padding: '1px 6px', 
-              borderRadius: '3px',
+              padding: '1px 7px', 
+              borderRadius: '4px',
               fontWeight: 600,
-              fontSize: '0.65rem'
+              fontSize: '0.65rem',
+              letterSpacing: '0.04em'
             }}>
               {consumerType} CONSUMER
             </span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.25rem', color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-            <div>
-              Consumer Name: <strong style={{ color: 'var(--text-secondary)' }}>{consumerName}</strong>
-            </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem', color: 'var(--text-muted)', fontSize: '0.7rem' }}>
             <div>
               Attached Stream: <strong style={{ color: '#34D399' }}>{streamName}</strong>
             </div>
             <div>
-              Durable on Broker: <strong style={{ color: consumerType === 'DURABLE' ? '#34D399' : '#FBBF24' }}>
-                {consumerType === 'DURABLE' ? 'Yes (Survives Restarts)' : 'No (Ephemeral)'}
-              </strong>
+              Filter Subject: <strong style={{ color: '#60A5FA' }}>jobs.submitted</strong>
             </div>
             <div>
-              Active Workers: <strong style={{ color: 'var(--text-secondary)' }}>{workerCount} Worker(s)</strong>
+              Bound Worker: <strong style={{ color: '#60A5FA' }}>processor-service (Pull Loop)</strong>
+            </div>
+            <div>
+              Broker Durability: <strong style={{ color: '#34D399' }}>Durable (Survives Restarts)</strong>
             </div>
           </div>
         </div>
-
-        {/* 2. Active Status, ON/OFF Toggle & Processing Sign */}
-        <div style={{
-          background: isProcessing ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
-          border: `1px solid ${isProcessing ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-          borderRadius: '6px',
-          padding: '0.6rem 0.75rem',
-          marginBottom: '0.75rem'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <span style={{ 
-                  width: '8px', 
-                  height: '8px', 
-                  borderRadius: '50%', 
-                  background: isProcessing ? '#10B981' : '#F87171',
-                  boxShadow: isProcessing ? '0 0 10px rgba(16, 185, 129, 0.8)' : 'none'
-                }} />
-                <span style={{ fontSize: '0.78rem', fontWeight: 700, color: isProcessing ? '#34D399' : '#F87171' }}>
-                  {isProcessing ? 'STATUS: ACTIVE (ON)' : 'STATUS: PAUSED (OFF)'}
-                </span>
-              </div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                {isProcessing 
-                  ? 'Pull loop actively consuming & executing messages from JOBS stream' 
-                  : 'Pull loop stopped. Messages buffer safely in NATS stream'}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              className={isProcessing ? 'btn-danger' : 'btn-success'}
-              style={{ fontSize: '0.75rem', padding: '4px 12px', borderRadius: '4px', minWidth: '95px' }}
-              onClick={handleToggle}
-              disabled={isToggling}
-            >
-              {isToggling ? 'Updating...' : isProcessing ? 'Pause (OFF)' : 'Resume (ON)'}
-            </button>
-          </div>
-
-          {/* Animated Processing Sign */}
-          <div style={{ marginTop: '0.5rem', paddingTop: '0.4rem', borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
-            {isProcessing ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.7rem' }}>
-                <span style={{ 
-                  display: 'inline-block',
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  background: '#10B981',
-                  animation: 'pulse 1.5s infinite'
-                }} />
-                <span style={{ color: '#34D399', fontWeight: 600 }}>
-                  PROCESSING ENGINE: LISTENING
-                </span>
-                <span style={{ color: 'var(--text-dim)' }}>
-                  - Ready to pull &amp; process incoming messages
-                </span>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.7rem' }}>
-                <span style={{ color: '#F87171', fontWeight: 600 }}>
-                  [PAUSED]
-                </span>
-                <span style={{ color: 'var(--text-dim)' }}>
-                  Processing halted. Messages will accumulate in stream.
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-
-
       </div>
 
-      {/* 3. Simple Processor Activity Log (Clean one-line rows matching Publisher format) */}
+      {/* 3. Direct Processor Activity Log */}
       <div style={{ 
         flex: 1, 
         borderTop: '1px solid var(--border-color)', 
@@ -291,21 +358,31 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
           color: 'var(--text-dim)', 
           textTransform: 'uppercase', 
           letterSpacing: '0.04em',
-          marginBottom: '0.3rem' 
+          marginBottom: '0.3rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
         }}>
-          Processor Activity Log:
+          <span>Processor Activity Log (Direct :8082):</span>
+          {events.length > 0 && (
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.62rem' }}>
+              {events.length} event(s)
+            </span>
+          )}
         </div>
 
-        {processorEvents.length === 0 ? (
+        {events.length === 0 ? (
           <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontStyle: 'italic', padding: '0.25rem 0' }}>
-            No messages processed yet in this session.
+            {isConnected 
+              ? 'No messages processed yet in this session.' 
+              : 'Waiting for processor-service to connect on port 8082...'}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-            {processorEvents.map((item, idx) => (
+            {events.map((item, idx) => (
               <div 
-                key={`${item.jobId}-${item.tag}-${item.timestamp}-${idx}`} 
-                onClick={() => onSelectJob(item.jobId)}
+                key={`${item.job_id}-${item.tag}-${item.timestamp}-${idx}`} 
+                onClick={() => onSelectJob && onSelectJob(item.job_id)}
                 style={{ 
                   display: 'flex', 
                   justifyContent: 'space-between', 
@@ -316,19 +393,19 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   background: 'rgba(255, 255, 255, 0.02)',
                   padding: '2px 6px',
                   borderRadius: '3px',
-                  cursor: 'pointer',
+                  cursor: onSelectJob ? 'pointer' : 'default',
                   transition: 'background 0.15s ease'
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)')}
-                title="Click to inspect full job details in Inspector"
+                title={item.details || 'Processor event'}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <span style={{ color: item.tagColor, fontWeight: 700, minWidth: '85px', display: 'inline-block' }}>
+                  <span style={{ color: item.tag_color || '#60A5FA', fontWeight: 700, minWidth: '85px', display: 'inline-block' }}>
                     {item.tag}
                   </span>
-                  <span style={{ color: 'var(--text-bright)', fontWeight: 600 }}>{item.jobId}</span>
-                  <span style={{ color: 'var(--text-dim)' }}>({item.jobType})</span>
+                  <span style={{ color: 'var(--text-bright)', fontWeight: 600 }}>{item.job_id}</span>
+                  <span style={{ color: 'var(--text-dim)' }}>({item.job_type || 'default'})</span>
                 </div>
                 <span style={{ color: 'var(--text-dim)' }}>{item.timestamp}</span>
               </div>
@@ -348,7 +425,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
-        <span>Processor Service consumes from JOBS stream via pull consumer.</span>
+        <span>Direct telemetry from processor-service (:8082). Zero NATS pollution.</span>
         <span style={{ color: 'var(--text-muted)' }}>Consumer: {consumerName}</span>
       </div>
     </div>

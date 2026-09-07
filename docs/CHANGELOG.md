@@ -4,6 +4,67 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-07
 
+### Changed (NATS Demo View 3-Stage Lifecycle Panel Cleanups)
+- **Stage 1 Wire Envelope Cleanup (`frontend/src/components/CoreFlow/CoreFlowPublisher.tsx`)**:
+  - Removed the redundant `OUTGOING NATS WIRE ENVELOPE` box from Stage 1 to declutter the message publishing interface.
+- **Stage 2 CLI Snippet Simplification (`frontend/src/components/CoreFlow/CoreFlowNatsCli.tsx`)**:
+  - Removed verbose descriptions from under each CLI command, keeping clean, readable Heading + Monospace Command + Copy Button blocks.
+  - Removed the bottom `Tip: Exporting NATS_CONTEXT=local-app...` footer div.
+- **Stage 3 Architectural Plane Separation & Tactile Toggle (`frontend/src/components/CoreFlow/CoreFlowProcessor.tsx`)**:
+  - Decoupled the Application Microservice Plane (`processor-service` on port `:8082`) from the NATS Broker Consumer Plane (`job-processor` server-side durable pull consumer) into two distinct, dedicated cards.
+  - Added explicit binding relationships between the two cards (`Consuming From: job-processor (Pull)`, `Bound Worker: processor-service (Pull Loop)`, and `CreateOrUpdateConsumer("job-processor")` connector).
+  - Clarified the local HTTP diagnostic server on port `:8082` (`HTTP Control Port: :8082 (Direct)`).
+  - Upgraded the worker pull loop toggle from a coarse button/banner into a modern, tactile segmented switch control (`[ ON | OFF ]`) with live status indicators and subtle pulsing glow.
+
+### Changed (Backend Modularization into 2 Go Modules & CURRENT DEMO SETUP Removal)
+- **Frontend Current Demo Setup Removal (`frontend/src/App.tsx`, `index.css`, `frontend/src/components/DemoSetup/`)**:
+  - Completely removed the legacy `CURRENT DEMO SETUP` panel, `DemoTopology.tsx`, and `DemoSummary.tsx` from the frontend, decluttering the `CapabilityStudio` view.
+  - Extracted `InfoPopover.tsx` to `frontend/src/components/InfoPopover.tsx` to maintain full interactive contextual information across remaining cards.
+  - Cleaned up obsolete `.demo-setup-*` CSS rules from `index.css`.
+- **Backend Architecture Separation (`backend/services/`, `backend/control/`)**:
+  - Split backend workspace into two completely decoupled, self-contained Go modules without requiring Go workspaces:
+    1. **Module `nats-demo/services` (`backend/services/`)**: Consolidates `job-service` (port `:8081`) and `processor-service` (port `:8082`), acting purely as business logic holders and direct NATS Go client communicators. Retains Stage 3 NATS Demo inspector endpoints (`/processor/events`, `/processor/status`, `/processor/state`).
+    2. **Module `nats-demo/control` (`backend/control/`)**: Houses `demo-control-service` (port `:8080`), cleanly isolating Capability Studio test triggers, DLQ management, activity ring-buffers, and $SYS advisory monitoring with its own self-contained domain models and client wrappers.
+  - Removed legacy monolithic `backend/src` directory.
+- **Documentation & Run Guides (`README.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/DEVELOPER_GUIDE.md`, `docs/FUNCTIONAL_TESTING_GUIDE.md`)**:
+  - Updated startup commands to reflect new module paths (`cd backend/control`, `cd backend/services`).
+  - Formatted NATS CLI context setup commands in `README.md` as single-line copyable commands.
+  - Added `processor-service` (port `:8082`) to the Endpoints & Ports Reference table in `README.md`.
+  - Updated Capability Studio tab listings in `DEVELOPER_GUIDE.md` and testing verification steps in `FUNCTIONAL_TESTING_GUIDE.md` to remove legacy `CURRENT DEMO SETUP` panel references.
+  - Standardized backend startup commands across all services to use package directory syntax (`go run ./cmd/<service>`) instead of single-file arguments (`go run cmd/<service>/main.go`), ensuring multi-file packages like `processor-service` compile all sibling package files.
+  - Verified 100% synchronization across backend Go modules (`nats-demo/services`, `nats-demo/control`), frontend React API clients (`demoApi.ts`), and technical documentation.
+
+### Fixed (Processor Worker Undefined nakReason Fix)
+- **Undefined `nakReason` Variable in JetStream Processor Worker (`backend/src/cmd/processor-service/worker.go`)**:
+  - Declared and formatted `nakReason` before passing it to `recordWorkerEvent` during `NakWithDelay` handling, resolving the Go compilation error `undefined: nakReason`.
+
+### Added (Job Service & Publisher Wire Reception Logging)
+- **Message Ingestion & NATS Wire Header Logging (`backend/src/api/http/job_handler.go`, `backend/src/internal/messaging/publisher.go`)**:
+  - Added explicit ASCII log lines on `POST /jobs` reception in `job_handler.go` displaying received `job_id`, `msg_id`, `subject`, `delivery_mode`, and `source`.
+  - Added explicit ASCII log lines in `publisher.go` displaying the exact subject, `Nats-Msg-Id`, and transport mode being published to NATS.
+
+### Changed (Pure JetStream Stage 1 & Direct Processor HTTP API)
+- **Pure JetStream in Stage 1 (`frontend/src/components/CoreFlow/CoreFlowPublisher.tsx`)**:
+  - Removed Core NATS transient delivery mode switcher from Stage 1 in the NATS Demo scope.
+  - Form is now exclusively dedicated to NATS JetStream (`JOBS` stream) with `delivery_mode: "JETSTREAM"`.
+  - Removed Core NATS queue group presets (`jobs.queue`) to keep attention focused on stream ingestion.
+- **Direct Processor HTTP API & Zero-NATS Telemetry Decoupling (`backend/src/cmd/processor-service/`, `frontend/src/components/CoreFlow/CoreFlowProcessor.tsx`)**:
+  - Added dedicated lightweight HTTP API server to `processor-service` listening on port `:8082` (`http_server.go`).
+  - Added endpoints `GET /processor/events`, `DELETE /processor/events`, `GET /processor/status`, and `PUT /processor/state`.
+  - Replaced NATS publishing of internal lifecycle events (`jobs.delivered`, `jobs.completed`, `jobs.acked`) with in-memory thread-safe event tracking, keeping the NATS broker 100% pure and free of fake telemetry messages.
+  - Connected Stage 3 Processor View directly to `processor-service` (`:8082`), bypassing `demo-control-service` for the primary NATS demo flow.
+
+### Changed (Stage 1 Generic Message Publisher & Extensible NATS Headers)
+- **Generic NATS Message Publisher (`frontend/src/components/CoreFlow/CoreFlowPublisher.tsx`, `CoreFlowView.tsx`)**:
+  - Transformed Stage 1 from a job-specific form ("Submit Job") into an extensible, generic "Publish Message" screen.
+  - Added user-configurable controls for Target Subject (with presets `jobs.submitted`, `jobs.queue`), Delivery Mode (`JETSTREAM` vs `CORE`), Message Identity (`Nats-Msg-Id`, `X-Source`, `Content-Type`), and payload JSON editor.
+  - Added an extensible Custom Headers builder allowing users to add and manage arbitrary key-value pairs on the NATS message envelope.
+  - Added live Outgoing NATS Wire Envelope inspector reflecting all message parameters before transmission.
+- **Backend Model & Dynamic Publisher Support (`backend/src/internal/jobs/model.go`, `service.go`, `backend/src/internal/messaging/publisher.go`)**:
+  - Extended `Job` struct and `demoApi.ts` with optional envelope fields: `Subject`, `MsgID`, `Source`, `ContentType`, and `Headers` (`map[string]string`).
+  - Updated `PublishJobSubmitted` to dynamically route messages to the specified subject, apply customized headers, set `Nats-Msg-Id`, and forward custom key-value headers to the NATS broker.
+  - Maintained 100% backward compatibility for existing job processing pipelines and durable consumers.
+
 ### Changed (Clean Demo Startup Isolation, On-Demand Capability Prerequisites, & Backend Modularization)
 - **Primary Demo Broker Isolation (`backend/src/internal/natsclient/client.go`)**:
   - Confined initial application bootstrap to ONLY create the primary demo objects: `JOBS` Stream and `job-processor` durable consumer.
