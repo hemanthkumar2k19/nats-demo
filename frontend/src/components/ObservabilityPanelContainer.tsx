@@ -34,57 +34,88 @@ export const ObservabilityPanelContainer: React.FC<ObservabilityPanelContainerPr
   onShowInfo,
 }) => {
   const [obsView, setObsView] = useState<ObservabilityView>('activity');
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
   return (
-    <div className="observability-panel-container">
-      {/* Top Segmented View Switcher */}
-      <div className="obs-switcher-bar">
-        <button
-          type="button"
-          className={`obs-switcher-btn ${obsView === 'activity' ? 'active' : ''}`}
-          onClick={() => setObsView('activity')}
-        >
-          <svg style={{ width: '13px', height: '13px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-          </svg>
-          <span>Live Activity Log</span>
-          <span className="obs-switcher-badge font-mono">{activities.length}</span>
-        </button>
+    <div className={`observability-panel-container panel-collapsible ${isExpanded ? 'expanded' : 'collapsed'}`}>
+      {/* Top Segmented View Switcher & Unified Collapse Button */}
+      <div className="obs-switcher-bar" style={{ alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.35rem', flex: 1, minWidth: 0 }}>
+          <button
+            type="button"
+            className={`obs-switcher-btn ${obsView === 'activity' ? 'active' : ''}`}
+            onClick={() => {
+              setObsView('activity');
+              if (!isExpanded) setIsExpanded(true);
+            }}
+          >
+            <svg style={{ width: '13px', height: '13px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+            </svg>
+            <span>Live Activity Log</span>
+            <span className="obs-switcher-badge font-mono">{activities.length}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`obs-switcher-btn ${obsView === 'addressing' ? 'active' : ''}`}
+            onClick={() => {
+              setObsView('addressing');
+              if (!isExpanded) setIsExpanded(true);
+            }}
+          >
+            <svg style={{ width: '13px', height: '13px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            <span>Subject Addressing & Wildcards</span>
+            <span className="obs-switcher-badge font-mono">{subscriptions.length} Subs</span>
+          </button>
+        </div>
 
         <button
           type="button"
-          className={`obs-switcher-btn ${obsView === 'addressing' ? 'active' : ''}`}
-          onClick={() => setObsView('addressing')}
+          className="collapse-toggle-btn"
+          onClick={() => setIsExpanded(!isExpanded)}
+          aria-expanded={isExpanded}
+          title={isExpanded ? 'Collapse Activity / Addressing Panel' : 'Expand Activity / Addressing Panel'}
+          style={{ height: '32px', margin: '0 2px' }}
         >
-          <svg style={{ width: '13px', height: '13px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          <span>{isExpanded ? 'Collapse' : 'Expand'}</span>
+          <svg
+            className={`collapse-chevron ${isExpanded ? 'open' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
           </svg>
-          <span>Subject Addressing & Wildcards</span>
-          <span className="obs-switcher-badge font-mono">{subscriptions.length} Subs</span>
         </button>
       </div>
 
-      {/* Render Active Observability View */}
-      <div className="obs-content-area">
-        {obsView === 'activity' ? (
-          <ActivityPanel
-            activities={activities}
-            onRefresh={onRefreshActivity}
-            onClearActivity={onClearActivity}
-            isLoading={isLoadingActivity}
-            onSelectJob={onSelectJob}
-            onShowInfo={onShowInfo}
-          />
-        ) : (
-          <AddressingPanel
-            subscriptions={subscriptions}
-            events={addressingEvents}
-            onRefresh={onRefreshAddressing}
-            isLoading={isLoadingAddressing}
-            onShowInfo={onShowInfo}
-          />
-        )}
+      {/* Render Active Observability View inside Collapsible Body */}
+      <div className={`panel-collapsible-body ${isExpanded ? 'open' : 'collapsed'}`}>
+        <div className="obs-content-area">
+          {obsView === 'activity' ? (
+            <ActivityPanel
+              activities={activities}
+              onRefresh={onRefreshActivity}
+              onClearActivity={onClearActivity}
+              isLoading={isLoadingActivity}
+              onSelectJob={onSelectJob}
+              onShowInfo={onShowInfo}
+            />
+          ) : (
+            <AddressingPanel
+              subscriptions={subscriptions}
+              events={addressingEvents}
+              onRefresh={onRefreshAddressing}
+              isLoading={isLoadingAddressing}
+              onShowInfo={onShowInfo}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
 };
+

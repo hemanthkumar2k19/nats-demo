@@ -2,7 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-09-07
+
+### Added (Top-to-Down Collapsible Dashboard Panels)
+- **Collapsible Panel System (`frontend/src/index.css`)**:
+  - Added `.panel-collapsible`, `.panel-header-interactive`, `.collapse-toggle-btn`, `.collapse-chevron`, and `.panel-collapsible-body` CSS classes.
+  - Implemented top-to-down transitions with max-height and opacity easing.
+- **Current Demo Setup Panel (`frontend/src/components/DemoSetup/DemoSetupPanel.tsx`)**:
+  - Made the panel collapsible top-to-down with default `collapsed` state (`isExpanded: false`).
+  - Added interactive header with `Expand / Collapse` button and rotating chevron indicator.
+- **Unified Activity Log & Subject Addressing Collapsible Container (`frontend/src/components/ObservabilityPanelContainer.tsx`, `frontend/src/components/ActivityPanel.tsx`)**:
+  - Implemented a unified top-to-down collapsible container on `ObservabilityPanelContainer` with default `collapsed` state (`isExpanded: false`).
+  - Added a single `Expand / Collapse` button in the segmented switcher bar controlling both **Live Activity Log** and **Subject Addressing & Wildcards** views.
+  - Preserved live counts for both tabs (`{activities.length}` events and `{subscriptions.length}` subs) in the switcher bar when collapsed.
+  - Automatically expands the selected view if a user clicks either tab while collapsed.
+- **Observability Setup Panel (`frontend/src/components/ObservabilityPanel.tsx`)**:
+  - Made the LGTM architecture panel collapsible top-to-down with default `collapsed` state (`isExpanded: false`).
+  - Added `Expand / Collapse` toggle button in the header action bar alongside telemetry links.
+- **Documentation (`docs/DEVELOPER_GUIDE.md`, `docs/CHANGELOG.md`)**:
+  - Updated developer guide with details on collapsible panel states and behavior.
+
+### Removed (NATS UI Web Management Console Removal)
+- **Docker Compose Orchestration (`deploy/docker-compose.yaml`, `deploy/nats/nats.conf`)**:
+  - Removed `nats-ui` service container (`ghcr.io/gastbob40/nats-ui:latest`) and host port mapping `3001:3000`.
+  - Removed WebSocket port `9222:9222` mapping from `nats` service and removed `websocket` block from `nats.conf`.
+- **Frontend Components (`frontend/src/components/Header.tsx`, `frontend/src/components/ObservabilityPanel.tsx`, `frontend/src/components/DemoSetup/DemoTopology.tsx`)**:
+  - Removed `NATS UI (:3001)` quick-launch button from top application Header.
+  - Removed `NATS UI (:3001)` quick-launch button from Observability Panel header action bar.
+  - Reverted NATS Server port tag in Demo Topology from `Port 4222 / 8222 / 9222 (WS)` to `Port 4222 / 8222`.
+- **Documentation (`README.md`, `docs/DEVELOPER_GUIDE.md`, `docs/DEPLOYMENT_GUIDE.md`)**:
+  - Removed references, verification steps, and capability table rows for NATS UI and port 3001.
+
+
+
 ## 2026-09-04
+
+
+### Added (NATS UI Web Management Console Integration)
+- **Docker Compose Orchestration (`deploy/docker-compose.yaml`)**:
+  - Integrated `nats-ui` container using image `ghcr.io/gastbob40/nats-ui:latest`.
+  - Configured host port mapping `3001:3000` to prevent port collisions with Grafana (`:3000`).
+  - Attached to network `nats-net` with dependency on the core `nats` broker.
+- **Frontend Dashboard Integration (`frontend/src/components/ObservabilityPanel.tsx`, `frontend/src/components/Header.tsx`, `frontend/src/components/DemoSetup/DemoTopology.tsx`)**:
+  - Added dedicated quick-launch link button `NATS UI (:3001) ->` in the Observability Panel header action bar.
+  - Added direct navigation link for `NATS UI (:3001)` in the top application header bar.
+  - Updated NATS Server port tag in Demo Topology to indicate active WebSocket port `Port 4222 / 8222 / 9222 (WS)`.
+- **Documentation (`docs/DEPLOYMENT_GUIDE.md`, `docs/DEVELOPER_GUIDE.md`, `README.md`)**:
+  - Documented `nats-ui` service configuration, image, and port binding (`:3001`).
+  - Added NATS UI availability and verification steps in the deployment and quickstart guides.
 
 ### Added (Comprehensive JetStream Deliver and Ack Policies in Consumer Lab)
 - **Backend Domain and Controls (`internal/jobs/model.go`, `cmd/processor-service/main.go`, `api/http/control_handler.go`)**:

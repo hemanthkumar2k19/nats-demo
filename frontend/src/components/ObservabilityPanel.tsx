@@ -1,19 +1,28 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 interface ObservabilityPanelProps {
   onShowInfo: (key: string) => void;
 }
 
 export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowInfo }) => {
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
+
   return (
-    <section className="panel observability-panel">
-      <div className="panel-header" style={{ marginBottom: '1rem' }}>
+    <section className={`panel observability-panel panel-collapsible ${isExpanded ? 'expanded' : 'collapsed'}`}>
+      <div
+        className="panel-header panel-header-interactive"
+        style={{ marginBottom: isExpanded ? '1rem' : 0 }}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
         <div>
           <div className="panel-title" style={{ gap: '0.625rem' }}>
             <span>OBSERVABILITY SETUP (LGTM ARCHITECTURE)</span>
             <button
               className="info-btn"
-              onClick={() => onShowInfo('metrics-observability')}
+              onClick={(e) => {
+                e.stopPropagation();
+                onShowInfo('metrics-observability');
+              }}
               title="Learn about NATS, OpenTelemetry Tracing &amp; Metrics Observability"
             >
               (i)
@@ -24,12 +33,13 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <a
             href="http://localhost:3000/explore?left=%5B%22now-1h%22,%22now%22,%22loki%22,%7B%22expr%22:%22%7Bservice%3D%5C%22nats%5C%22%7D%22%7D%5D"
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-secondary"
+            onClick={(e) => e.stopPropagation()}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', textDecoration: 'none', fontSize: '0.75rem', borderColor: 'rgba(245, 158, 11, 0.4)', color: '#FBBF24' }}
             title="Explore NATS Server Logs in Loki"
           >
@@ -41,6 +51,7 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-secondary"
+            onClick={(e) => e.stopPropagation()}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', textDecoration: 'none', fontSize: '0.75rem', borderColor: 'rgba(217, 70, 239, 0.4)', color: '#F0ABFC' }}
             title="Explore NATS Operational Events & Advisories in Loki"
           >
@@ -52,6 +63,7 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-secondary"
+            onClick={(e) => e.stopPropagation()}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', textDecoration: 'none', fontSize: '0.75rem', borderColor: 'rgba(6, 182, 212, 0.4)', color: '#38BDF8' }}
             title="Explore NATS Exporter Infrastructure Metrics in Prometheus"
           >
@@ -63,6 +75,7 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-secondary"
+            onClick={(e) => e.stopPropagation()}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', textDecoration: 'none', fontSize: '0.75rem', borderColor: 'rgba(129, 140, 248, 0.4)', color: '#818cf8' }}
             title="Explore Application Distributed Traces in Tempo"
           >
@@ -74,17 +87,40 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
             target="_blank"
             rel="noopener noreferrer"
             className="btn-open-grafana"
+            onClick={(e) => e.stopPropagation()}
             style={{ fontSize: '0.75rem', padding: '0.4rem 0.75rem' }}
             title="Open Grafana Dashboard in a new window"
           >
             <span>Open Grafana</span>
             <span style={{ fontSize: '0.75rem' }}>-&gt;</span>
           </a>
+          <button
+            type="button"
+            className="collapse-toggle-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsExpanded(!isExpanded);
+            }}
+            aria-expanded={isExpanded}
+            title={isExpanded ? 'Collapse Observability Setup' : 'Expand Observability Setup'}
+          >
+            <span>{isExpanded ? 'Collapse' : 'Expand'}</span>
+            <svg
+              className={`collapse-chevron ${isExpanded ? 'open' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
         </div>
       </div>
 
-      {/* 3-Column T-Shape Architecture with Inner LGTM Boxes */}
-      <div className="obs-architecture-container">
+      <div className={`panel-collapsible-body ${isExpanded ? 'open' : 'collapsed'}`}>
+        {/* 3-Column T-Shape Architecture with Inner LGTM Boxes */}
+        <div className="obs-architecture-container">
+
         {/* Column 1: Source - Application Layer */}
         <div className="obs-source-group">
           <div className="obs-group-title">SOURCE: APP SERVICES</div>
@@ -351,6 +387,9 @@ export const ObservabilityPanel: React.FC<ObservabilityPanelProps> = ({ onShowIn
           </div>
         </div>
       </div>
+      </div>
     </section>
+
   );
 };
+

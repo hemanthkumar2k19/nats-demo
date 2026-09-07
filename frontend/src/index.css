@@ -196,6 +196,78 @@ body {
   gap: 0.5rem;
 }
 
+/* Collapsible Panel Styles */
+.panel-collapsible {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, padding 0.25s ease;
+}
+
+.panel-collapsible.collapsed {
+  padding-bottom: 1rem;
+}
+
+.panel-header-interactive {
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.15s ease;
+}
+
+.panel-header-interactive:hover {
+  opacity: 0.95;
+}
+
+.panel-collapsible.collapsed .panel-header {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.collapse-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.collapse-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text-primary);
+}
+
+.collapse-chevron {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapse-chevron.open {
+  transform: rotate(180deg);
+}
+
+.panel-collapsible-body {
+  overflow: hidden;
+  transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, margin 0.25s ease;
+  max-height: 3500px;
+  opacity: 1;
+}
+
+.panel-collapsible-body.collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  pointer-events: none;
+}
+
+
 /* Status Panel */
 .status-list {
   display: flex;

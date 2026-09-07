@@ -31,6 +31,17 @@ export const Header: React.FC<HeaderProps> = ({ systemOk = true, natsConnected =
         <div className="mono-cell" style={{ letterSpacing: '0.05em' }}>
           {time}
         </div>
+        <a
+          href="http://localhost:3000"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mono-cell"
+          style={{ textDecoration: 'none', color: '#C084FC', background: 'rgba(192, 132, 252, 0.08)', border: '1px solid rgba(192, 132, 252, 0.25)', borderRadius: '4px', padding: '0.2rem 0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+          title="Open Grafana Dashboard"
+        >
+          <span>Grafana (:3000)</span>
+          <span style={{ fontSize: '0.75rem' }}>-&gt;</span>
+        </a>
         {isConnected ? (
           <div className="system-status-indicator">
             <span style={{ fontWeight: 'bold' }}>*</span>

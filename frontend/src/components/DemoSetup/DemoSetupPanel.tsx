@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ServiceStatus, JetStreamInfo, ConsumerStatus, DLQStatus, QueueGroupStatus } from '../../api/demoApi';
 import { DemoTopology } from './DemoTopology';
 
@@ -19,9 +19,14 @@ export const DemoSetupPanel: React.FC<DemoSetupPanelProps> = ({
   queueGroupStatus,
   onShowInfo,
 }) => {
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
+
   return (
-    <section className="panel demo-setup-panel">
-      <div className="panel-header demo-setup-header">
+    <section className={`panel demo-setup-panel panel-collapsible ${isExpanded ? 'expanded' : 'collapsed'}`}>
+      <div
+        className="panel-header demo-setup-header panel-header-interactive"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
         <div>
           <h2 className="panel-title">
             <svg style={{ width: '14px', height: '14px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -33,16 +38,42 @@ export const DemoSetupPanel: React.FC<DemoSetupPanelProps> = ({
             Current runtime topology and contextual NATS information - click (i) on any component to explore concepts
           </span>
         </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button
+            type="button"
+            className="collapse-toggle-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsExpanded(!isExpanded);
+            }}
+            aria-expanded={isExpanded}
+            title={isExpanded ? 'Collapse Current Demo Setup' : 'Expand Current Demo Setup'}
+          >
+            <span>{isExpanded ? 'Collapse' : 'Expand'}</span>
+            <svg
+              className={`collapse-chevron ${isExpanded ? 'open' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <DemoTopology
-        services={services}
-        jetstreamInfo={jetstreamInfo}
-        consumerStatus={consumerStatus}
-        dlqStatus={dlqStatus}
-        queueGroupStatus={queueGroupStatus}
-        onSelectInfo={onShowInfo}
-      />
+      <div className={`panel-collapsible-body ${isExpanded ? 'open' : 'collapsed'}`}>
+        <DemoTopology
+          services={services}
+          jetstreamInfo={jetstreamInfo}
+          consumerStatus={consumerStatus}
+          dlqStatus={dlqStatus}
+          queueGroupStatus={queueGroupStatus}
+          onSelectInfo={onShowInfo}
+        />
+      </div>
     </section>
   );
 };
+

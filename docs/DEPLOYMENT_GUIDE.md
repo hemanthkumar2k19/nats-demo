@@ -9,7 +9,7 @@ This guide describes how to deploy, configure, run, and verify the services of t
 The workspace relies on the following runtime components:
 - **Go Runtime**: Version 1.22+ to run the backend services.
 - **NodeJS & npm/pnpm**: To build and serve the React dashboard.
-- **Docker & Docker Compose**: To orchestrate the NATS Broker and NATS UI dashboard locally.
+- **Docker & Docker Compose**: To orchestrate the NATS Broker and Observability Stack locally.
 
 ---
 

@@ -73,6 +73,7 @@ nats-demo/
    - Explanatory **Activity Legend Banner**: Highlighting the distinction between real NATS Messages (`jobs.submitted`, `jobs.queue`) and internal platform observability telemetry.
    - Features the **Modal Job Inspector** (`JobInspectorPanel.tsx`) opening directly as a focused pop-up overlay upon clicking any row in the Activity Log, with event display limits (15, 30, 50, all) keeping the view clean and compact.
    - Contextual **NATS Information** popovers via `(i)` indicators across all sections explaining core NATS concepts, usage, and trivia.
+   - **Collapsible Dashboard Panels**: **Current Demo Setup**, **Activity Log**, and **Observability Setup (LGTM Architecture)** panels feature top-to-down collapsibility with default collapsed states on initial load, allowing developers to focus on capability testing and selectively expand panels on intent.
 
 ---
 
@@ -99,6 +100,7 @@ nats-demo/
 | **Dead Letter Queue (DLQ)** | Demonstrates application-level DLQ routing on JetStream: messages failing repeatedly are NAKed until reaching `max_delivery_attempts` (default: 3), then routed to stream `JOBS_DLQ` (`jobs.dlq`), emitting `DLQ_PUBLISHED` and inspected by consumer `dlq-inspector`. |
 
 ---
+
 
 ## 5. Important Implementation Concepts
 

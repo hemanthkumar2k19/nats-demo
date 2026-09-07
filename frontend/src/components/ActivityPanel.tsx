@@ -236,6 +236,9 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
             </svg>
             Activity Log
           </h2>
+          <span className="font-mono" style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            ({activities.length} events)
+          </span>
           {onShowInfo && (
             <button
               type="button"
@@ -247,7 +250,7 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
             </button>
           )}
         </div>
-        <div style={{ display: 'flex', gap: '0.35rem' }}>
+        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
           {activities.length > 0 && (
             <button
               className="btn btn-secondary"
@@ -258,9 +261,9 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
               Clear Log
             </button>
           )}
-          <button 
-            className="btn btn-secondary" 
-            onClick={onRefresh} 
+          <button
+            className="btn btn-secondary"
+            onClick={onRefresh}
             disabled={isLoading}
             style={{ padding: '0.125rem 0.5rem', fontSize: '0.75rem' }}
           >
