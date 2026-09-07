@@ -51,7 +51,7 @@ func (a *App) Init() error {
 		}
 	}
 
-	log.Printf("[Init] Loaded configuration: NATS_URL=%s, PORT=%s", a.cfg.NATSURL, a.port)
+	log.Printf("[Init] Loaded configuration: NATS_URL=%s, USER=%s, PORT=%s", a.cfg.NATSURL, a.cfg.NATSUser, a.port)
 
 	// Initialize OpenTelemetry metric and trace pipeline for job-service
 	otelShutdown, err := telemetry.Init(context.Background(), "job-service", a.cfg.OtelEndpoint, a.cfg.OtelInsecure)
@@ -60,10 +60,11 @@ func (a *App) Init() error {
 	}
 	a.otelShutdown = otelShutdown
 
-	client, err := natsclient.Connect(a.cfg.NATSURL)
+	client, err := natsclient.ConnectWithAuth(a.cfg.NATSURL, a.cfg.NATSUser, a.cfg.NATSPassword)
 	if err != nil {
 		return fmt.Errorf("failed to connect to NATS: %w", err)
 	}
+
 	a.natsClient = client
 	log.Println("[Init] Connected to NATS client")
 

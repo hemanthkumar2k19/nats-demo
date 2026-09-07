@@ -19,7 +19,7 @@ cd backend/src && go run cmd/demo-control-service/main.go
 cd backend/src && go run cmd/job-service/main.go
 
 # Terminal 3: Processor Service (Consumers, Workers, Request/Reply Responder)
-cd backend/src && go run cmd/processor-service/main.go
+cd backend/src && go run ./cmd/processor-service
 
 # Terminal 4: Demonstration UI (React SPA)
 cd frontend && npm run dev
@@ -445,7 +445,7 @@ NATS CONNECTED (Port 4222)
 | Symptom | Likely Cause | Solution |
 | :--- | :--- | :--- |
 | NATS Disconnected in UI | NATS Server not running | Ensure NATS is running on `localhost:4222` (`nats-server -js`). |
-| Processor Offline in UI | `processor-service` not started | Run `go run ./src/cmd/processor-service/main.go`. |
+| Processor Offline in UI | `processor-service` not started | Run `go run ./cmd/processor-service`. |
 | JetStream Jobs Not Processing | Processing is toggled OFF | Click `[ Turn ON ]` in Platform Status. |
 | Replay yields no messages | No JetStream messages in stream | Submit at least 1 JetStream job before triggering Replay. |
 | Duplicate job processed anyway | Outside 2-minute dedup window | JetStream deduplication window is 2 minutes; submit duplicate within 120 seconds. |

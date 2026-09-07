@@ -4,6 +4,111 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-07
 
+### Changed (Clean Demo Startup Isolation, On-Demand Capability Prerequisites, & Backend Modularization)
+- **Primary Demo Broker Isolation (`backend/src/internal/natsclient/client.go`)**:
+  - Confined initial application bootstrap to ONLY create the primary demo objects: `JOBS` Stream and `job-processor` durable consumer.
+  - Eliminated automatic startup creation of auxiliary streams (`JOBS_DLQ`) and secondary consumers (`processor-durable`), ensuring CLI commands (`nats stream ls`, `nats consumer ls JOBS`) remain completely clean and uncluttered during the primary NATS Demo presentation.
+- **Capability Studio Prerequisites & Cleanup (`frontend/src/components/DLQPanel.tsx`, `frontend/src/api/demoApi.ts`, `backend/src/api/http/control_handler.go`, `backend/src/api/http/routes.go`)**:
+  - Introduced explicit **`[Setup Prerequisites]`** and **`[Cleanup]`** action buttons inside the DLQ Capability Studio panel.
+  - Added REST endpoints `POST /dlq/setup` (calls `EnsureDLQStream()`) and `POST /dlq/cleanup` (calls `DeleteDLQStream()`).
+  - Added visual readiness badge (`READY (JOBS_DLQ ACTIVE)` vs `NOT PROVISIONED`) and graceful fallback when secondary streams are not yet provisioned.
+- **Processor-Service Backend Modularization (`backend/src/cmd/processor-service/`)**:
+  - Deconstructed monolithic 1543-line `main.go` into clean, decoupled, single-responsibility files (all under `package main`):
+    1. `main.go`: Application lifecycle, configuration loading, component instantiation, and graceful shutdown signal management (~215 lines).
+    2. `worker.go`: Core message processing logic, JetStream pull consumer loops (`Fetch(1)`), Core NATS message handling, telemetry tracing, failure simulation, and ACK/NAK/TERM/DLQ routing (~440 lines).
+    3. `validation.go`: NATS Request/Reply pattern handler on `jobs.validate` (~130 lines).
+    4. `queue_group.go`: Core NATS Queue Group competing consumer implementation on `jobs.queue` / `job-workers` (~100 lines).
+    5. `control.go`: Runtime demo instrumentation responders (`status.processor`, `consumer.config.set`, `consumer.reset`, `processor.state.set`, `queue.config.set`, `queue.status`, `queue.reset`) (~240 lines).
+  - Preserved 100% backward compatibility, symbol availability, and runtime API contracts while making backend code immediately readable and presentable.
+- **Documentation & Run Command Updates (`README.md`, `docs/DEPLOYMENT_GUIDE.md`, `docs/FUNCTIONAL_TESTING_GUIDE.md`, `docs/DEVELOPER_GUIDE.md`)**:
+  - Updated service execution commands to package mode (`go run ./cmd/processor-service`) so that all modular files (`main.go`, `worker.go`, `validation.go`, `queue_group.go`, `control.go`) compile together seamlessly.
+
+### Changed (NATS View & CLI: Setup Phase Context & Context-Free Commands)
+- **Terminal Setup Phase Snippets (`frontend/src/components/CoreFlow/CoreFlowNatsCli.tsx`)**:
+  - Added dedicated setup phase commands to configure terminal context: `export NATS_CONTEXT=local-app` (app developer scope) and `export NATS_CONTEXT=sys-admin` (sys admin scope).
+- **Stream & Consumer Operational Commands (`frontend/src/components/CoreFlow/CoreFlowNatsCli.tsx`)**:
+  - Replaced legacy commands having inline `--context` flags with clean, handy operational commands:
+    1. **View Streams**: `nats stream ls` and `nats stream info JOBS`.
+    2. **View Messages in Streams - Last 5**: `nats stream view JOBS 5`.
+    3. **View Consumers**: `nats consumer ls JOBS`.
+    4. **View Consumer Message Processing Data**: `nats consumer info JOBS job-processor`.
+    5. **View Consumer Processing Report**: `nats consumer report JOBS`.
+- **UI Simplification (`frontend/src/components/CoreFlow/CoreFlowNatsCli.tsx`)**:
+  - Removed the in-card live telemetry banner (Stream msgs, Consumer status, In-Flight pending) and duplicate instruction sentence to eliminate visual confusion and keep the panel focused exclusively on the CLI commands.
+
+### Changed (Centered NATS Demo View on Submit Job & Processing)
+- **Submit Job Focus (`frontend/src/components/CoreFlow/CoreFlowPublisher.tsx`)**:
+  - Centered Stage 1 on **Submit Job** as the single domain use case, removing domain presets (`invoice-processing`, `order-settlement`, `customer-onboarding`).
+  - Set default job payload to standard image-processing workload (`{"file": "image-101.jpg"}`) with standard type `image-processing`.
+  - Updated panel title to `Submit Job`, publish button to `Submit Job to NATS JetStream ->`, and activity log to `Job Submission Log:`.
+- **Pipeline Tracker Alignment (`frontend/src/components/CoreFlow/CoreFlowView.tsx`)**:
+  - Aligned the 3-step pipeline banner and subtitle to: `1. Submit Job -> 2. NATS Broker (Stream/Subject) -> 3. Process Job (Worker)`.
+
+### Added (NATS Terminology & Lifecycle Reference: docs/NATS.md)
+- **NATS Reference Guide (`docs/NATS.md`)**:
+  - Created a single reference table covering NATS primitives across: `Word / Term`, `Description`, `Type & Location (Where It Lives: App side / JetStream / Core NATS)`, `Component (Core NATS / JetStream)`, and `Lifecycle (Create / Change Config / Delete)`.
+  - Clarified physical boundaries distinguishing what lives on the application side (Worker processes, client subscriptions), what lives on the broker in Core NATS (subjects, dynamic queue groups), and what lives in JetStream storage (streams, durable/ephemeral consumer cursors, KV, object stores).
+
+### Changed (4-Phase Processor Activity Log & ACK Detection Fix)
+- **Processor Activity Log Formatting (`frontend/src/components/CoreFlow/CoreFlowProcessor.tsx`)**:
+  - Implemented the 4 distinct processor lifecycle events in the Processor Activity Log:
+    1. `[PULLED]`: Message fetched from NATS JetStream stream.
+    2. `[PROCESSING]`: Business logic execution started.
+    3. `[COMPLETED]`: Domain workload completed successfully.
+    4. `[ACK SENT]`: Explicit acknowledgment (`msg.Ack()`) dispatched back to broker.
+  - Formatted each event as a clean, single-line entry with fixed-width tags matching the Publisher Activity Log layout.
+  - Removed the redundant metrics summary strip (`Total Processed`, `ACK`, `NAK`) to keep the panel uncluttered.
+
+### Changed (NATS Demo View Simplification, JetStream-Only Publisher, and Processor Service Inspection)
+- **Top-Level Navigation &amp; Default View (`frontend/src/components/Header.tsx`, `frontend/src/App.tsx`)**:
+  - Reordered view switcher: `NATS Demo` is now positioned on the left and set as the default view; `Capability Studio` is on the right.
+- **Uncluttered NATS Demo Presentation (`frontend/src/App.tsx`)**:
+  - Confined `Current Demo Setup` and `Observability Setup (LGTM Architecture)` panels to only render within the `Capability Studio` view.
+- **JetStream-Only Publisher Simplification (`frontend/src/components/CoreFlow/CoreFlowPublisher.tsx`)**:
+  - Removed Core NATS and Failure Simulation options from the Publisher view, locking the transport to NATS JetStream (`JOBS` stream).
+  - Added a compact `Publisher Activity Log` at the bottom of the panel recording recent outgoing published messages.
+- **Processor Service Microservice &amp; Consumer Details (`frontend/src/components/CoreFlow/CoreFlowProcessor.tsx`, `frontend/src/components/CoreFlow/CoreFlowView.tsx`)**:
+  - Displayed microservice identity (`processor-service`), NATS consumer type (`DURABLE`), consumer name (`job-processor`), and attached stream (`JOBS`).
+  - Added an animated processing status sign (`PROCESSING ENGINE: LISTENING` vs `PAUSED`) and active status toggle.
+  - Displayed processed message logs at the bottom with quick inspection links.
+- **Immediate Worker Pause Enforcement (`backend/src/cmd/processor-service/main.go`)**:
+  - Explicitly cancelled worker loop contexts and called `unsubscribeJetStream()` on pause to prevent any lingering message processing while paused.
+
+### Changed (Core Flow: Publisher UI Design Upgrade & Processor Business View)
+- **Publisher -&gt; Processor Terminology &amp; Flow (`frontend/src/components/CoreFlow/CoreFlowView.tsx`)**:
+  - Renamed Stage 3 from "Consumer View" to "Processor View" to eliminate terminology collision with NATS server-side JetStream consumers (which are inspected in Stage 2).
+  - Updated lifecycle pipeline header to: `1. Publisher -&gt; 2. NATS Broker (Stream/Subject) -&gt; 3. Processor (Worker Execution)`.
+- **Processor View Business Logic POV (`frontend/src/components/CoreFlow/CoreFlowProcessor.tsx`)**:
+  - Replaced the generic activity event log with a business execution feed showing processed message records, domain actions performed, emitted completion events (`jobs.completed`), worker identity, and delivery counts.
+  - Added worker status metrics strip tracking processed jobs, completed (ACK), and retried (NAK).
+  - Maintained `CoreFlowConsumer.tsx` as a backward-compatible wrapper component.
+- **Publisher View Design Overhaul (`frontend/src/components/CoreFlow/CoreFlowPublisher.tsx`)**:
+  - Replaced plain button presets with interactive preset cards with status indicators, badges, and intent descriptions.
+  - Replaced browser radio buttons with a sleek segmented transport switcher (`JetStream (Durable)` vs `Core NATS (Transient)`).
+  - Upgraded envelope inspector to a dark terminal card format and added JSON formatting/reset controls to the payload editor.
+  - Enhanced publish action button with glow effects and active sending feedback.
+
+### Fixed (Frontend Activity Type Mismatch)
+- **Activity Property Access in Job Selection (`frontend/src/App.tsx`)**:
+  - Replaced `latest.type` with `latest.job_type` in `handleSelectJob` fallback logic to match the `Activity` interface definition and backend schema.
+
+### Added (Platform Core Flow & Platform Internal Inspection View)
+- **Top-Level View Switcher (`frontend/src/components/Header.tsx`, `frontend/src/App.tsx`)**:
+  - Added navigation pills in the main application header allowing presenters to toggle between the comprehensive **Capability Studio** and the focused **Platform Core Flow (Stage 1-2-3)**.
+- **Core Flow Container (`frontend/src/components/CoreFlow/CoreFlowView.tsx`)**:
+  - Created a 3-column architecture tracing end-to-end message lifecycle: Publisher View -> NATS Broker/CLI View -> Consumer View.
+- **Publisher View (`frontend/src/components/CoreFlow/CoreFlowPublisher.tsx`)**:
+  - Outgoing message envelope inspector displaying target subject (`jobs.submitted`), delivery mode (`JETSTREAM` vs `CORE`), deduplication header (`Nats-Msg-Id`), and JSON payload.
+  - One-click presets for JetStream Persisted, Core NATS Transient, and Simulated Worker Failure (NAK).
+- **NATS Broker & CLI View (`frontend/src/components/CoreFlow/CoreFlowNatsCli.tsx`)**:
+  - Live JetStream stream (`JOBS`) and consumer metrics (message count, stream sequence cursor, pending count, ack wait).
+  - Curated, copyable `nats` CLI terminal commands pre-configured with `--context local-app` and `--context sys-admin` (`stream info`, `consumer info`, `stream view`, `sub "jobs.>"`, `server report`).
+- **Consumer View (`frontend/src/components/CoreFlow/CoreFlowConsumer.tsx`)**:
+  - Live worker processing timeline displaying worker identity, delivery attempts, and explicit acknowledgment status (`ACK`, `NAK_WITH_DELAY`, `TIMEOUT`).
+  - Worker pause/resume toggle to demonstrate messages buffering in the NATS stream before worker consumption.
+- **Documentation (`docs/DEVELOPER_GUIDE.md`, `docs/CHANGELOG.md`)**:
+  - Documented the Core Flow architecture and view switching.
+
 ### Added (Top-to-Down Collapsible Dashboard Panels)
 - **Collapsible Panel System (`frontend/src/index.css`)**:
   - Added `.panel-collapsible`, `.panel-header-interactive`, `.collapse-toggle-btn`, `.collapse-chevron`, and `.panel-collapsible-body` CSS classes.
@@ -22,7 +127,24 @@ All notable changes to this project will be documented in this file.
 - **Documentation (`docs/DEVELOPER_GUIDE.md`, `docs/CHANGELOG.md`)**:
   - Updated developer guide with details on collapsible panel states and behavior.
 
+### Fixed (NATS Server Startup Config Fix)
+- **NATS Configuration (`deploy/nats/nats.conf`)**:
+  - Removed unsupported `log_format: "json"` directive which caused NATS server startup failure (`unknown field "log_format"`).
+
+### Added (NATS Multi-Account Authentication & Environment Variable Configuration)
+
+- **Backend Configuration & Client (`internal/config/config.go`, `internal/natsclient/client.go`)**:
+  - Added `NATS_USER`, `NATS_PASSWORD`, `NATS_SYS_USER`, and `NATS_SYS_PASSWORD` to runtime configuration with sensible defaults matching `deploy/nats/nats.conf`.
+  - Added `ConnectWithAuth` helper in `natsclient` to inject `nats.UserInfo(user, password)` into client connection options.
+- **Backend Microservices (`cmd/job-service/main.go`, `cmd/processor-service/main.go`, `cmd/demo-control-service/main.go`)**:
+  - Updated `job-service` and `processor-service` to connect using `app_user` credentials for the `APP` tenant account.
+  - Updated `demo-control-service` to connect its business client with `app_user` and its operational `AdvisoryListener` with `sys_admin` credentials to monitor `$SYS.ACCOUNT.*` events in the system account.
+- **Documentation & CLI (`README.md`, `docs/DEPLOYMENT_GUIDE.md`)**:
+  - Documented environment variables in `.env.example` and deployment guides.
+  - Added NATS CLI context configuration examples for `sys-admin` and `local-app` contexts.
+
 ### Removed (NATS UI Web Management Console Removal)
+
 - **Docker Compose Orchestration (`deploy/docker-compose.yaml`, `deploy/nats/nats.conf`)**:
   - Removed `nats-ui` service container (`ghcr.io/gastbob40/nats-ui:latest`) and host port mapping `3001:3000`.
   - Removed WebSocket port `9222:9222` mapping from `nats` service and removed `websocket` block from `nats.conf`.

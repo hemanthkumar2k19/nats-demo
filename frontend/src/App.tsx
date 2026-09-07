@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Header } from './components/Header';
+import { Header, DashboardView } from './components/Header';
 import { StatusPanel } from './components/StatusPanel';
 import { CapabilityStudio } from './components/CapabilityStudio';
+import { CoreFlowView } from './components/CoreFlow/CoreFlowView';
 import { ObservabilityPanelContainer } from './components/ObservabilityPanelContainer';
 import { JobInspectorPanel } from './components/JobInspectorPanel';
 import { DemoSetupPanel } from './components/DemoSetup/DemoSetupPanel';
@@ -50,6 +51,7 @@ export const App: React.FC = () => {
   const [dlqStatus, setDlqStatus] = useState<DLQStatus | null>(null);
   const [queueGroupStatus, setQueueGroupStatus] = useState<QueueGroupStatus | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [activeView, setActiveView] = useState<DashboardView>('nats-demo');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -268,7 +270,7 @@ export const App: React.FC = () => {
         const latest = jobActivities[0];
         setSelectedJobDetail({
           job_id: jobId,
-          type: latest.type || (latest.delivery_mode === 'SAGA' ? 'saga-orchestration' : 'general'),
+          type: latest.job_type || (latest.delivery_mode === 'SAGA' ? 'saga-orchestration' : 'general'),
           status: latest.event || 'RECORDED',
           delivery_count: latest.delivery_count || 1,
           delivery_mode: latest.delivery_mode || 'SAGA',
@@ -300,7 +302,12 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-container">
-      <Header natsConnected={natsConnected} systemOk={systemOk} />
+      <Header 
+        natsConnected={natsConnected} 
+        systemOk={systemOk} 
+        activeView={activeView}
+        onViewChange={setActiveView}
+      />
 
       {/* Global Alerts Banner */}
       {error && (
@@ -333,81 +340,101 @@ export const App: React.FC = () => {
         onShowInfo={setActiveInfoKey}
       />
 
-      {/* Current Demo Setup & NATS Information Topology */}
-      <DemoSetupPanel
-        services={services}
-        jetstreamInfo={jetstreamInfo}
-        consumerStatus={consumerStatus}
-        dlqStatus={dlqStatus}
-        queueGroupStatus={queueGroupStatus}
-        onShowInfo={setActiveInfoKey}
-      />
-
-      <main className="dashboard-grid">
-        {/* Left Column: NATS CAPABILITY STUDIO */}
-        <div className="left-column">
-          <div className="column-section-header">
-            <span>NATS CAPABILITY STUDIO</span>
-          </div>
-
-          <CapabilityStudio
-            onSubmitJob={handleJobSubmit}
-            onValidateJob={handleJobValidate}
-            isSubmitting={isSubmitting}
-            isValidating={isValidating}
+      {activeView === 'studio' ? (
+        <>
+          {/* Current Demo Setup & NATS Information Topology */}
+          <DemoSetupPanel
+            services={services}
             jetstreamInfo={jetstreamInfo}
-            onTriggerReplay={handleTriggerReplay}
-            onRefreshStatus={() => refreshStatus(false)}
-            isRefreshingStatus={isRefreshingStatus}
-            activities={activities}
-            onRefreshActivity={() => refreshActivity(true)}
+            consumerStatus={consumerStatus}
+            dlqStatus={dlqStatus}
+            queueGroupStatus={queueGroupStatus}
             onShowInfo={setActiveInfoKey}
-            onAlert={(type, msg) => {
-              if (type === 'success') {
-                setSuccess(msg);
-                refreshStatus(true);
-                refreshActivity(true);
-              } else if (type === 'error') {
-                setError(msg);
-              }
-            }}
-            onRefreshAll={() => {
-              refreshStatus(true);
-              refreshActivity(true);
-            }}
-            onConfigChanged={setConsumerStatus}
-            onActivityUpdated={() => {
-              refreshActivity(true);
-              setTimeout(() => refreshActivity(true), 600);
-              setTimeout(() => refreshActivity(true), 1500);
-            }}
+          />
+
+          <main className="dashboard-grid">
+            {/* Left Column: NATS CAPABILITY STUDIO */}
+            <div className="left-column">
+              <div className="column-section-header">
+                <span>NATS CAPABILITY STUDIO</span>
+              </div>
+
+              <CapabilityStudio
+                onSubmitJob={handleJobSubmit}
+                onValidateJob={handleJobValidate}
+                isSubmitting={isSubmitting}
+                isValidating={isValidating}
+                jetstreamInfo={jetstreamInfo}
+                onTriggerReplay={handleTriggerReplay}
+                onRefreshStatus={() => refreshStatus(false)}
+                isRefreshingStatus={isRefreshingStatus}
+                activities={activities}
+                onRefreshActivity={() => refreshActivity(true)}
+                onShowInfo={setActiveInfoKey}
+                onAlert={(type, msg) => {
+                  if (type === 'success') {
+                    setSuccess(msg);
+                    refreshStatus(true);
+                    refreshActivity(true);
+                  } else if (type === 'error') {
+                    setError(msg);
+                  }
+                }}
+                onRefreshAll={() => {
+                  refreshStatus(true);
+                  refreshActivity(true);
+                }}
+                onConfigChanged={setConsumerStatus}
+                onActivityUpdated={() => {
+                  refreshActivity(true);
+                  setTimeout(() => refreshActivity(true), 600);
+                  setTimeout(() => refreshActivity(true), 1500);
+                }}
+                isProcessing={services.find((s) => s.name.toLowerCase().includes('processor'))?.processing ?? false}
+              />
+            </div>
+
+            {/* Right Column: ACTIVITY */}
+            <div className="right-column">
+              <div className="column-section-header">
+                <span>ACTIVITY</span>
+              </div>
+
+              <ObservabilityPanelContainer
+                activities={activities}
+                onRefreshActivity={() => refreshActivity(false)}
+                onClearActivity={handleClearActivity}
+                isLoadingActivity={isRefreshingActivity}
+                onSelectJob={handleSelectJob}
+                subscriptions={subscriptions}
+                addressingEvents={addressingEvents}
+                onRefreshAddressing={() => refreshAddressing(false)}
+                isLoadingAddressing={isRefreshingAddressing}
+                onShowInfo={setActiveInfoKey}
+              />
+            </div>
+          </main>
+
+          {/* Dedicated Observability Setup Section */}
+          <ObservabilityPanel onShowInfo={setActiveInfoKey} />
+        </>
+      ) : (
+        <main style={{ width: '100%', padding: '0 0 1rem 0' }}>
+          <CoreFlowView
+            onPublishJob={handleJobSubmit}
+            isSubmitting={isSubmitting}
+            jetstreamInfo={jetstreamInfo}
+            consumerStatus={consumerStatus}
+            activities={activities}
             isProcessing={services.find((s) => s.name.toLowerCase().includes('processor'))?.processing ?? false}
-          />
-        </div>
-
-        {/* Right Column: ACTIVITY */}
-        <div className="right-column">
-          <div className="column-section-header">
-            <span>ACTIVITY</span>
-          </div>
-
-          <ObservabilityPanelContainer
-            activities={activities}
-            onRefreshActivity={() => refreshActivity(false)}
+            onToggleProcessor={handleToggleProcessor}
             onClearActivity={handleClearActivity}
-            isLoadingActivity={isRefreshingActivity}
             onSelectJob={handleSelectJob}
-            subscriptions={subscriptions}
-            addressingEvents={addressingEvents}
-            onRefreshAddressing={() => refreshAddressing(false)}
-            isLoadingAddressing={isRefreshingAddressing}
+            onRefreshNats={() => refreshStatus(false)}
             onShowInfo={setActiveInfoKey}
           />
-        </div>
-      </main>
-
-      {/* Dedicated Observability Setup Section */}
-      <ObservabilityPanel onShowInfo={setActiveInfoKey} />
+        </main>
+      )}
 
       {/* Global Contextual NATS Information Modal */}
       <InfoPopover

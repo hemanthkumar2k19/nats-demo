@@ -45,6 +45,11 @@ Default parameters:
 - `PORT=8080` (HTTP port for `demo-control-service`)
 - `JOB_SERVICE_PORT=8081` (HTTP port for `job-service`)
 - `NATS_URL=nats://localhost:4222` (connection string for NATS client)
+- `NATS_USER=app_user` (tenant user for JetStream and business messaging)
+- `NATS_PASSWORD=app_user_pwd!` (tenant password)
+- `NATS_SYS_USER=sys_admin` (administrative user for $SYS operational telemetry)
+- `NATS_SYS_PASSWORD=sys_admin_pwd!` (administrative password)
+
 
 ### Starting Backend Services
 In separate terminal windows, run the following commands:
@@ -61,7 +66,7 @@ In separate terminal windows, run the following commands:
 3. **Processor Service** (Worker Daemon):
    ```bash
    cd backend/src
-   go run cmd/processor-service/main.go
+   go run ./cmd/processor-service
    ```
 
 ---

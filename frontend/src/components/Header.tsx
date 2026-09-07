@@ -1,11 +1,20 @@
 import React, { useState, useEffect } from 'react';
 
+export type DashboardView = 'nats-demo' | 'studio';
+
 interface HeaderProps {
   systemOk?: boolean;
   natsConnected?: boolean;
+  activeView?: DashboardView;
+  onViewChange?: (view: DashboardView) => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ systemOk = true, natsConnected = true }) => {
+export const Header: React.FC<HeaderProps> = ({ 
+  systemOk = true, 
+  natsConnected = true,
+  activeView = 'nats-demo',
+  onViewChange,
+}) => {
   const [time, setTime] = useState<string>('');
 
   useEffect(() => {
@@ -22,9 +31,58 @@ export const Header: React.FC<HeaderProps> = ({ systemOk = true, natsConnected =
 
   return (
     <header className="app-header">
-      <div className="app-title-group">
-        <span className="app-badge-logo">NATS</span>
-        <h1 className="app-title">NATS Inspector</h1>
+      <div className="app-title-group" style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span className="app-badge-logo">NATS</span>
+          <h1 className="app-title">NATS Inspector</h1>
+        </div>
+
+        {/* View Switcher Pills */}
+        {onViewChange && (
+          <div style={{ 
+            display: 'inline-flex', 
+            background: 'var(--bg-secondary)', 
+            border: '1px solid var(--border-color)', 
+            borderRadius: '6px', 
+            padding: '2px',
+            gap: '2px'
+          }}>
+            <button
+              type="button"
+              style={{
+                background: activeView === 'nats-demo' ? '#10B981' : 'transparent',
+                color: activeView === 'nats-demo' ? '#FFFFFF' : 'var(--text-muted)',
+                border: 'none',
+                borderRadius: '4px',
+                padding: '4px 12px',
+                fontSize: '0.78rem',
+                fontWeight: activeView === 'nats-demo' ? 600 : 500,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onClick={() => onViewChange('nats-demo')}
+            >
+              NATS Demo
+            </button>
+            <button
+              type="button"
+              style={{
+                background: activeView === 'studio' ? '#3B82F6' : 'transparent',
+                color: activeView === 'studio' ? '#FFFFFF' : 'var(--text-muted)',
+                border: 'none',
+                borderRadius: '4px',
+                padding: '4px 12px',
+                fontSize: '0.78rem',
+                fontWeight: activeView === 'studio' ? 600 : 500,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onClick={() => onViewChange('studio')}
+            >
+              Capability Studio
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="app-meta-group">

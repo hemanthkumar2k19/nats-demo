@@ -9,11 +9,16 @@ import (
 
 // Config holds runtime configuration configuration variables.
 type Config struct {
-	NATSURL      string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
-	Port         string `env:"PORT" envDefault:"8080"`
-	OtelEndpoint string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:4317"`
-	OtelInsecure bool   `env:"OTEL_EXPORTER_OTLP_INSECURE" envDefault:"true"`
+	NATSURL         string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
+	NATSUser        string `env:"NATS_USER" envDefault:"app_user"`
+	NATSPassword    string `env:"NATS_PASSWORD" envDefault:"app_user_pwd!"`
+	NATSSysUser     string `env:"NATS_SYS_USER" envDefault:"sys_admin"`
+	NATSSysPassword string `env:"NATS_SYS_PASSWORD" envDefault:"sys_admin_pwd!"`
+	Port            string `env:"PORT" envDefault:"8080"`
+	OtelEndpoint    string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:4317"`
+	OtelInsecure    bool   `env:"OTEL_EXPORTER_OTLP_INSECURE" envDefault:"true"`
 }
+
 
 // Load loads configuration from a local .env file (if present) and the environment.
 func Load() (*Config, error) {

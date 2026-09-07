@@ -636,7 +636,17 @@ func (h *ControlHandler) GetDLQStatus(c *gin.Context) {
 
 	stream, err := h.natsClient.JS.Stream(ctx, "JOBS_DLQ")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JOBS_DLQ stream"})
+		c.JSON(http.StatusOK, gin.H{
+			"stream":      "JOBS_DLQ",
+			"initialized": false,
+			"messages":    0,
+			"bytes":       0,
+			"first_seq":   0,
+			"last_seq":    0,
+			"consumer":    "dlq-inspector",
+			"pending":     0,
+			"ack_pending": 0,
+		})
 		return
 	}
 
@@ -663,6 +673,7 @@ func (h *ControlHandler) GetDLQStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"stream":      "JOBS_DLQ",
+		"initialized": true,
 		"messages":    totalMsgs,
 		"bytes":       totalBytes,
 		"first_seq":   firstSeq,
@@ -670,6 +681,44 @@ func (h *ControlHandler) GetDLQStatus(c *gin.Context) {
 		"consumer":    "dlq-inspector",
 		"pending":     pending,
 		"ack_pending": ackPending,
+	})
+}
+
+// SetupDLQ initializes the JOBS_DLQ stream and dlq-inspector consumer on demand.
+func (h *ControlHandler) SetupDLQ(c *gin.Context) {
+	if h.natsClient == nil || h.natsClient.Conn == nil || h.natsClient.Conn.Status() != nats.CONNECTED {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "NATS connection unavailable"})
+		return
+	}
+
+	if err := h.natsClient.EnsureDLQStream(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to setup DLQ stream: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":     true,
+		"message":     "JOBS_DLQ stream and dlq-inspector consumer created successfully.",
+		"initialized": true,
+	})
+}
+
+// CleanupDLQ deletes the JOBS_DLQ stream and its consumers from NATS.
+func (h *ControlHandler) CleanupDLQ(c *gin.Context) {
+	if h.natsClient == nil || h.natsClient.Conn == nil || h.natsClient.Conn.Status() != nats.CONNECTED {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "NATS connection unavailable"})
+		return
+	}
+
+	if err := h.natsClient.DeleteDLQStream(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to cleanup DLQ stream: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":     true,
+		"message":     "JOBS_DLQ stream removed successfully.",
+		"initialized": false,
 	})
 }
 
@@ -685,7 +734,7 @@ func (h *ControlHandler) GetDLQMessages(c *gin.Context) {
 
 	stream, err := h.natsClient.JS.Stream(ctx, "JOBS_DLQ")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get JOBS_DLQ stream"})
+		c.JSON(http.StatusOK, []DLQMessage{})
 		return
 	}
 

@@ -57,6 +57,12 @@ nats-demo/
 - **React SPA Dashboard (`frontend`)**:
    - Displays interactive **Current Demo Setup** pairing runtime topology on the left with embedded **Consumer Lab** controls and live metrics on the right.
    - Accurately visualizes a three-tier architecture: Tier 1 with **React UI** and **Demo Control Service**, Tier 2 with **Job Service** and a wide dual-engine **NATS Server** (side-by-side **Core NATS** and **JetStream** engines), and Tier 3 with **Processor Service** worker pool directly beneath NATS, clearly distinguishing deployed services from internal broker resources (`JOBS Stream`, `JOBS_DLQ Stream`, `job-processor Consumer`, `dlq-inspector Consumer`).
+   - Features a **Top-Level View Switcher** in the Header:
+     - `Capability Studio`: The comprehensive feature exploration workspace with all NATS capabilities.
+     - `Platform Core Flow (Stage 1-2-3)`: A focused 3-column platform lifecycle inspection view:
+       1. **Publisher View**: Message envelope inspector (subject, headers, delivery mode, payload) with rich preset cards and segmented transport switcher.
+       2. **NATS View & CLI Guide**: Live JetStream stream & consumer metrics paired with copyable CLI inspection commands (`nats --context local-app ...`).
+       3. **Processor View**: Business worker execution, domain outcome events, processed message details, and processor pause/resume controls.
    - Features the **NATS Capability Studio** (`CapabilityStudio.tsx`) unifying all demo action triggers into segmented tabs:
      1. `Pub/Sub & Stream`: Standard job submissions with instant switch to JetStream deduplication test bench.
      2. `Delayed & Retry`: Dedicated test lab for NAK with Delay, AckWait missing ACK timeout, and Application Scheduled Delivery.
@@ -303,7 +309,7 @@ UI                 job-service (Orchestrator)     NATS          processor-servic
 1. Add the subject constant in `internal/messaging/subjects.go`.
 2. Add a `Subscribe<Name>` method in `internal/messaging/consumer.go` following the `SubscribeJobValidate` pattern.
 3. Add a `Request<Name>` method in `internal/messaging/publisher.go` following `RequestJobValidation`.
-4. Add the corresponding `subscribe<Name>` / `unsubscribe<Name>` lifecycle methods in `processor-service/main.go`.
+4. Add the corresponding `subscribe<Name>` / `unsubscribe<Name>` lifecycle methods in `cmd/processor-service/`.
 5. Wire the new API endpoint in `api/http/handler.go` and register it in `api/http/routes.go`.
 
 ---

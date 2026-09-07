@@ -41,6 +41,8 @@ func RegisterControlRoutes(router *gin.Engine, h *ControlHandler) {
 	router.PUT("/consumer", h.PutConsumerConfig)
 	router.POST("/consumer/reset", h.PostConsumerReset)
 	router.GET("/dlq/status", h.GetDLQStatus)
+	router.POST("/dlq/setup", h.SetupDLQ)
+	router.POST("/dlq/cleanup", h.CleanupDLQ)
 	router.GET("/dlq/messages", h.GetDLQMessages)
 	router.POST("/dlq/reprocess", h.ReprocessDLQ)
 	router.POST("/dlq/purge", h.PurgeDLQ)

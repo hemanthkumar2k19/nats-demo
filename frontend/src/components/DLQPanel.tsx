@@ -5,6 +5,8 @@ import {
   getDLQMessages,
   reprocessDLQMessages,
   purgeDLQ,
+  setupDLQ,
+  cleanupDLQ,
   DLQStatus,
   DLQMessage,
   Job,
@@ -28,8 +30,38 @@ export const DLQPanel: React.FC<DLQPanelProps> = ({
   const [isReprocessing, setIsReprocessing] = useState<boolean>(false);
   const [isPurging, setIsPurging] = useState<boolean>(false);
   const [isLoadingDLQ, setIsLoadingDLQ] = useState<boolean>(false);
+  const [isSettingUp, setIsSettingUp] = useState<boolean>(false);
+  const [isCleaningUp, setIsCleaningUp] = useState<boolean>(false);
   const [dlqStatus, setDlqStatus] = useState<DLQStatus | null>(null);
   const [dlqMessages, setDlqMessages] = useState<DLQMessage[]>([]);
+
+  const handleSetupPrerequisites = async () => {
+    setIsSettingUp(true);
+    try {
+      const res = await setupDLQ();
+      onAlert?.('success', res.message || 'JOBS_DLQ stream and consumer provisioned.');
+      await fetchDLQData();
+      onRefreshAll?.();
+    } catch (err: any) {
+      onAlert?.('error', err.message || 'Failed to setup DLQ prerequisites');
+    } finally {
+      setIsSettingUp(false);
+    }
+  };
+
+  const handleCleanupPrerequisites = async () => {
+    setIsCleaningUp(true);
+    try {
+      const res = await cleanupDLQ();
+      onAlert?.('success', res.message || 'JOBS_DLQ stream removed from NATS broker.');
+      await fetchDLQData();
+      onRefreshAll?.();
+    } catch (err: any) {
+      onAlert?.('error', err.message || 'Failed to cleanup DLQ prerequisites');
+    } finally {
+      setIsCleaningUp(false);
+    }
+  };
 
   const fetchDLQData = useCallback(async () => {
     setIsLoadingDLQ(true);
@@ -183,6 +215,76 @@ export const DLQPanel: React.FC<DLQPanelProps> = ({
         Isolates failed messages into stream{' '}
         <span className="mono-cell" style={{ color: '#F87171', fontWeight: 600 }}>JOBS_DLQ</span>{' '}
         after exhausting delivery attempts.
+      </div>
+
+      {/* Capability Lifecycle Controls: Prerequisites & Cleanup */}
+      <div style={{
+        background: 'rgba(0, 0, 0, 0.25)',
+        border: '1px solid var(--border-color)',
+        borderRadius: '6px',
+        padding: '0.6rem 0.75rem',
+        marginBottom: '0.875rem',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-dim)', fontWeight: 600 }}>
+              Capability Scope:
+            </span>
+            <span style={{
+              fontSize: '0.65rem',
+              fontWeight: 700,
+              padding: '1px 6px',
+              borderRadius: '3px',
+              background: dlqStatus?.initialized ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+              color: dlqStatus?.initialized ? '#34D399' : '#FBBF24',
+              border: `1px solid ${dlqStatus?.initialized ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+            }}>
+              {dlqStatus?.initialized ? 'READY (JOBS_DLQ ACTIVE)' : 'NOT PROVISIONED'}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.4rem' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleSetupPrerequisites}
+              disabled={isSettingUp || dlqStatus?.initialized}
+              style={{
+                fontSize: '0.7rem',
+                padding: '3px 8px',
+                borderColor: dlqStatus?.initialized ? undefined : '#3B82F6',
+                color: dlqStatus?.initialized ? 'var(--text-dim)' : '#60A5FA',
+              }}
+              title="Provision JOBS_DLQ stream and consumer in NATS"
+            >
+              {isSettingUp ? 'Provisioning...' : 'Setup Prerequisites'}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleCleanupPrerequisites}
+              disabled={isCleaningUp || !dlqStatus?.initialized}
+              style={{
+                fontSize: '0.7rem',
+                padding: '3px 8px',
+                color: dlqStatus?.initialized ? '#F87171' : 'var(--text-dim)',
+                borderColor: dlqStatus?.initialized ? 'rgba(239, 68, 68, 0.4)' : undefined,
+              }}
+              title="Delete JOBS_DLQ stream and return NATS broker to clean default state"
+            >
+              {isCleaningUp ? 'Cleaning...' : 'Cleanup'}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+          {dlqStatus?.initialized ? (
+            <span><code>JOBS_DLQ</code> stream and <code>dlq-inspector</code> are provisioned. Click <strong>Cleanup</strong> when done to avoid broker clutter.</span>
+          ) : (
+            <span>Secondary objects are kept unprovisioned to ensure the primary NATS Demo CLI is clean. Click <strong>Setup Prerequisites</strong> to test DLQ.</span>
+          )}
+        </div>
       </div>
 
       {/* DLQ Resources Summary (2-Column Card Grid) */}

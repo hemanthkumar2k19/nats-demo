@@ -34,6 +34,7 @@ type App struct {
 	sagaSub          *nats.Subscription
 	observerSubs     []*nats.Subscription
 	advisoryListener *events.AdvisoryListener
+	sysClient        *natsclient.Client
 	jobServiceURL    string
 	otelShutdown     func(context.Context) error
 }
@@ -51,7 +52,7 @@ func (a *App) Init() error {
 		a.jobServiceURL = "http://localhost:8081"
 	}
 
-	log.Printf("[Init] Loaded configuration: NATS_URL=%s, PORT=%s, JOB_SERVICE_URL=%s", a.cfg.NATSURL, a.cfg.Port, a.jobServiceURL)
+	log.Printf("[Init] Loaded configuration: NATS_URL=%s, USER=%s, PORT=%s, JOB_SERVICE_URL=%s", a.cfg.NATSURL, a.cfg.NATSUser, a.cfg.Port, a.jobServiceURL)
 
 	// Initialize OpenTelemetry metric pipeline for demo-control-service
 	otelShutdown, err := telemetry.Init(context.Background(), "demo-control-service", a.cfg.OtelEndpoint, a.cfg.OtelInsecure)
@@ -60,7 +61,7 @@ func (a *App) Init() error {
 	}
 	a.otelShutdown = otelShutdown
 
-	client, err := natsclient.Connect(a.cfg.NATSURL)
+	client, err := natsclient.ConnectWithAuth(a.cfg.NATSURL, a.cfg.NATSUser, a.cfg.NATSPassword)
 	if err != nil {
 		return fmt.Errorf("failed to connect to NATS: %w", err)
 	}
@@ -166,7 +167,17 @@ func (a *App) Run() error {
 	}
 
 	// Start NATS operational events and JetStream advisory listener (shipping to Loki)
-	a.advisoryListener = events.NewAdvisoryListener(a.natsClient.Conn)
+	advisoryConn := a.natsClient.Conn
+	if a.cfg.NATSSysUser != "" {
+		if sysClient, err := natsclient.ConnectWithAuth(a.cfg.NATSURL, a.cfg.NATSSysUser, a.cfg.NATSSysPassword); err == nil {
+			a.sysClient = sysClient
+			advisoryConn = sysClient.Conn
+			log.Println("[Run] Connected to NATS SYS account for operational event monitoring")
+		} else {
+			log.Printf("[Run] Warning: failed to connect to SYS account: %v", err)
+		}
+	}
+	a.advisoryListener = events.NewAdvisoryListener(advisoryConn)
 	if err := a.advisoryListener.Start(); err != nil {
 		log.Printf("[Run] Warning: failed to start advisory listener: %v", err)
 	} else {
@@ -230,6 +241,10 @@ func (a *App) Stop() error {
 
 	if a.natsClient != nil {
 		a.natsClient.Close()
+	}
+
+	if a.sysClient != nil {
+		a.sysClient.Close()
 	}
 
 	if a.otelShutdown != nil {

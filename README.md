@@ -109,7 +109,32 @@ Verify service availability:
 *   **NATS Prometheus Exporter**: http://localhost:7777/metrics
 *   **Grafana Dashboard (LGTM Stack)**: http://localhost:3000 (Credentials: `admin` / `admin`)
 
+#### Optional: Configure NATS CLI Authentication Contexts
+
+If using the official `nats` CLI tool, configure user contexts for the `SYS` and `APP` accounts:
+
+```bash
+# 1. Admin context for `nats server ...` commands
+nats context add sys-admin \
+  --server localhost:4222 \
+  --user sys_admin \
+  --password "sys_admin_pwd!"
+
+# 2. App context for streams, KV buckets, pub/sub
+nats context add local-app \
+  --server localhost:4222 \
+  --user app_user \
+  --password "app_user_pwd!"
+```
+
+Quick CLI test commands:
+```bash
+nats --context sys-admin server report
+nats --context local-app stream ls
+```
+
 ---
+
 
 ### Step 2: Start Backend Microservices
 
@@ -137,7 +162,7 @@ go run cmd/job-service/main.go
 **Terminal 3 -- Processor Service (Worker Daemon Pool)**:
 ```bash
 cd backend/src
-go run cmd/processor-service/main.go
+go run ./cmd/processor-service
 ```
 *Connected to NATS, listening on `jobs.submitted`, `jobs.validate`, and `saga.*`.*
 

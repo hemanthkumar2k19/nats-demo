@@ -52,6 +52,7 @@ export interface SystemStatusResponse {
 
 export interface DLQStatus {
   stream: string;
+  initialized?: boolean;
   messages: number;
   bytes: number;
   first_seq: number;
@@ -541,6 +542,44 @@ export async function purgeDLQ(): Promise<{ purged: boolean; stream: string; mes
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
     throw new Error(`Failed to purge DLQ stream: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Creates the JOBS_DLQ stream and dlq-inspector consumer on demand.
+ * Calls POST /dlq/setup on demo-control-service.
+ */
+export async function setupDLQ(): Promise<{ success: boolean; message: string; initialized: boolean }> {
+  const response = await fetch(`${DEMO_CONTROL_URL}/dlq/setup`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to setup DLQ prerequisites: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Deletes the JOBS_DLQ stream and its consumers from NATS.
+ * Calls POST /dlq/cleanup on demo-control-service.
+ */
+export async function cleanupDLQ(): Promise<{ success: boolean; message: string; initialized: boolean }> {
+  const response = await fetch(`${DEMO_CONTROL_URL}/dlq/cleanup`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to cleanup DLQ prerequisites: ${response.status} ${response.statusText}. ${errorText}`);
   }
   return response.json();
 }

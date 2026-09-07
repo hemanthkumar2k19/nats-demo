@@ -16,8 +16,8 @@ type Client struct {
 }
 
 // Connect initializes a NATS connection and JetStream instance, wrapping them in Client.
-func Connect(url string) (*Client, error) {
-	nc, err := nats.Connect(url)
+func Connect(url string, opts ...nats.Option) (*Client, error) {
+	nc, err := nats.Connect(url, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
 	}
@@ -33,6 +33,15 @@ func Connect(url string) (*Client, error) {
 		JS:   js,
 	}, nil
 }
+
+// ConnectWithAuth initializes a NATS connection with user credentials and JetStream.
+func ConnectWithAuth(url, user, password string, opts ...nats.Option) (*Client, error) {
+	if user != "" {
+		opts = append(opts, nats.UserInfo(user, password))
+	}
+	return Connect(url, opts...)
+}
+
 
 // Close closes the underlying NATS connection.
 func (c *Client) Close() {
@@ -68,18 +77,6 @@ func (c *Client) EnsureJobsStream() error {
 		return fmt.Errorf("failed to create durable consumer job-processor: %w", err)
 	}
 
-	// Also ensure processor-durable for backward compatibility
-	_, _ = stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Durable:       "processor-durable",
-		DeliverPolicy: jetstream.DeliverAllPolicy,
-		AckPolicy:     jetstream.AckExplicitPolicy,
-		AckWait:       5 * time.Second,
-		FilterSubject: "jobs.submitted",
-	})
-
-	// Guarantee JOBS_DLQ stream and dlq-inspector consumer also exist
-	_ = c.EnsureDLQStream()
-
 	return nil
 }
 
@@ -109,3 +106,21 @@ func (c *Client) EnsureDLQStream() error {
 
 	return nil
 }
+
+// DeleteDLQStream deletes the JOBS_DLQ stream and its consumers from NATS.
+func (c *Client) DeleteDLQStream() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	return c.JS.DeleteStream(ctx, "JOBS_DLQ")
+}
+
+// IsDLQStreamActive checks whether the JOBS_DLQ stream currently exists in NATS.
+func (c *Client) IsDLQStreamActive() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_, err := c.JS.Stream(ctx, "JOBS_DLQ")
+	return err == nil
+}
+
