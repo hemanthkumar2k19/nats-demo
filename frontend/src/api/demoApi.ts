@@ -94,12 +94,24 @@ export interface ProcessorDirectEvent {
   attempt: number;
 }
 
+export type FailureScenario =
+  | 'normal'
+  | 'crash_before_ack'
+  | 'exceed_ack_wait'
+  | 'nak_message'
+  | 'term_message';
+
 export interface ProcessorDirectStatus {
   status: string;
   processing: boolean;
   consumer: string;
   stream: string;
   workers: number;
+  scenario?: FailureScenario;
+  goroutine_status?: string;
+  active_goroutines?: number;
+  ack_wait_seconds?: number;
+  ack_policy?: string;
 }
 
 /**
@@ -132,6 +144,39 @@ export async function getProcessorDirectStatus(): Promise<ProcessorDirectStatus>
   const response = await fetch(`${PROCESSOR_SERVICE_URL}/processor/status`);
   if (!response.ok) {
     throw new Error(`Failed to fetch processor status: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Updates failure scenario directly on processor-service (Port 8082).
+ */
+export async function updateProcessorScenario(
+  scenario: FailureScenario,
+  once = true
+): Promise<{ status: string; scenario: string; once: boolean }> {
+  const response = await fetch(`${PROCESSOR_SERVICE_URL}/processor/scenario`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ scenario, once }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to update processor scenario: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Manually restarts worker goroutines on processor-service (Port 8082).
+ */
+export async function restartProcessorWorker(): Promise<{ status: string }> {
+  const response = await fetch(`${PROCESSOR_SERVICE_URL}/processor/restart`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to restart processor worker: ${response.statusText}`);
   }
   return response.json();
 }

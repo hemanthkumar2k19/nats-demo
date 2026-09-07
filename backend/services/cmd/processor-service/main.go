@@ -44,6 +44,13 @@ type App struct {
 	eventTracker      *EventTracker
 	httpServer        *http.Server
 
+	// Failure Scenarios & Goroutine Tracking
+	scenarioMu       sync.RWMutex
+	activeScenario   string // "normal", "crash_before_ack", "exceed_ack_wait"
+	scenarioOnce     bool
+	activeGoroutines int
+	goroutineStatus  string // "RUNNING", "CRASHED", "PAUSED"
+
 	// JetStream Consumer distribution tracking
 	consumerMu           sync.Mutex
 	consumerDistribution map[string]int
@@ -130,6 +137,12 @@ func (a *App) Init() error {
 	} else {
 		log.Println("[Init] Successfully registered Saga worker command responders")
 	}
+
+	// Initialize default failure scenario and goroutine status
+	a.activeScenario = "normal"
+	a.scenarioOnce = true
+	a.activeGoroutines = 1
+	a.goroutineStatus = "RUNNING"
 
 	return nil
 }

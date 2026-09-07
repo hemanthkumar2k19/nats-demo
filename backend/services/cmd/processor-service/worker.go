@@ -308,7 +308,14 @@ func (a *App) subscribeJetStream() error {
 		return fmt.Errorf("failed to create or update durable consumer %s: %w", a.consumerName, err)
 	}
 	a.jsConsumer = consumer
-	log.Printf("[Processor] JetStream consumer bound to %s Pull subscriber (Deliver=%v, Ack=%v)", a.consumerName, deliverPolicy, ackPolicy)
+	log.Printf("[CONFIG] Consumer: %s | Stream: JOBS | Mode: Durable Pull", a.consumerName)
+	log.Printf("[CONFIG] Ack Policy: %v | AckWait: 5s | DeliverPolicy: %v", ackPolicy, deliverPolicy)
+
+	// Scenario 6: Log consumer state retention from JetStream broker
+	if info, err := consumer.Info(ctx); err == nil && info != nil {
+		log.Printf("[DURABLE STATE] Consumer '%s' connected | Ack Floor: Stream Seq %d | Outstanding ACKs: %d | Stream Backlog: %d",
+			a.consumerName, info.AckFloor.Stream, info.NumAckPending, info.NumPending)
+	}
 	return nil
 }
 
@@ -319,7 +326,7 @@ func (a *App) unsubscribeJetStream() {
 
 	if a.jsConsumer != nil {
 		a.jsConsumer = nil
-		log.Println("[Processor] JetStream consumer deactivated")
+		log.Println("[CONFIG] JetStream consumer deactivated")
 	}
 }
 
@@ -347,16 +354,20 @@ func (a *App) startWorkers(ctx context.Context, attempts map[string]int, attempt
 		go a.jsPullLoop(wCtx, workerName, attempts, attemptsMu)
 	}
 	a.workerCancels = cancels
+	a.activeGoroutines = workersCount
+	a.goroutineStatus = "RUNNING"
 	a.mu.Unlock()
 
-	log.Printf("[Processor] Started %d JetStream pull worker(s)", workersCount)
+	log.Printf("[WORKERS] Initializing %d JetStream pull worker goroutine(s)...", workersCount)
 }
 
 // jsPullLoop performs pull operations from JetStream stream when enabled
 func (a *App) jsPullLoop(ctx context.Context, workerName string, attempts map[string]int, attemptsMu *sync.Mutex) {
+	log.Printf("[%s] Worker goroutine READY and polling consumer '%s'", workerName, a.consumerName)
 	for {
 		select {
 		case <-ctx.Done():
+			log.Printf("[%s] Worker goroutine stopped (context cancelled)", workerName)
 			return
 		default:
 			a.mu.RLock()
@@ -375,20 +386,25 @@ func (a *App) jsPullLoop(ctx context.Context, workerName string, attempts map[st
 				if errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
 					continue
 				}
-				log.Printf("[%s JS] Fetch error: %v", workerName, err)
+				log.Printf("[%s] Fetch notice: %v", workerName, err)
 				time.Sleep(1 * time.Second)
 				continue
 			}
 
 			for msg := range batch.Messages() {
-				a.handleJetStreamMsg(msg, workerName, attempts, attemptsMu)
+				shouldTerminate := a.handleJetStreamMsg(msg, workerName, attempts, attemptsMu)
+				if shouldTerminate {
+					log.Printf("[%s] Pull loop TERMINATING due to simulated crash.", workerName)
+					return
+				}
 			}
 		}
 	}
 }
 
-// handleJetStreamMsg processes a pulled JetStream message
-func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts map[string]int, attemptsMu *sync.Mutex) {
+// handleJetStreamMsg processes a pulled JetStream message.
+// Returns true if the worker goroutine must terminate immediately (crash simulation).
+func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts map[string]int, attemptsMu *sync.Mutex) bool {
 	deliveryMode := msg.Headers().Get("X-Delivery-Mode")
 	if deliveryMode == "" {
 		deliveryMode = "CORE"
@@ -396,16 +412,16 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts 
 
 	var job jobs.Job
 	if err := json.Unmarshal(msg.Data(), &job); err != nil {
-		log.Printf("[%s JS] Failed to unmarshal message: %v", workerName, err)
+		log.Printf("[%s] Failed to unmarshal message: %v", workerName, err)
 		_ = msg.Ack()
-		return
+		return false
 	}
 
 	// If this is a CORE message, discard from JetStream
 	if deliveryMode == "CORE" || job.DeliveryMode == "CORE" {
-		log.Printf("[%s JS] Core NATS message %s fetched. Discarding from JetStream.", workerName, job.JobID)
+		log.Printf("[%s] Core NATS message %s fetched. Discarding from JetStream.", workerName, job.JobID)
 		_ = msg.Ack()
-		return
+		return false
 	}
 
 	meta, err := msg.Metadata()
@@ -452,10 +468,13 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts 
 
 	if numDelivered > 1 {
 		telemetry.RecordMessageRedelivered(recvCtx, deliveryMode, workerName)
-		log.Printf("[%s] JetStream job %s REDELIVERED (delivery #%d)", workerName, job.JobID, attemptCount)
+		log.Println("================================================================================")
+		log.Printf("[%s] [REDELIVERED] JetStream job %s REDELIVERED by server (Delivery attempt #%d, Stream Seq #%d)", workerName, job.JobID, attemptCount, sequence)
+		log.Printf("[%s] [RETRY EXECUTION] Worker processing redelivered message...", workerName)
+		log.Println("================================================================================")
 		a.recordWorkerEvent(job.JobID, job.Type, "[REDELIVERED]", "#FBBF24", fmt.Sprintf("Redelivery #%d from JOBS stream (Seq #%d)", attemptCount, sequence), attemptCount, deliveryMode)
 	} else {
-		log.Printf("[%s] Received JetStream job %s | Attempt: %d", workerName, job.JobID, attemptCount)
+		log.Printf("[%s] [PULLED] %s | Stream Seq: %d | Delivery: #%d", workerName, job.JobID, sequence, attemptCount)
 		a.recordWorkerEvent(job.JobID, job.Type, "[PULLED]", "#60A5FA", fmt.Sprintf("Fetched from JOBS stream (Seq #%d)", sequence), attemptCount, deliveryMode)
 	}
 
@@ -471,6 +490,7 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts 
 	)
 
 	// Record PROCESSING event locally
+	log.Printf("[%s] [PROCESSING] %s | Executing business transaction...", workerName, job.JobID)
 	a.recordWorkerEvent(job.JobID, job.Type, "[PROCESSING]", "#FBBF24", "Executing business logic", attemptCount, deliveryMode)
 
 	// 2. Simulate processing duration
@@ -478,26 +498,177 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts 
 	time.Sleep(1 * time.Second)
 	procDuration := time.Since(procStart)
 
-	// 3. Evaluate simulated worker crash / missing ACK (AckWait timeout)
-	simulateNoAck := false
+	// 3. Evaluate failure scenarios (Scenario 1: Goroutine Crash Before ACK, Scenario 2: Exceed AckWait)
+	a.scenarioMu.RLock()
+	currentScenario := a.activeScenario
+	scenarioOnce := a.scenarioOnce
+	a.scenarioMu.RUnlock()
+
+	// Check if scenario is triggered via payload override as well
+	if val, ok := job.Payload["scenario"].(string); ok && val != "" {
+		currentScenario = val
+	}
+	if val, ok := job.Payload["simulate_crash"].(bool); ok && val {
+		currentScenario = "crash_before_ack"
+	}
 	if val, ok := job.Payload["simulate_no_ack"].(bool); ok && val {
-		simulateNoAck = true
+		currentScenario = "crash_before_ack"
+	}
+	if val, ok := job.Payload["simulate_nak"].(bool); ok && val {
+		currentScenario = "nak_message"
+	}
+	if val, ok := job.Payload["simulate_term"].(bool); ok && val {
+		currentScenario = "term_message"
 	}
 
-	if simulateNoAck && attemptCount == 1 {
-		noAckReason := "Simulating worker hang / missing ACK. JetStream AckWait (5s) will trigger redelivery."
-		log.Printf("[%s] JetStream Job %s: %s", workerName, job.JobID, noAckReason)
+	// Scenario 1: Worker Goroutine Crash Before ACK
+	if currentScenario == "crash_before_ack" && attemptCount == 1 {
+		if scenarioOnce {
+			a.scenarioMu.Lock()
+			a.activeScenario = "normal"
+			a.scenarioMu.Unlock()
+		}
 
-		procSpan.SetStatus(codes.Error, noAckReason)
-		procSpan.SetAttributes(attribute.String("processing.result", "no_ack_simulated"))
+		log.Println("================================================================================")
+		log.Printf("[FATAL GOROUTINE CRASH] Simulating unhandled panic in worker goroutine!")
+		log.Printf("panic: runtime error: worker crashed abruptly before sending ACK (job: %s)", job.JobID)
+		log.Println("")
+		log.Println("goroutine [running]:")
+		log.Printf("main.(*App).handleJetStreamMsg(...)")
+		log.Printf("    backend/services/cmd/processor-service/worker.go:490")
+		log.Printf("main.(*App).jsPullLoop(...)")
+		log.Printf("    backend/services/cmd/processor-service/worker.go:384")
+		log.Printf("created by main.(*App).startWorkers")
+		log.Printf("    backend/services/cmd/processor-service/worker.go:347")
+		log.Println("================================================================================")
+		log.Printf("[CRASH DETECTED] Worker goroutine %s DIED. Pull loop TERMINATED.", workerName)
+		log.Printf("[BROKER STATE] No ACK transmitted. JetStream AckWait (5s) countdown active on server.")
+		log.Printf("[SUPERVISOR] Scheduled automatic goroutine respawn in 5.5s...")
+
+		a.mu.Lock()
+		a.goroutineStatus = "CRASHED"
+		a.activeGoroutines = 0
+		a.mu.Unlock()
+
+		crashReason := "Worker goroutine panicked before sending ACK. JetStream AckWait (5s) ticking..."
+		procSpan.SetStatus(codes.Error, crashReason)
+		procSpan.SetAttributes(attribute.String("processing.result", "goroutine_crashed"))
 		procSpan.End()
 
 		telemetry.RecordJobFailed(procCtx, deliveryMode, workerName)
+		a.recordWorkerEvent(job.JobID, job.Type, "[GOROUTINE CRASH]", "#EF4444", crashReason, attemptCount, deliveryMode)
 
-		a.recordWorkerEvent(job.JobID, job.Type, "[NO ACK / TIMEOUT]", "#FB923C", noAckReason, attemptCount, deliveryMode)
+		// Spawn supervisor timer to revive goroutine after AckWait expires
+		go func(wName string, jID, jType, dMode string, att int) {
+			time.Sleep(5500 * time.Millisecond)
+			log.Println("================================================================================")
+			log.Printf("[SUPERVISOR] Respawning worker goroutine for consumer '%s'...", a.consumerName)
+			log.Println("================================================================================")
+			a.mu.Lock()
+			a.goroutineStatus = "RUNNING"
+			a.activeGoroutines = 1
+			wCtx, cancel := context.WithCancel(context.Background())
+			a.workerCancels = []context.CancelFunc{cancel}
+			a.mu.Unlock()
+			a.recordWorkerEvent(jID, jType, "[SUPERVISOR RESPAWN]", "#8B5CF6", "Supervisor revived worker goroutine after AckWait expiry", att, dMode)
 
-		// Intentionally skip msg.Ack() and msg.Nak() so JetStream AckWait timer expires and triggers redelivery
-		return
+			// Launch brand new worker goroutine!
+			go a.jsPullLoop(wCtx, wName, attempts, attemptsMu)
+		}(workerName, job.JobID, job.Type, deliveryMode, attemptCount)
+
+		// Intentionally exit without msg.Ack() or msg.Nak() AND signal jsPullLoop to terminate
+		return true
+	}
+
+	// Scenario 2: Processing Exceeds AckWait (Slow processing, 7s duration > 5s AckWait)
+	if currentScenario == "exceed_ack_wait" && attemptCount == 1 {
+		if scenarioOnce {
+			a.scenarioMu.Lock()
+			a.activeScenario = "normal"
+			a.scenarioMu.Unlock()
+		}
+
+		slowReason := "Simulating slow processing (7s duration, exceeds 5s AckWait threshold)..."
+		log.Printf("[%s] [SLOW PROCESSING] %s | %s", workerName, job.JobID, slowReason)
+		log.Printf("[BROKER NOTICE] JetStream server AckWait timer (5s) will expire before processing completes!")
+
+		a.recordWorkerEvent(job.JobID, job.Type, "[SLOW PROCESSING]", "#F59E0B", slowReason, attemptCount, deliveryMode)
+
+		// Intentionally delay for 7 seconds
+		time.Sleep(7 * time.Second)
+
+		// Send late ACK after delay
+		if a.consumerConfig.AckPolicy != "none" {
+			if err := msg.Ack(); err != nil {
+				log.Printf("[%s] Late ACK notice: %v", workerName, err)
+			}
+		}
+
+		procSpan.SetStatus(codes.Ok, "slow_execution_completed")
+		procSpan.SetAttributes(attribute.String("processing.result", "slow_execution_success"))
+		procSpan.End()
+
+		log.Printf("[%s] [COMPLETED] %s | Slow transaction finished after 7.0s.", workerName, job.JobID)
+		log.Printf("[%s] [LATE ACK SENT] %s | Explicit late msg.Ack() sent to JetStream.", workerName, job.JobID)
+		a.recordWorkerEvent(job.JobID, job.Type, "[COMPLETED]", "#34D399", "Slow execution finished after 7s", attemptCount, deliveryMode)
+		a.recordWorkerEvent(job.JobID, job.Type, "[LATE ACK SENT]", "#10B981", "Sent late msg.Ack() after 7s delay", attemptCount, deliveryMode)
+		return false
+	}
+
+	// Scenario 4: Worker NAKs Message (msg.Nak())
+	if currentScenario == "nak_message" && attemptCount == 1 {
+		if scenarioOnce {
+			a.scenarioMu.Lock()
+			a.activeScenario = "normal"
+			a.scenarioMu.Unlock()
+		}
+
+		nakReason := fmt.Sprintf("Simulating worker processing failure on attempt #%d -> sending explicit msg.Nak()", attemptCount)
+		log.Println("================================================================================")
+		log.Printf("[%s] [NAK TRIGGERED] %s | %s", workerName, job.JobID, nakReason)
+		log.Printf("[%s] [NAK SENT] Explicit msg.Nak() transmitted to JetStream broker", workerName)
+		log.Printf("[BROKER STATE] NATS server marks message unacknowledged. Redelivery scheduled immediately.")
+		log.Println("================================================================================")
+
+		procSpan.SetStatus(codes.Error, "simulated_nak_failure")
+		procSpan.SetAttributes(attribute.String("processing.result", "nak_sent"))
+		procSpan.End()
+
+		telemetry.RecordJobFailed(procCtx, deliveryMode, workerName)
+		a.recordWorkerEvent(job.JobID, job.Type, "[NAK SENT]", "#F87171", "Explicit msg.Nak() sent. Broker redelivery incoming.", attemptCount, deliveryMode)
+
+		if err := msg.Nak(); err != nil {
+			log.Printf("[%s] Error transmitting NAK: %v", workerName, err)
+		}
+		return false
+	}
+
+	// Scenario 5: Worker Terminates Message (msg.Term())
+	if currentScenario == "term_message" {
+		if scenarioOnce {
+			a.scenarioMu.Lock()
+			a.activeScenario = "normal"
+			a.scenarioMu.Unlock()
+		}
+
+		termReason := fmt.Sprintf("Poison message condition detected on job %s -> sending terminal ACK (msg.Term())", job.JobID)
+		log.Println("================================================================================")
+		log.Printf("[%s] [TERM TRIGGERED] %s | %s", workerName, job.JobID, termReason)
+		log.Printf("[%s] [TERM SENT] Explicit msg.Term() sent. Message permanently terminated by broker.", workerName)
+		log.Printf("[BROKER STATE] NATS server terminates message. Message will NEVER be redelivered. ACK floor advances.")
+		log.Println("================================================================================")
+
+		procSpan.SetStatus(codes.Error, "poison_message_terminated")
+		procSpan.SetAttributes(attribute.String("processing.result", "term_sent"))
+		procSpan.End()
+
+		telemetry.RecordJobFailed(procCtx, deliveryMode, workerName)
+		a.recordWorkerEvent(job.JobID, job.Type, "[TERM SENT]", "#EF4444", "Explicit msg.Term() sent. Message permanently terminated without redelivery.", attemptCount, deliveryMode)
+
+		if err := msg.Term(); err != nil {
+			log.Printf("[%s] Error transmitting Term: %v", workerName, err)
+		}
+		return false
 	}
 
 	// 4. Evaluate failure simulation
@@ -572,7 +743,7 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts 
 					log.Printf("[%s] Failed to ACK original message %s after DLQ routing: %v", workerName, job.JobID, err)
 				}
 			}
-			return
+			return false
 		}
 
 		// Record error on processing span
@@ -592,32 +763,35 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts 
 			// NakWithDelay for throttled retry
 			nakReason := fmt.Sprintf("Explicit NAK sent with %ds delay (%s)", nakDelaySec, errMsg)
 			a.recordWorkerEvent(job.JobID, job.Type, "[NAK SENT]", "#F87171", nakReason, attemptCount, deliveryMode)
-			return
+			return false
 		}
 
 		// Standard Nak for immediate redelivery
 		_ = msg.Nak()
 		a.recordWorkerEvent(job.JobID, job.Type, "[FAILED]", "#EF4444", errMsg, attemptCount, deliveryMode)
-		return
+		return false
 	}
 
-	// ACK on success
-	if a.consumerConfig.AckPolicy != "none" {
-		if err := msg.Ack(); err != nil {
-			log.Printf("[%s] Failed to ACK message %s: %v", workerName, job.JobID, err)
-		}
-	}
-
+	// 4. Processing completed successfully
 	procSpan.SetStatus(codes.Ok, "success")
 	procSpan.SetAttributes(attribute.String("processing.result", "success"))
 	procSpan.End()
 
-	recvSpan.AddEvent("message_acknowledged")
+	log.Printf("[%s] [COMPLETED] %s | Transaction finished successfully (took %v)", workerName, job.JobID, procDuration)
+	a.recordWorkerEvent(job.JobID, job.Type, "[COMPLETED]", "#34D399", "Execution completed successfully", attemptCount, deliveryMode)
 
+	// 5. Send explicit ACK to JetStream
+	if a.consumerConfig.AckPolicy != "none" {
+		if err := msg.Ack(); err != nil {
+			log.Printf("[%s] Failed to ACK message %s: %v", workerName, job.JobID, err)
+		} else {
+			log.Printf("[%s] [ACK SENT] %s | Explicit msg.Ack() confirmed to JetStream", workerName, job.JobID)
+		}
+	}
+
+	recvSpan.AddEvent("message_acknowledged")
 	telemetry.RecordMessageAcked(recvCtx, deliveryMode, workerName)
 	telemetry.RecordJobProcessed(recvCtx, deliveryMode, workerName, "COMPLETED", procDuration)
-
-	log.Printf("[%s] JetStream Job %s processed successfully", workerName, job.JobID)
-	a.recordWorkerEvent(job.JobID, job.Type, "[COMPLETED]", "#34D399", "Execution completed successfully", attemptCount, deliveryMode)
 	a.recordWorkerEvent(job.JobID, job.Type, "[ACK SENT]", "#10B981", "Explicit msg.Ack() sent to JetStream", attemptCount, deliveryMode)
+	return false
 }

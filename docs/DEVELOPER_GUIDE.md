@@ -219,6 +219,41 @@ consumer, err := stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
 batch, err := consumer.Fetch(1, jetstream.FetchMaxWait(500*time.Millisecond))
 ```
 
+### Durable Consumer Failure Scenarios (Stage 3 Goroutine Lab)
+
+Demonstrates how NATS JetStream handles consumer failures according to server-side configuration (`AckPolicy: Explicit`, `AckWait: 5s`):
+
+1. **Scenario 1 -- Worker Goroutine Crash Before ACK**:
+   - The worker goroutine fetches a message (Delivery #1), begins processing, and simulates an unhandled panic before transmitting `msg.Ack()`.
+   - The terminal running `processor-service` prints an authentic panic and Go stack trace, marking the goroutine status as `CRASHED` (0 active workers).
+   - The message remains unacknowledged in the broker. Inspecting via `nats consumer info JOBS job-processor` shows `Outstanding ACKs: 1`.
+   - After 5.5s (just past the 5s `AckWait` threshold), the supervisor revives the goroutine, JetStream redelivers the message with `Delivery #2` (`[REDELIVERED]`), and the worker completes processing and sends explicit `msg.Ack()`.
+
+2. **Scenario 2 -- Processing Exceeds AckWait (Slow Processing)**:
+   - The worker intentionally simulates 7s processing duration, exceeding the 5s `AckWait` timeout.
+   - At t=5s, the NATS server timer expires and redelivers the unacknowledged message to the pull loop.
+   - The worker completes execution after 7s and transmits late `msg.Ack()`, clearing broker pending state.
+
+3. **Scenario 3 -- Worker Temporarily Unavailable (Backlog Drainage)**:
+   - Presenter toggles the Worker Pull Loop to `OFF` in Stage 3.
+   - Inbound messages published to `jobs.submitted` accumulate safely in stream `JOBS` as consumer backlog (`Pending`).
+   - Toggling the Pull Loop back to `ON` immediately resumes message fetching, draining the accumulated backlog without message loss.
+
+4. **Scenario 4 -- Worker NAKs Message (`msg.Nak()`)**:
+   - The worker detects a transient processing error on attempt #1 and explicitly sends `msg.Nak()`.
+   - NATS JetStream immediately marks the message unacknowledged and schedules it for prompt redelivery.
+   - The worker pulls the redelivered message (Delivery #2), completes processing successfully, and sends explicit `msg.Ack()`.
+   - Inspecting `nats consumer info JOBS job-processor` confirms `Redeliveries: 1`.
+
+5. **Scenario 5 -- Worker Terminates Message (`msg.Term()`)**:
+   - The worker identifies an unrecoverable poison message and issues a terminal acknowledgement (`msg.Term()`).
+   - NATS permanently completes the message; it is never redelivered to this consumer, and the consumer's ACK floor advances past the terminated message.
+   - Inspecting `nats consumer info JOBS job-processor` confirms `Outstanding ACKs: 0` and `Redeliveries: 0`.
+
+6. **Scenario 6 -- Durable Consumer State Retention Across Restart**:
+   - Demonstrates that stopping or restarting the worker process preserves the durable consumer object in NATS.
+   - Previously acknowledged messages are never redelivered; only pending backlog messages in the stream are fetched and processed upon reconnect.
+
 ### Stable Dashboard Log Ordering
 Events happening within the same second are sorted by logical state sequence (`PUBLISHED` -> `RECEIVED` -> `COMPLETED`) and grouped by `JobID` in the backend before being sent to the UI.
 

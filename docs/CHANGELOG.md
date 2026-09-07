@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-07
 
+### Added (Durable Consumer Failure Scenarios & Rich Goroutine Diagnostics)
+- **Consumer Failure Testing Reference (`docs/consumer_testing.md`)**:
+  - Created standardized testing guide featuring a single table format detailing `Failure`, `Description`, `How NATS works in this`, and `How to do demo`.
+  - Added Single Worker Testing covering Scenario 1 (Worker Crash Before ACK), Scenario 2 (Processing Exceeds AckWait / Late ACK), Scenario 3 (Worker Unavailable / Backlog Accumulation), Scenario 4 (Worker NAKs Message), Scenario 5 (Worker Terminates Message), and Scenario 6 (Consumer State Retention Across Restart).
+  - Added Section 2 for Multi Worker Testing as an extensible template for upcoming test cases.
+- **Collapsible Vertical Failure Lab (`frontend/src/components/CoreFlow/CoreFlowProcessor.tsx`, `frontend/src/api/demoApi.ts`)**:
+  - Converted the Failure Lab in Stage 3 to a collapsible container with interactive header toggle and ASCII indicator (`[-]` / `[+]`).
+  - Arranged failure scenarios into a vertical stack of dedicated cards:
+    - 1. Worker Crash Before ACK (`crash_before_ack`)
+    - 2. Exceed AckWait Threshold (`exceed_ack_wait`)
+    - 4. Worker NAKs Message (`nak_message` with explicit `msg.Nak()` and immediate redelivery)
+    - 5. Worker Terminates Message (`term_message` with `msg.Term()`, advancing ACK floor without redelivery)
+    - 6. Durable Consumer State Retention Across Restart (interactive restart demonstration)
+  - Extended `FailureScenario` TypeScript type and API client.
+  - Retained clean reset button and copyable `nats consumer info` CLI helper.
+- **Additional Failure Scenarios Backend Engine (`backend/services/cmd/processor-service/worker.go`, `http_server.go`)**:
+  - Implemented Scenario 4 (Explicit NAK): Sends `msg.Nak()` on attempt #1, emits `[NAK SENT]` log and event; JetStream immediately queues for attempt #2 where it completes with `msg.Ack()`.
+  - Implemented Scenario 5 (Terminal ACK): Sends `msg.Term()` for poison messages, emits `[TERM SENT]` log; broker marks permanently terminated and advances ACK floor without redelivery.
+  - Implemented Scenario 6 (Durable State Inspection): Startup logs existing consumer state (`[DURABLE STATE] Ack Floor: Stream Seq N | Outstanding ACKs: N | Stream Backlog: N`).
+  - Updated `PUT /processor/scenario` to accept `nak_message` and `term_message`.
+- **True Goroutine Termination & Supervisor Respawn (`backend/services/cmd/processor-service/worker.go`, `main.go`, `http_server.go`)**:
+  - Implemented Scenario 1 (Worker Goroutine Crash Before ACK): Authentic panic simulation with Go stack trace printed to stdout, actual goroutine exit from `jsPullLoop`, 0 active goroutines during the 5s AckWait window, and 5.5s supervisor timer launching a genuine new worker goroutine that pulls redelivery #2 and completes with `msg.Ack()`.
+  - Implemented Scenario 2 (Processing Exceeds AckWait): 7s simulated execution taking longer than 5s server AckWait, verifying NATS broker redelivery while execution is ongoing and delayed `msg.Ack()` completion.
+  - Implemented Scenario 3 (Worker Unavailable): Toggling worker pull loop pauses goroutines, allowing messages to accumulate in `JOBS` stream and drain immediately upon resuming.
+  - Added standardized startup logs: `[CONFIG] Consumer: job-processor...`, `[WORKERS] Initializing...`, and `[processor-1] Worker goroutine READY...`.
+  - Added HTTP endpoints `PUT /processor/scenario` and `POST /processor/restart` on port :8082 for direct worker control.
+- **Stage 3 Failure Lab & Broker Inspection UI (`frontend/src/components/CoreFlow/CoreFlowProcessor.tsx`, `frontend/src/api/demoApi.ts`)**:
+  - Added Card 3 (Failure Lab) with 1-click arming for "1. Crash Before ACK", "2. Exceed AckWait (7s)", and "Reset", along with copyable NATS CLI check command (`nats consumer info JOBS job-processor`).
+  - Added Goroutine State row in Card 1 with manual "Revive Goroutine Now" action.
+  - Added server-side Ack Policy (`Explicit`) and AckWait (`5s`) configuration badges to Card 2.
+  - Decluttered Stage 3 by removing the redundant activity log panel to focus presenter attention on live terminal output.
+
 ### Changed (NATS Demo View 3-Stage Lifecycle Panel Cleanups)
 - **Stage 1 Wire Envelope Cleanup (`frontend/src/components/CoreFlow/CoreFlowPublisher.tsx`)**:
   - Removed the redundant `OUTGOING NATS WIRE ENVELOPE` box from Stage 1 to declutter the message publishing interface.
@@ -399,8 +431,8 @@ All notable changes to this project will be documented in this file.
   - Re-implemented the **Observability Setup Panel** into a 3-column **T-Shape Architecture Layout with Inner LGTM Boxes**:
     - **Source Columns**: Left column displays App Services (`Job Service :8081` & `Processor Service`); Right column displays NATS Infrastructure (`NATS Server :4222/:8222` & Exporter/Daemons).
     - **Coloured Conduit Bridges**: In between the sources and central stack, embedded directional colored tracks for MELT signals:
-      - Left bridge: Green `M • METRICS` and Indigo `T • TRACES` with OTLP gRPC protocol badges.
-      - Right bridge: Green `M • SCRAPE`, Amber `L • LOGS`, and Magenta `E • EVENTS` with capture details.
+      - Left bridge: Green `M | METRICS` and Indigo `T | TRACES` with OTLP gRPC protocol badges.
+      - Right bridge: Green `M | SCRAPE`, Amber `L | LOGS`, and Magenta `E | EVENTS` with capture details.
     - **Central LGTM Box with Inner Boxes**: Main `GRAFANA OTEL-LGTM` container containing the `OpenTelemetry Collector Gateway (:4317/:4318)` on top and an interactive 2x2 grid of all 4 inner engine boxes (Loki `:3100`, Grafana `:3000`, Tempo `:3200`, Prometheus `:9090`).
     - Cut down all verbose paragraph text and long descriptions while preserving high-density component cards and tags.
   - Added dedicated Loki log panels to Grafana dashboard for NATS Server Centralized Logs and NATS Operational Advisories.
@@ -464,7 +496,7 @@ All notable changes to this project will be documented in this file.
   - Upgraded vertical inter-tier connectors (`UI -> Job Service` and `Demo Service -> NATS`) to prominent, high-visibility connector cards matching horizontal connector styling:
     - Active green state (`#10B981`) with vertical line and arrow (`v`).
     - Prominent uppercase monospace labels (`HTTP REST Ingress (:8081)` and `NATS TCP Client (:4222)`).
-    - Clear endpoint listings (`POST /jobs, /schedule, /validate` and `jobs.> Tap • Replay • Control RPC`).
+    - Clear endpoint listings (`POST /jobs, /schedule, /validate` and `jobs.> Tap | Replay | Control RPC`).
 - **Reason**:
   - Fix misaligned and faint vertical inter-tier connections so `UI -> Job Service` and `Demo Service -> NATS` are prominently visible and structurally aligned with the rest of the topology.
 - **Affected Area**:
@@ -473,8 +505,8 @@ All notable changes to this project will be documented in this file.
 ### Added (Rich Architecture Connector Boxes for Job Service -> NATS and NATS -> Processor)
 - **Job Service -> NATS Ingress Box (`DemoTopology.tsx`, `index.css`)**:
   - Upgraded horizontal connector between Job Service and NATS Server into a prominent, data-rich card box (`NATS TCP INGRESS (:4222)`).
-  - Included color-coded tag badges and exact subjects: `PUB: jobs.submitted • jobs.queue`, `RPC: jobs.validate (Request)`, `HDR: W3C traceparent • Msg-Id`.
-  - Added matching rich UI Gateway box in Tier 1 (`UI GATEWAY (:8080)`) with endpoints `REST: GET /activities • /status`, `CTRL: PUT /consumer • /queue-group`, `DATA: Activity Polling & DLQ Reprocess`.
+  - Included color-coded tag badges and exact subjects: `PUB: jobs.submitted | jobs.queue`, `RPC: jobs.validate (Request)`, `HDR: W3C traceparent | Msg-Id`.
+  - Added matching rich UI Gateway box in Tier 1 (`UI GATEWAY (:8080)`) with endpoints `REST: GET /activities | /status`, `CTRL: PUT /consumer | /queue-group`, `DATA: Activity Polling & DLQ Reprocess`.
 - **NATS -> Processor Service Delivery Bridge Grid (`DemoTopology.tsx`, `index.css`)**:
   - Replaced generic text bridge between NATS Server and Processor Service with a dual-card rich architecture grid:
     1. **Downstream Message Delivery (NATS -> Processor)**:
@@ -482,13 +514,13 @@ All notable changes to this project will be documented in this file.
        - Details `PULL`: `Stream JOBS -> Consumer 'job-processor' (Batch: 5)`.
        - Details `QUEUE`: `Core NATS 1-of-N -> Group 'job-workers' on jobs.queue`.
        - Details `RPC`: `Sync Request Dispatch -> Responder jobs.validate`.
-       - Details `POLICY`: `AckWait: 5s • NakWithDelay Backoff • Ordering`.
+       - Details `POLICY`: `AckWait: 5s | NakWithDelay Backoff | Ordering`.
     2. **Upstream Protocol Acks & Lifecycle Feedback (Processor -> NATS)**:
        - Displays `BIDIRECTIONAL FEEDBACK` badge in cyan.
-       - Details `ACKS`: `Explicit msg.Ack() • msg.NakWithDelay(d) • msg.Term()`.
-       - Details `EVENTS`: `jobs.received • jobs.processing • jobs.completed • jobs.failed`.
+       - Details `ACKS`: `Explicit msg.Ack() | msg.NakWithDelay(d) | msg.Term()`.
+       - Details `EVENTS`: `jobs.received | jobs.processing | jobs.completed | jobs.failed`.
        - Details `POISON`: `Max Deliveries (3) Routing -> Stream JOBS_DLQ (jobs.dlq)`.
-       - Details `METRICS`: `Delivery Counts • Stream Sequence • Worker Attribution`.
+       - Details `METRICS`: `Delivery Counts | Stream Sequence | Worker Attribution`.
 - **Reason**:
   - Provide comprehensive architectural and operational context directly on all connectors in the topology visualizer.
 - **Affected Area**:

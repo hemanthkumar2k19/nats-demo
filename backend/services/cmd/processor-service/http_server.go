@@ -135,19 +135,108 @@ func (a *App) startHTTPServer(port string) *http.Server {
 			processing := a.processingEnabled
 			consumerName := a.consumerName
 			workers := a.consumerConfig.Workers
+			gStatus := a.goroutineStatus
+			activeGoroutines := a.activeGoroutines
 			a.mu.RUnlock()
+
+			a.scenarioMu.RLock()
+			activeScenario := a.activeScenario
+			a.scenarioMu.RUnlock()
 
 			if workers <= 0 {
 				workers = 1
 			}
+			if activeGoroutines <= 0 && processing {
+				activeGoroutines = workers
+			}
+			if gStatus == "" {
+				if processing {
+					gStatus = "RUNNING"
+				} else {
+					gStatus = "PAUSED"
+				}
+			}
 
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":     "active",
-				"processing": processing,
-				"consumer":   consumerName,
-				"stream":     "JOBS",
-				"workers":    workers,
+				"status":            "active",
+				"processing":        processing,
+				"consumer":          consumerName,
+				"stream":            "JOBS",
+				"workers":           workers,
+				"scenario":          activeScenario,
+				"goroutine_status":  gStatus,
+				"active_goroutines": activeGoroutines,
+				"ack_wait_seconds":  5,
+				"ack_policy":        "explicit",
+			})
+			return
+		}
+
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
+	// PUT /processor/scenario - arms or updates failure scenario on worker
+	mux.HandleFunc("/processor/scenario", func(w http.ResponseWriter, r *http.Request) {
+		setCorsHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		if r.Method == http.MethodPut {
+			var body struct {
+				Scenario string `json:"scenario"`
+				Once     bool   `json:"once"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			if body.Scenario == "" {
+				body.Scenario = "normal"
+			}
+
+			a.scenarioMu.Lock()
+			a.activeScenario = body.Scenario
+			a.scenarioOnce = body.Once
+			a.scenarioMu.Unlock()
+
+			log.Printf("[HTTP] Worker failure scenario set: scenario=%s, once=%t", body.Scenario, body.Once)
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":   "ok",
+				"scenario": body.Scenario,
+				"once":     body.Once,
+			})
+			return
+		}
+
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
+	// POST /processor/restart - manually respawns worker goroutines
+	mux.HandleFunc("/processor/restart", func(w http.ResponseWriter, r *http.Request) {
+		setCorsHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		if r.Method == http.MethodPost {
+			a.mu.Lock()
+			a.goroutineStatus = "RUNNING"
+			a.activeGoroutines = 1
+			a.mu.Unlock()
+
+			log.Println("[HTTP] Manual supervisor restart triggered for worker goroutines")
+			a.recordWorkerEvent("SYSTEM", "SUPERVISOR", "[SUPERVISOR RESPAWN]", "#8B5CF6", "Manual supervisor restart of worker goroutine", 0, "JETSTREAM")
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "restarted",
 			})
 			return
 		}
@@ -174,6 +263,13 @@ func (a *App) startHTTPServer(port string) *http.Server {
 
 			a.mu.Lock()
 			a.processingEnabled = body.Enabled
+			if body.Enabled {
+				a.goroutineStatus = "RUNNING"
+				a.activeGoroutines = 1
+			} else {
+				a.goroutineStatus = "PAUSED"
+				a.activeGoroutines = 0
+			}
 			a.mu.Unlock()
 
 			stateStr := "ON"
