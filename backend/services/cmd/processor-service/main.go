@@ -33,7 +33,6 @@ type App struct {
 	valSub            *nats.Subscription
 	statusSub         *nats.Subscription
 	stateSetSub       *nats.Subscription
-	consumerConfigSub *nats.Subscription
 	jsConsumer        jetstream.Consumer
 	processingEnabled bool
 	consumerConfig    jobs.ConsumerConfig
@@ -52,11 +51,10 @@ type App struct {
 	crashedWorker    string // "processor-X" if a worker crashed
 
 	// JetStream Consumer state
-	consumerResetSub     *nats.Subscription
-	attemptsMu           sync.Mutex
-	attempts             map[string]int
-	consumerDistMu       sync.Mutex
-	consumerDistribution map[string]int
+	attemptsMu            sync.Mutex
+	attempts              map[string]int
+	consumerDistMu        sync.Mutex
+	consumerDistribution  map[string]int
 
 	// Core NATS Queue Group state
 	queueMu           sync.Mutex
@@ -171,17 +169,18 @@ func (a *App) Run() error {
 	// Start direct processor HTTP API server (:8082)
 	a.httpServer = a.startHTTPServer(a.cfg.ProcessorPort)
 
+	var coreWorkerCounter uint64
+	jobHandler := a.buildCoreJobHandler(&coreWorkerCounter)
+
 	// Mode handling:
-	// "model" (or "demo") runs only the JetStream pull consumer, workers, and HTTP server for NATS Demo View.
-	// "all" runs all components, including Core NATS transient pub/sub, RPC validation, queue groups, and demo control responders.
+	// "model" (or "demo") runs JetStream pull consumer, workers, direct HTTP server (:8082), and control responders.
+	// "all" runs all components, including Core NATS transient pub/sub, RPC validation, and queue groups.
 	if mode == "model" || mode == "demo" {
-		log.Printf("[Run] Mode '%s' active: Running JetStream 'job-processor' pull workers and direct HTTP server (:8082) only.", mode)
+		log.Printf("[Run] Mode '%s' active: Running JetStream 'job-processor' pull workers, direct HTTP server (:8082), and control responders.", mode)
+		if err := a.subscribeControlResponders(workerName, jobHandler); err != nil {
+			log.Printf("[Run] Warning: failed to subscribe control responders: %v", err)
+		}
 	} else {
-		var coreWorkerCounter uint64
-
-		// Build Core NATS job processing handler
-		jobHandler := a.buildCoreJobHandler(&coreWorkerCounter)
-
 		// Subscribe to Core NATS
 		if err := a.subscribeCore(workerName, jobHandler); err != nil {
 			return fmt.Errorf("failed to subscribe to Core NATS: %w", err)
@@ -235,7 +234,7 @@ func (a *App) Stop() {
 		a.unsubscribeValidation()
 	}
 
-	if a.statusSub != nil || a.consumerConfigSub != nil {
+	if a.statusSub != nil || a.stateSetSub != nil {
 		log.Println("[Stop] Unsubscribing control responders...")
 		a.unsubscribeControlResponders()
 	}

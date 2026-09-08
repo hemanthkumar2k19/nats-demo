@@ -96,6 +96,32 @@ func (h *ControlHandler) GetStatus(c *gin.Context) {
 		}
 	}
 
+	if processorStatus == "OFFLINE" {
+		// Fallback to direct HTTP check on processor-service :8082
+		pResp, pErr := client.Get("http://localhost:8082/processor/status")
+		if pErr == nil && pResp != nil {
+			if pResp.StatusCode == http.StatusOK {
+				var statusResp struct {
+					Status       string `json:"status"`
+					Processing   bool   `json:"processing"`
+					Workers      int    `json:"workers"`
+					ConsumerName string `json:"consumer_name"`
+				}
+				if err := json.NewDecoder(pResp.Body).Decode(&statusResp); err == nil {
+					processorStatus = "ACTIVE"
+					isProcessing = statusResp.Processing
+					if statusResp.Workers > 0 {
+						workers = statusResp.Workers
+					}
+					if statusResp.ConsumerName != "" {
+						consumerName = statusResp.ConsumerName
+					}
+				}
+			}
+			_ = pResp.Body.Close()
+		}
+	}
+
 	// Fetch JetStream JOBS stream metrics and consumer pending count
 	var jsInfo gin.H
 	if natsStatus == "CONNECTED" {
@@ -533,76 +559,6 @@ func (h *ControlHandler) GetConsumerStatus(c *gin.Context) {
 		"redelivered":    redelivered,
 		"distribution":   distribution,
 	})
-}
-
-// PostConsumerReset requests processor-service to reset worker distribution counters for the JetStream consumer.
-func (h *ControlHandler) PostConsumerReset(c *gin.Context) {
-	reply, err := h.natsClient.Conn.Request(messaging.SubjectConsumerReset, []byte("{}"), 2*time.Second)
-	if err != nil {
-		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "Failed to reset consumer distribution: " + err.Error()})
-		return
-	}
-
-	var resp jobs.ConsumerStatusResponse
-	if err := json.Unmarshal(reply.Data, &resp); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid response from processor: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
-}
-
-// PutConsumerConfig forwards consumer configuration changes to processor-service over NATS.
-func (h *ControlHandler) PutConsumerConfig(c *gin.Context) {
-	var req jobs.ConsumerConfig
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid consumer configuration payload: " + err.Error()})
-		return
-	}
-
-	if req.Type != "durable" && req.Type != "ephemeral" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Consumer type must be 'durable' or 'ephemeral'"})
-		return
-	}
-	if req.Workers < 1 || req.Workers > 5 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Workers must be between 1 and 5"})
-		return
-	}
-	if req.Ordering != "normal" && req.Ordering != "ordered" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Ordering must be 'normal' or 'ordered'"})
-		return
-	}
-
-	payload, err := json.Marshal(req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal consumer config"})
-		return
-	}
-
-	reply, err := h.natsClient.Conn.Request(messaging.SubjectConsumerConfigSet, payload, 3*time.Second)
-	if err != nil {
-		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "Processor service did not respond to consumer update: " + err.Error()})
-		return
-	}
-
-	var resp struct {
-		Status       string `json:"status"`
-		ConsumerName string `json:"consumer_name"`
-		Type         string `json:"type"`
-		Workers      int    `json:"workers"`
-		Ordering     string `json:"ordering"`
-		Error        string `json:"error,omitempty"`
-	}
-	if err := json.Unmarshal(reply.Data, &resp); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid response from processor"})
-		return
-	}
-	if resp.Error != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": resp.Error})
-		return
-	}
-
-	c.JSON(http.StatusOK, resp)
 }
 
 // DLQMessage represents a failed message in the JOBS_DLQ stream.

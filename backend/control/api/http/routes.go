@@ -17,8 +17,6 @@ func RegisterControlRoutes(router *gin.Engine, h *ControlHandler) {
 	router.GET("/messaging/activity", h.GetAddressingActivity)
 	router.PUT("/processor/state", h.PutProcessorState)
 	router.GET("/consumer", h.GetConsumerStatus)
-	router.PUT("/consumer", h.PutConsumerConfig)
-	router.POST("/consumer/reset", h.PostConsumerReset)
 	router.GET("/dlq/status", h.GetDLQStatus)
 	router.POST("/dlq/setup", h.SetupDLQ)
 	router.POST("/dlq/cleanup", h.CleanupDLQ)

@@ -24,9 +24,6 @@ const (
 	SubjectJobReplyReceived   = "jobs.reply.received"
 	SubjectJobRequestTimeout  = "jobs.request.timeout"
 
-	// Consumer management and deduplication subjects
-	SubjectConsumerConfigSet = "consumer.config.set"
-	SubjectConsumerReset     = "consumer.reset"
 	SubjectJobDeduplicated   = "jobs.deduplicated"
 
 	// JetStream replay subject

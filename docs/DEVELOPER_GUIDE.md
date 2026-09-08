@@ -71,11 +71,10 @@ nats-demo/
      1. `Pub/Sub & Stream`: Standard job submissions with instant switch to JetStream deduplication test bench.
      2. `Delayed & Retry`: Dedicated test lab for NAK with Delay, AckWait missing ACK timeout, and Application Scheduled Delivery.
      3. `Queue Groups`: Core NATS server-side load balancing and worker distribution without JetStream.
-     4. `Consumer Lab`: Interactive JetStream pull consumer tuning (concurrency, competing workers, AckWait, MaxDeliver).
-     5. `Request / Reply`: Synchronous RPC validation testing and timeout simulation.
-     6. `Dead Letter Queue`: Poison message failure routing and DLQ message inspection.
-     7. `Stream Replay`: Historical time-window and sequence rewind controls.
-     8. `Saga Orchestration`: Interactive 2-Operation distributed transaction workflow (`Reserve Inventory` -> `Process Payment` -> `Completed`) with automated or step-by-step compensating rollback (`Compensate: Release Inventory`) purely over NATS events.
+     4. `Request / Reply`: Synchronous RPC validation testing and timeout simulation.
+     5. `Dead Letter Queue`: Poison message failure routing and DLQ message inspection.
+     6. `Stream Replay`: Historical time-window and sequence rewind controls.
+     7. `Saga Orchestration`: Interactive 2-Operation distributed transaction workflow (`Reserve Inventory` -> `Process Payment` -> `Completed`) with automated or step-by-step compensating rollback (`Compensate: Release Inventory`) purely over NATS events.
    - Features the **Observability Panel Container** (`ObservabilityPanelContainer.tsx`) with a top-level switcher between `Live Activity Log` and `Subject Addressing & Wildcards`.
    - Features the **Activity Log Message Classification Switcher** (`ActivityPanel.tsx`): 3-way top-bar toggle between:
      - `All Stream`: Consolidated view of all messages and telemetry events.
@@ -97,7 +96,7 @@ nats-demo/
 | **Core NATS Queue Groups** | Demonstrates Core NATS server-side load balancing across subscribers in queue group `job-workers` on subject `jobs.queue` without JetStream or consumer state. |
 | **Durable Streaming (JetStream)** | Jobs sent via `JETSTREAM` delivery mode are persisted in the `JOBS` stream, allowing offline processing. |
 | **Consumer Groups / Competing Consumers** | Multiple processor workers (`processor-1`, `processor-2`) pull from the same stream to balance workloads. |
-| **Durable vs Ephemeral Consumers** | Supports durable (`job-processor`) and dynamic ephemeral pull consumers configured via Consumer Lab. |
+| **Durable vs Ephemeral Consumers** | Supports durable (`job-processor`) pull consumer and dynamic ephemeral replay consumers. |
 | **Ordering** | Ordered consumer demonstration ensuring message delivery order follows stream sequence. |
 | **At-Least-Once & Redelivery** | Failure simulation triggers `msg.Nak()`, causing JetStream to redeliver with incremented delivery counts. |
 | **NAK with Delay (`msg.NakWithDelay`)** | Worker requests explicit retry backoff (e.g. 5s); JetStream holds redelivery until the backoff window elapses. |

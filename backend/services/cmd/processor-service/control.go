@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"time"
 
 	"nats-demo/services/internal/jobs"
 	"nats-demo/services/internal/messaging"
@@ -39,165 +38,7 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 	a.statusSub = statusSub
 	log.Println("[Run] Subscribed to status responder subject: status.processor")
 
-	// 2. Consumer Configuration Control (consumer.config.set)
-	consumerConfigSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectConsumerConfigSet, func(msg *nats.Msg) {
-		var req jobs.ConsumerConfig
-		if err := json.Unmarshal(msg.Data, &req); err != nil {
-			log.Printf("[Processor] Failed to unmarshal consumer config payload: %v", err)
-			_ = msg.Respond([]byte(`{"error":"Invalid consumer config payload"}`))
-			return
-		}
-
-		if req.Type == "" {
-			req.Type = "durable"
-		}
-		if req.Workers <= 0 {
-			req.Workers = 1
-		} else if req.Workers > 5 {
-			req.Workers = 5
-		}
-		if req.Ordering == "" {
-			req.Ordering = "normal"
-		}
-		if req.Ordering == "ordered" {
-			req.Workers = 1
-		}
-		if req.DeliverPolicy == "" {
-			if req.Type == "ephemeral" {
-				req.DeliverPolicy = "new"
-			} else {
-				req.DeliverPolicy = "all"
-			}
-		}
-		if req.AckPolicy == "" {
-			req.AckPolicy = "explicit"
-		}
-
-		a.mu.Lock()
-		a.consumerConfig = req
-		if req.Type == "ephemeral" {
-			a.consumerName = fmt.Sprintf("ephemeral-%d", time.Now().UnixNano()%100000)
-		} else {
-			a.consumerName = "job-processor"
-		}
-		a.mu.Unlock()
-
-		// Re-subscribe JetStream with new consumer configuration
-		a.unsubscribeJetStream()
-		if err := a.subscribeJetStream(); err != nil {
-			log.Printf("[Processor] Re-subscribing JetStream consumer failed: %v", err)
-		}
-
-		// Scale workers incrementally matching the new worker count
-		a.ScaleWorkers(req.Workers)
-
-		var pending uint64
-		var ackPending, redelivered int
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if stream, err := a.natsClient.JS.Stream(ctx, "JOBS"); err == nil && stream != nil {
-			if cons, err := stream.Consumer(ctx, a.consumerName); err == nil && cons != nil {
-				if cinfo, err := cons.Info(ctx); err == nil && cinfo != nil {
-					pending = cinfo.NumPending
-					ackPending = cinfo.NumAckPending
-					redelivered = cinfo.NumRedelivered
-				}
-			}
-		}
-
-		statusVal := "ACTIVE"
-		if !a.processingEnabled {
-			statusVal = "STOPPED"
-		}
-
-		resp := jobs.ConsumerStatusResponse{
-			Name:          a.consumerName,
-			Type:          req.Type,
-			Workers:       req.Workers,
-			Ordering:      req.Ordering,
-			DeliverPolicy: req.DeliverPolicy,
-			AckPolicy:     req.AckPolicy,
-			Delivery:      "at-least-once",
-			Status:        statusVal,
-			Pending:       pending,
-			AckPending:    ackPending,
-			Redelivered:   redelivered,
-		}
-		respBytes, _ := json.Marshal(resp)
-		_ = msg.Respond(respBytes)
-		log.Printf("[Processor] Consumer reconfigured: Type=%s, Name=%s, Workers=%d, Ordering=%s, Deliver=%s, Ack=%s",
-			req.Type, a.consumerName, req.Workers, req.Ordering, req.DeliverPolicy, req.AckPolicy)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to subscribe to consumer config subject: %w", err)
-	}
-	a.consumerConfigSub = consumerConfigSub
-	log.Printf("[Run] Subscribed to consumer config responder subject: %s", messaging.SubjectConsumerConfigSet)
-
-	// 3. Consumer Distribution Reset (consumer.reset)
-	consumerResetSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectConsumerReset, func(msg *nats.Msg) {
-		a.consumerDistMu.Lock()
-		for k := range a.consumerDistribution {
-			a.consumerDistribution[k] = 0
-		}
-		distCopy := make(map[string]int)
-		for k, v := range a.consumerDistribution {
-			distCopy[k] = v
-		}
-		a.consumerDistMu.Unlock()
-
-		a.mu.RLock()
-		statusVal := "ACTIVE"
-		if !a.processingEnabled {
-			statusVal = "STOPPED"
-		}
-		cName := a.consumerName
-		cType := a.consumerConfig.Type
-		wCount := a.consumerConfig.Workers
-		ordering := a.consumerConfig.Ordering
-		cDeliver := a.consumerConfig.DeliverPolicy
-		cAck := a.consumerConfig.AckPolicy
-		a.mu.RUnlock()
-
-		var pending uint64
-		var ackPending, redelivered int
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		if stream, err := a.natsClient.JS.Stream(ctx, "JOBS"); err == nil && stream != nil {
-			if cons, err := stream.Consumer(ctx, cName); err == nil && cons != nil {
-				if cinfo, err := cons.Info(ctx); err == nil && cinfo != nil {
-					pending = cinfo.NumPending
-					ackPending = cinfo.NumAckPending
-					redelivered = cinfo.NumRedelivered
-				}
-			}
-		}
-
-		resp := jobs.ConsumerStatusResponse{
-			Name:          cName,
-			Type:          cType,
-			Workers:       wCount,
-			Ordering:      ordering,
-			DeliverPolicy: cDeliver,
-			AckPolicy:     cAck,
-			Delivery:      "at-least-once",
-			Status:        statusVal,
-			Pending:       pending,
-			AckPending:    ackPending,
-			Redelivered:   redelivered,
-			Distribution:  distCopy,
-		}
-		respBytes, _ := json.Marshal(resp)
-		_ = msg.Respond(respBytes)
-		log.Printf("[Processor] JetStream consumer distribution reset")
-	})
-	if err != nil {
-		return fmt.Errorf("failed to subscribe to consumer reset subject: %w", err)
-	}
-	a.consumerResetSub = consumerResetSub
-	log.Printf("[Run] Subscribed to consumer reset responder subject: %s", messaging.SubjectConsumerReset)
-
-	// 4. Processor State Control (processor.state.set)
+	// 2. Processor State Control (processor.state.set)
 	stateSetSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectProcessorStateSet, func(msg *nats.Msg) {
 		var req struct {
 			Enabled bool `json:"enabled"`
@@ -355,14 +196,6 @@ func (a *App) unsubscribeControlResponders() {
 	if a.statusSub != nil {
 		_ = a.statusSub.Unsubscribe()
 		a.statusSub = nil
-	}
-	if a.consumerConfigSub != nil {
-		_ = a.consumerConfigSub.Unsubscribe()
-		a.consumerConfigSub = nil
-	}
-	if a.consumerResetSub != nil {
-		_ = a.consumerResetSub.Unsubscribe()
-		a.consumerResetSub = nil
 	}
 	if a.stateSetSub != nil {
 		_ = a.stateSetSub.Unsubscribe()

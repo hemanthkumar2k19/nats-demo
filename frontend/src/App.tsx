@@ -373,13 +373,11 @@ export const App: React.FC = () => {
                   refreshStatus(true);
                   refreshActivity(true);
                 }}
-                onConfigChanged={setConsumerStatus}
                 onActivityUpdated={() => {
                   refreshActivity(true);
                   setTimeout(() => refreshActivity(true), 600);
                   setTimeout(() => refreshActivity(true), 1500);
                 }}
-                isProcessing={services.find((s) => s.name.toLowerCase().includes('processor'))?.processing ?? false}
               />
             </div>
 

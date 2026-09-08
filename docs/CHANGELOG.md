@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-08
 
+### Fixed (NATS and Processor Service Connection Indicator Decoupling)
+- **Decoupled NATS Status Indicator from Microservice Health (`frontend/src/components/Header.tsx`)**:
+  - Fixed false `NATS DISCONNECTED` header badge when subordinate microservices were degraded or disconnected.
+  - Linked `isConnected` directly to `natsConnected` rather than requiring `natsConnected && systemOk`.
+- **Dual-Channel Processor Health Check (`frontend/src/api/demoApi.ts`, `backend/control/api/http/control_handler.go`)**:
+  - Added direct HTTP fallback check (`http://localhost:8082/processor/status`) in `demoApi.ts:getServiceStatus()` so the frontend immediately detects an active processor on port 8082 if NATS Request/Reply times out.
+  - Added HTTP fallback in `control_handler.go:GetStatus()` to query `:8082/processor/status` when NATS ping to `status.processor` times out.
+- **Enabled Status Ping Responder in Demo Mode (`backend/services/cmd/processor-service/main.go`)**:
+  - Subscribed `subscribeControlResponders` when `MODE=demo` (or `MODE=model`) so that `processor-service` listens and responds immediately to NATS `status.processor` pings.
+
 ### Added (Processor Service Execution Mode Toggle)
 - **Environment-based MODE Toggle (`MODE=demo` vs `MODE=all`) (`backend/services/cmd/processor-service/main.go`, `config.go`, `.env`, `.env.example`)**:
   - Added support for `MODE` (and `PROCESSOR_MODE`) environment toggle in `config.go` with helper `GetProcessorMode()`.
@@ -25,6 +35,17 @@ All notable changes to this project will be documented in this file.
   - Slow worker wakes up at T = 7s and emits late ACK notice.
 - **Scenarios 9 & 10 - Worker Pool Scales Down & Scales Up (`worker.go`, `CoreFlowProcessor.tsx`)**:
   - Verified incremental worker scaling (`ScaleWorkers`): scaling down stops excess workers from the tail while remaining workers process backlog with zero loss; scaling up spawns new goroutines that immediately join the competing pull.
+
+### Removed (Consumer Lab Deprecation & Cleanup)
+- **Complete Removal of Consumer Lab (`frontend/`, `backend/`, `docs/`)**:
+  - Deleted `frontend/src/components/ConsumerLabPanel.tsx`.
+  - Removed Consumer Lab tab button, panel rendering, and `onConfigChanged` prop from `frontend/src/components/CapabilityStudio.tsx` and `frontend/src/App.tsx`.
+  - Removed `updateConsumerConfig`, `resetConsumerDistribution`, and `sendJetStreamTestMessages` from `frontend/src/api/demoApi.ts`.
+  - Removed Consumer Lab trivia from `frontend/src/content/natsInfo.ts` and pruned dedicated CSS rules from `frontend/src/index.css`.
+  - Removed `PUT /consumer` and `POST /consumer/reset` routes and handlers from `backend/control/api/http/`.
+  - Removed `SubjectConsumerConfigSet` and `SubjectConsumerReset` from `backend/services/` and `backend/control/` messaging subjects.
+  - Removed `consumer.config.set` and `consumer.reset` responders, subscriptions, and struct fields from `backend/services/cmd/processor-service/`.
+  - Updated `docs/DEVELOPER_GUIDE.md` to remove Consumer Lab references.
 
 ### Documentation
 - **Mermaid Sequence Diagrams, Consolidated Capabilities & Clarified Scope (`docs/demo.md`)**:

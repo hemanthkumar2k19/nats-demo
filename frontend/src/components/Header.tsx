@@ -27,7 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  const isConnected = natsConnected && systemOk;
+  const isConnected = natsConnected;
 
   return (
     <header className="app-header">

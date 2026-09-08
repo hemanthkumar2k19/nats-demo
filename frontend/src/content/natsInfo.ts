@@ -217,22 +217,6 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
       "Publish two messages with the same Nats-Msg-Id and observe that JetStream detects the duplicate instead of storing another copy.",
   },
 
-  "consumer-lab": {
-    id: "consumer-lab",
-    title: "Consumer Lab",
-    role: "Interactive test bench for JetStream Consumer configuration and delivery behavior.",
-    concepts: [
-      "Durability: Choose between Durable and Ephemeral consumer lifecycle.",
-      "Delivery Mode: Pull consumers request messages; Push consumers receive server-delivered messages.",
-      "Competing Workers: Multiple workers can share a Pull Consumer and concurrently process available messages.",
-      "Normal Consumer: Standard consumer supporting acknowledgement, redelivery, and consumer state.",
-      "Ordered Consumer: Specialized consumer for ordered message observation; not intended as a general replacement for work-queue consumers.",
-      "Flow Control: Limits such as MaxAckPending prevent excessive unacknowledged work from accumulating.",
-    ],
-    demoUsage:
-      "Change consumer settings and worker concurrency, then observe how delivery, ordering, acknowledgements, redelivery, and backpressure change at runtime.",
-  },
-
   "request-reply": {
     id: "request-reply",
     title: "Request / Reply",

@@ -372,6 +372,27 @@ export async function getServiceStatus(): Promise<SystemStatusResponse> {
     });
   }
 
+  // Fallback: Check processor-service directly on port 8082 if reported disconnected
+  const procSvc = services.find((s) => s.name === 'processor-service');
+  if (procSvc && procSvc.status === 'disconnected') {
+    try {
+      const procDirect = await getProcessorDirectStatus();
+      if (procDirect && (procDirect.status === 'ACTIVE' || procDirect.status === 'RUNNING' || procDirect.status === 'STOPPED')) {
+        const isProcessing = procDirect.processing === true;
+        procSvc.status = isProcessing ? 'active' : 'stopped';
+        procSvc.details = isProcessing
+          ? 'Processor is active and processing messages'
+          : 'Processor is paused';
+        procSvc.processing = isProcessing;
+        if (typeof procDirect.workers === 'number') {
+          procSvc.workers = procDirect.workers;
+        }
+      }
+    } catch {
+      // Direct HTTP ping failed; processor is truly offline
+    }
+  }
+
   const jetstream = data.jetstream ? {
     stream: data.jetstream.stream,
     messages: data.jetstream.messages,
@@ -580,27 +601,6 @@ export async function getConsumerStatus(): Promise<ConsumerStatus> {
 }
 
 /**
- * Updates the consumer configuration (durable/ephemeral, workers, ordering).
- * Calls PUT /consumer.
- */
-export async function updateConsumerConfig(config: ConsumerConfig): Promise<ConsumerStatus> {
-  const response = await fetch(`${DEMO_CONTROL_URL}/consumer`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(config),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => 'Unknown error');
-    throw new Error(`Failed to update consumer config: ${response.status} ${response.statusText}. ${errorText}`);
-  }
-
-  return response.json();
-}
-
-/**
  * Fetches current DLQ stream and consumer status from demo-control-service.
  * Calls GET /dlq/status.
  */
@@ -784,61 +784,3 @@ export async function resetQueueGroupDistribution(): Promise<QueueGroupStatus> {
   }
   return response.json();
 }
-
-/**
- * Resets the worker distribution counters for the JetStream Consumer.
- * Calls POST /consumer/reset on demo-control-service.
- */
-export async function resetConsumerDistribution(): Promise<ConsumerStatus> {
-  const response = await fetch(`${DEMO_CONTROL_URL}/consumer/reset`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({}),
-  });
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => 'Unknown error');
-    throw new Error(`Failed to reset consumer distribution: ${response.status} ${response.statusText}. ${errorText}`);
-  }
-  return response.json();
-}
-
-/**
- * Publishes a batch of test messages to the JOBS stream via Job Service POST /jobs with delivery_mode=JETSTREAM.
- */
-export async function sendJetStreamTestMessages(count: number = 10): Promise<{ published: number; jobs: string[] }> {
-  try {
-    const response = await fetch(`${DEMO_CONTROL_URL}/jobs/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ count, type: 'image-processing' }),
-    });
-    if (response.ok) {
-      return await response.json();
-    }
-  } catch {
-    // Fallback to individual submitJob if endpoint temporarily unavailable
-  }
-
-  const jobIds: string[] = [];
-  const baseNum = Math.floor(100 + Math.random() * 900);
-  for (let i = 0; i < count; i++) {
-    const jId = `job-js-${baseNum + i}`;
-    jobIds.push(jId);
-    await submitJob({
-      job_id: jId,
-      type: 'image-processing',
-      delivery_mode: 'JETSTREAM',
-      payload: { file: `img-${baseNum + i}.jpg`, batch: true },
-    });
-  }
-  return { published: count, jobs: jobIds };
-}
-
-
-
-
-
