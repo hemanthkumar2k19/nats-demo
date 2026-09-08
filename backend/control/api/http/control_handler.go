@@ -527,6 +527,7 @@ func (h *ControlHandler) GetConsumerStatus(c *gin.Context) {
 	}
 
 	var pending, ackPending, redelivered int
+	var ackFloor, deliveredSeq uint64
 	if natsStatus == "CONNECTED" {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 		defer cancel()
@@ -540,6 +541,8 @@ func (h *ControlHandler) GetConsumerStatus(c *gin.Context) {
 					pending = int(cinfo.NumPending)
 					ackPending = cinfo.NumAckPending
 					redelivered = cinfo.NumRedelivered
+					ackFloor = cinfo.AckFloor.Stream
+					deliveredSeq = cinfo.Delivered.Stream
 				}
 			}
 		}
@@ -557,6 +560,8 @@ func (h *ControlHandler) GetConsumerStatus(c *gin.Context) {
 		"pending":        pending,
 		"ack_pending":    ackPending,
 		"redelivered":    redelivered,
+		"ack_floor":      ackFloor,
+		"delivered_seq":  deliveredSeq,
 		"distribution":   distribution,
 	})
 }

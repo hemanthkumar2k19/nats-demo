@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -138,11 +139,22 @@ func (a *App) startHTTPServer(port string) *http.Server {
 			gStatus := a.goroutineStatus
 			activeGoroutines := a.activeGoroutines
 			crashedWorker := a.crashedWorker
+			jsConsumer := a.jsConsumer
 			a.mu.RUnlock()
 
 			a.scenarioMu.RLock()
 			activeScenario := a.activeScenario
 			a.scenarioMu.RUnlock()
+
+			var ackFloor, deliveredSeq uint64
+			if jsConsumer != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+				if info, err := jsConsumer.Info(ctx); err == nil && info != nil {
+					ackFloor = info.AckFloor.Stream
+					deliveredSeq = info.Delivered.Stream
+				}
+				cancel()
+			}
 
 			if workers <= 0 {
 				workers = 1
@@ -168,6 +180,8 @@ func (a *App) startHTTPServer(port string) *http.Server {
 				"crashed_worker":    crashedWorker,
 				"ack_wait_seconds":  5,
 				"ack_policy":        "explicit",
+				"ack_floor":         ackFloor,
+				"delivered_seq":     deliveredSeq,
 			})
 			return
 		}

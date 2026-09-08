@@ -80,6 +80,8 @@ type ConsumerStatusResponse struct {
 	Pending       uint64         `json:"pending"`
 	AckPending    int            `json:"ack_pending"`
 	Redelivered   int            `json:"redelivered"`
+	AckFloor      uint64         `json:"ack_floor"`
+	DeliveredSeq  uint64         `json:"delivered_seq"`
 	Distribution  map[string]int `json:"distribution,omitempty"`
 }
 

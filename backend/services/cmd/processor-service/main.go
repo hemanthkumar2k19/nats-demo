@@ -44,7 +44,7 @@ type App struct {
 
 	// Failure Scenarios & Goroutine Tracking
 	scenarioMu       sync.RWMutex
-	activeScenario   string // "normal", "crash_before_ack", "exceed_ack_wait"
+	activeScenario   string // "normal", "crash_before_ack", "exceed_ack_wait", "out_of_order_ack"
 	scenarioOnce     bool
 	activeGoroutines int
 	goroutineStatus  string // "RUNNING", "DEGRADED", "CRASHED", "PAUSED"

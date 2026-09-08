@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -430,6 +431,48 @@ func (a *App) jsPullLoop(ctx context.Context, workerName string) {
 				continue
 			}
 
+			a.scenarioMu.RLock()
+			currentScenario := a.activeScenario
+			scenarioOnce := a.scenarioOnce
+			a.scenarioMu.RUnlock()
+
+			if currentScenario == "out_of_order_ack" {
+				// Step 5 Demo: Pull a batch of 3 messages to demonstrate Out-of-Order execution & Hole Safety
+				batch, err := jsConsumer.Fetch(3, jetstream.FetchMaxWait(2*time.Second))
+				if err != nil {
+					if errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
+						continue
+					}
+					log.Printf("[%s] Fetch notice: %v", workerName, err)
+					time.Sleep(200 * time.Millisecond)
+					continue
+				}
+
+				var msgs []jetstream.Msg
+				for msg := range batch.Messages() {
+					msgs = append(msgs, msg)
+				}
+
+				if len(msgs) == 3 {
+					a.handleOutOfOrderBatch(msgs, workerName)
+					if scenarioOnce {
+						a.scenarioMu.Lock()
+						a.activeScenario = "normal"
+						a.scenarioMu.Unlock()
+					}
+					continue
+				} else {
+					for _, msg := range msgs {
+						shouldTerminate := a.handleJetStreamMsg(msg, workerName)
+						if shouldTerminate {
+							log.Printf("[%s] Pull loop TERMINATING due to simulated crash.", workerName)
+							return
+						}
+					}
+					continue
+				}
+			}
+
 			// Try to fetch 1 message with a short timeout
 			batch, err := jsConsumer.Fetch(1, jetstream.FetchMaxWait(500*time.Millisecond))
 			if err != nil {
@@ -573,6 +616,9 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string) bool {
 	}
 	if val, ok := job.Payload["simulate_term"].(bool); ok && val {
 		currentScenario = "term_message"
+	}
+	if val, ok := job.Payload["simulate_out_of_order"].(bool); ok && val {
+		currentScenario = "out_of_order_ack"
 	}
 
 	// Scenario 1: Worker Goroutine Crash Before ACK
@@ -923,4 +969,129 @@ func (a *App) recordWorkerPull(workerName string) (int, string) {
 	a.consumerDistMu.Unlock()
 
 	return count, a.getLoadDistributionSummary()
+}
+
+// handleOutOfOrderBatch demonstrates JetStream Out-of-Order ACK and Hole Safety (Step 5 / Scenario 3).
+// 1. Message 1 is ACKed immediately -> AckFloor advances to Msg 1 sequence
+// 2. Message 2 is held pending for 10 seconds -> creates a sequence hole in JetStream
+// 3. Message 3 is ACKed out-of-order -> AckFloor stays pinned at Msg 1 sequence; JetStream records Msg 3 in pending bitset
+// 4. After 10s, Message 2 ACKs -> Gap is healed! AckFloor cascades forward to Msg 3 sequence
+func (a *App) handleOutOfOrderBatch(msgs []jetstream.Msg, workerName string) {
+	if len(msgs) != 3 {
+		return
+	}
+
+	type msgInfo struct {
+		msg      jetstream.Msg
+		job      jobs.Job
+		seq      uint64
+		delMode  string
+		attempts int
+	}
+
+	var parsed [3]msgInfo
+	for i := 0; i < 3; i++ {
+		parsed[i].msg = msgs[i]
+		parsed[i].delMode = msgs[i].Headers().Get("X-Delivery-Mode")
+		if parsed[i].delMode == "" {
+			parsed[i].delMode = "JETSTREAM"
+		}
+		_ = json.Unmarshal(msgs[i].Data(), &parsed[i].job)
+		if meta, err := msgs[i].Metadata(); err == nil && meta != nil {
+			parsed[i].seq = meta.Sequence.Stream
+			parsed[i].attempts = int(meta.NumDelivered)
+		}
+		if parsed[i].attempts == 0 {
+			parsed[i].attempts = 1
+		}
+	}
+
+	seq1, seq2, seq3 := parsed[0].seq, parsed[1].seq, parsed[2].seq
+	job1, job2, job3 := parsed[0].job, parsed[1].job, parsed[2].job
+
+	log.Println("================================================================================")
+	log.Printf("[%s] [OUT-OF-ORDER BATCH] Fetched batch of 3 messages: Msg 1 (Seq %d, %s), Msg 2 (Seq %d, %s), Msg 3 (Seq %d, %s)",
+		workerName, seq1, job1.JobID, seq2, job2.JobID, seq3, job3.JobID)
+	log.Printf("[DEMO RULE] NATS Contiguous AckFloor: AckFloor cannot skip unacknowledged gaps!")
+	log.Println("================================================================================")
+
+	// Msg 1: Process and ACK immediately
+	a.recordWorkerEvent(job1.JobID, job1.Type, "[PROCESSING]", "#FBBF24", "Msg 1/3 in out-of-order batch", parsed[0].attempts, parsed[0].delMode)
+	time.Sleep(500 * time.Millisecond)
+	if err := parsed[0].msg.Ack(); err != nil {
+		log.Printf("[%s] Error ACKing Msg 1: %v", workerName, err)
+	} else {
+		log.Printf("[%s] [ACK SENT] Msg 1/3 (Stream Seq %d, Job %s) ACKed. AckFloor advances to %d.", workerName, seq1, job1.JobID, seq1)
+		a.recordWorkerEvent(job1.JobID, job1.Type, "[ACK SENT]", "#10B981", fmt.Sprintf("Msg 1 ACKed -> AckFloor advances to Seq %d", seq1), parsed[0].attempts, parsed[0].delMode)
+	}
+
+	// Verify broker state after Msg 1 ACK
+	a.mu.RLock()
+	consumer := a.jsConsumer
+	a.mu.RUnlock()
+	if consumer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		if cinfo, err := consumer.Info(ctx); err == nil && cinfo != nil {
+			log.Printf("[BROKER STATE] AckFloor: Stream Seq %d | Outstanding ACKs: %d", cinfo.AckFloor.Stream, cinfo.NumAckPending)
+		}
+		cancel()
+	}
+
+	// Msg 2: Spawn background goroutine to hold execution for 10 seconds (hole creation)
+	a.recordWorkerEvent(job2.JobID, job2.Type, "[HOLE CREATED]", "#F59E0B", fmt.Sprintf("Msg 2 held pending (10s delay) -> sequence hole at Seq %d", seq2), parsed[1].attempts, parsed[1].delMode)
+	log.Printf("[%s] [HOLE CREATED] Msg 2/3 (Stream Seq %d, Job %s) DELAYED 10s! Unacknowledged hole active in broker.", workerName, seq2, job2.JobID)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Sleep for 10 seconds with msg.InProgress() heartbeats so the 5s AckWait timer does not expire
+		time.Sleep(4 * time.Second)
+		_ = parsed[1].msg.InProgress()
+		time.Sleep(4 * time.Second)
+		_ = parsed[1].msg.InProgress()
+		time.Sleep(2 * time.Second)
+
+		log.Println("--------------------------------------------------------------------------------")
+		log.Printf("[%s] [GAP HEALING] 10s delay expired for Msg 2/3 (Stream Seq %d, Job %s). Sending explicit msg.Ack()...", workerName, seq2, job2.JobID)
+		if err := parsed[1].msg.Ack(); err != nil {
+			log.Printf("[%s] Error ACKing Msg 2: %v", workerName, err)
+		} else {
+			log.Printf("[%s] [GAP HEALED] Msg 2/3 ACKed! Gap at Seq %d resolved. AckFloor cascades up to %d!", workerName, seq2, seq3)
+			a.recordWorkerEvent(job2.JobID, job2.Type, "[GAP HEALED]", "#34D399", fmt.Sprintf("Msg 2 ACKed -> Gap healed! AckFloor cascades to Seq %d", seq3), parsed[1].attempts, parsed[1].delMode)
+		}
+
+		if consumer != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			if cinfo, err := consumer.Info(ctx); err == nil && cinfo != nil {
+				log.Printf("[BROKER STATE] AckFloor: Stream Seq %d | Outstanding ACKs: %d (Gap fully resolved)", cinfo.AckFloor.Stream, cinfo.NumAckPending)
+			}
+			cancel()
+		}
+		log.Println("--------------------------------------------------------------------------------")
+	}()
+
+	// Msg 3: Process and ACK after a short delay (while Msg 2 is still pending!)
+	time.Sleep(1 * time.Second)
+	log.Printf("[%s] [OUT-OF-ORDER ACK] Transmitting explicit msg.Ack() for Msg 3/3 (Stream Seq %d, Job %s) while Msg 2 (Seq %d) is still pending!",
+		workerName, seq3, job3.JobID, seq2)
+	if err := parsed[2].msg.Ack(); err != nil {
+		log.Printf("[%s] Error ACKing Msg 3: %v", workerName, err)
+	} else {
+		log.Printf("[%s] [ACKFLOOR PINNED] Msg 3/3 ACKed! Broker keeps AckFloor pinned at %d. JetStream records Seq %d in pending bitset.",
+			workerName, seq1, seq3)
+		a.recordWorkerEvent(job3.JobID, job3.Type, "[OUT-OF-ORDER ACK]", "#60A5FA", fmt.Sprintf("Msg 3 ACKed out-of-order! AckFloor stays pinned at Seq %d (hole at %d)", seq1, seq2), parsed[2].attempts, parsed[2].delMode)
+	}
+
+	if consumer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		if cinfo, err := consumer.Info(ctx); err == nil && cinfo != nil {
+			log.Printf("[BROKER STATE] AckFloor: Stream Seq %d | Outstanding ACKs: %d (Hole at Seq %d prevents AckFloor advancement!)",
+				cinfo.AckFloor.Stream, cinfo.NumAckPending, seq2)
+		}
+		cancel()
+	}
+
+	// Wait for Msg 2 gap healing goroutine to finish before exiting batch handler
+	wg.Wait()
 }

@@ -98,6 +98,7 @@ export type FailureScenario =
   | 'normal'
   | 'crash_before_ack'
   | 'exceed_ack_wait'
+  | 'out_of_order_ack'
   | 'nak_message'
   | 'term_message';
 
@@ -113,6 +114,8 @@ export interface ProcessorDirectStatus {
   crashed_worker?: string;
   ack_wait_seconds?: number;
   ack_policy?: string;
+  ack_floor?: number;
+  delivered_seq?: number;
 }
 
 /**
@@ -601,6 +604,8 @@ export interface ConsumerStatus {
   pending: number;
   ack_pending: number;
   redelivered: number;
+  ack_floor?: number;
+  delivered_seq?: number;
   distribution?: Record<string, number>;
 }
 

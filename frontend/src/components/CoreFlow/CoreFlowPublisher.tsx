@@ -559,10 +559,33 @@ export const CoreFlowPublisher: React.FC<CoreFlowPublisherProps> = ({
           </button>
           <button
             type="button"
+            onClick={() => handleBatchPublish(3)}
+            disabled={isSubmitting || isBatchPublishing}
+            style={{
+              padding: '0.55rem 0.75rem',
+              fontSize: '0.76rem',
+              fontWeight: 700,
+              borderRadius: '6px',
+              border: '1px solid #3B82F6',
+              background: 'rgba(59, 130, 246, 0.15)',
+              color: '#60A5FA',
+              cursor: isSubmitting || isBatchPublishing ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap'
+            }}
+            title="Publish a burst of 3 concurrent messages to test out-of-order execution, hole safety, or consumer batch fetch"
+          >
+            {isBatchPublishing ? '3x...' : 'Batch (3 Jobs)'}
+          </button>
+          <button
+            type="button"
             onClick={() => handleBatchPublish(6)}
             disabled={isSubmitting || isBatchPublishing}
             style={{
-              padding: '0.55rem 0.85rem',
+              padding: '0.55rem 0.75rem',
               fontSize: '0.76rem',
               fontWeight: 700,
               borderRadius: '6px',
@@ -578,7 +601,7 @@ export const CoreFlowPublisher: React.FC<CoreFlowPublisherProps> = ({
             }}
             title="Publish a burst of 6 concurrent messages to demonstrate worker pool throughput and horizontal scaling"
           >
-            {isBatchPublishing ? 'Publishing 6x...' : 'Batch (6 Jobs)'}
+            {isBatchPublishing ? '6x...' : 'Batch (6 Jobs)'}
           </button>
         </div>
       </form>
