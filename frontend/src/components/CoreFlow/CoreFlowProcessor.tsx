@@ -130,7 +130,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
             color: '#FBBF24', 
             borderRadius: '4px', 
             padding: '2px 8px', 
-            fontSize: '0.75rem', 
+            fontSize: '0.875rem', 
             fontWeight: 700,
             letterSpacing: '0.05em' 
           }}>
@@ -152,65 +152,50 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
         </div>
       </div>
 
-      <div style={{ padding: '0.75rem 1rem 0 1rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-        {/* 1. Broker Plane: NATS JetStream Consumer Object */}
+      <div style={{ padding: '0.65rem 1rem 0 1rem', display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+        {/* 1. Consumer Card (NATS JetStream Consumer Object) */}
         <div style={{
-          background: 'rgba(15, 23, 42, 0.75)',
-          border: '1px solid rgba(59, 130, 246, 0.2)',
+          background: 'rgba(15, 23, 42, 0.65)',
+          border: '1px solid rgba(59, 130, 246, 0.25)',
           borderRadius: '6px',
-          padding: '0.65rem 0.75rem',
-          fontSize: '0.72rem'
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-              <span style={{ 
-                width: '7px', 
-                height: '7px', 
-                borderRadius: '50%', 
-                background: '#60A5FA'
-              }} />
-              <strong style={{ color: 'var(--text-bright)', fontSize: '0.8rem' }}>
-                {consumerName}
-              </strong>
-              <span style={{ 
-                fontSize: '0.62rem', 
-                color: '#60A5FA', 
-                background: 'rgba(59, 130, 246, 0.12)',
-                padding: '1px 5px',
-                borderRadius: '3px',
-                fontFamily: 'var(--font-mono)'
-              }}>
-                JetStream Object
-              </span>
+          {/* Consumer Header */}
+          <div style={{
+            background: 'rgba(59, 130, 246, 0.08)',
+            borderBottom: '1px solid rgba(59, 130, 246, 0.15)',
+            padding: '0.38rem 0.75rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.75rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#60A5FA' }} />
+              <strong style={{ color: '#93C5FD', fontSize: '0.82rem' }}>Consumer: {consumerName}</strong>
             </div>
-            <span style={{ 
-              background: 'rgba(59, 130, 246, 0.15)', 
-              color: '#93C5FD', 
-              padding: '1px 7px', 
-              borderRadius: '4px',
-              fontWeight: 600,
-              fontSize: '0.65rem',
-              letterSpacing: '0.04em'
-            }}>
-              {consumerType} CONSUMER
-            </span>
+            <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem', fontWeight: 600 }}>{consumerType} CONSUMER</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem', marginTop: '0.2rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                Attached Stream
+          {/* Consumer Fields (Field: Value-box) */}
+          <div style={{ padding: '0.55rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+            {/* Stream */}
+            <div style={{ display: 'grid', gridTemplateColumns: '125px 1fr', alignItems: 'center', gap: '0.5rem' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)', margin: 0 }}>
+                Stream:
               </label>
               <input
                 type="text"
                 readOnly
                 value={streamName}
                 style={{
-                  background: 'rgba(0, 0, 0, 0.35)',
+                  padding: '0.42rem 0.7rem',
+                  fontSize: '0.875rem',
+                  background: 'rgba(0, 0, 0, 0.3)',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   borderRadius: '4px',
-                  padding: '0.3rem 0.5rem',
-                  fontSize: '0.68rem',
                   color: '#34D399',
                   fontFamily: 'var(--font-mono)',
                   outline: 'none',
@@ -221,20 +206,21 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
               />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                Filter Subject
+            {/* Filter Subject */}
+            <div style={{ display: 'grid', gridTemplateColumns: '125px 1fr', alignItems: 'center', gap: '0.5rem' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)', margin: 0 }}>
+                Filter Subject:
               </label>
               <input
                 type="text"
                 readOnly
                 value="jobs.submitted"
                 style={{
-                  background: 'rgba(0, 0, 0, 0.35)',
+                  padding: '0.42rem 0.7rem',
+                  fontSize: '0.875rem',
+                  background: 'rgba(0, 0, 0, 0.3)',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   borderRadius: '4px',
-                  padding: '0.3rem 0.5rem',
-                  fontSize: '0.68rem',
                   color: '#60A5FA',
                   fontFamily: 'var(--font-mono)',
                   outline: 'none',
@@ -245,20 +231,21 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
               />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                Ack Policy
+            {/* Ack Policy */}
+            <div style={{ display: 'grid', gridTemplateColumns: '125px 1fr', alignItems: 'center', gap: '0.5rem' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)', margin: 0 }}>
+                Ack Policy:
               </label>
               <input
                 type="text"
                 readOnly
                 value="Explicit (msg.Ack())"
                 style={{
-                  background: 'rgba(0, 0, 0, 0.35)',
+                  padding: '0.42rem 0.7rem',
+                  fontSize: '0.875rem',
+                  background: 'rgba(0, 0, 0, 0.3)',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   borderRadius: '4px',
-                  padding: '0.3rem 0.5rem',
-                  fontSize: '0.68rem',
                   color: '#34D399',
                   fontFamily: 'var(--font-mono)',
                   outline: 'none',
@@ -269,20 +256,21 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
               />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                AckWait Threshold
+            {/* AckWait */}
+            <div style={{ display: 'grid', gridTemplateColumns: '125px 1fr', alignItems: 'center', gap: '0.5rem' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)', margin: 0 }}>
+                AckWait:
               </label>
               <input
                 type="text"
                 readOnly
                 value={`${ackWaitSeconds}s (Redelivery Timer)`}
                 style={{
-                  background: 'rgba(0, 0, 0, 0.35)',
+                  padding: '0.42rem 0.7rem',
+                  fontSize: '0.875rem',
+                  background: 'rgba(0, 0, 0, 0.3)',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   borderRadius: '4px',
-                  padding: '0.3rem 0.5rem',
-                  fontSize: '0.68rem',
                   color: '#FBBF24',
                   fontFamily: 'var(--font-mono)',
                   outline: 'none',
@@ -293,20 +281,21 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
               />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                Ack Floor (Watermark)
+            {/* Ack Floor */}
+            <div style={{ display: 'grid', gridTemplateColumns: '125px 1fr', alignItems: 'center', gap: '0.5rem' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)', margin: 0 }}>
+                Ack Floor:
               </label>
               <input
                 type="text"
                 readOnly
                 value={`Stream Seq ${directStatus?.ack_floor ?? consumerStatus?.ack_floor ?? 0}`}
                 style={{
-                  background: 'rgba(0, 0, 0, 0.35)',
+                  padding: '0.42rem 0.7rem',
+                  fontSize: '0.875rem',
+                  background: 'rgba(0, 0, 0, 0.3)',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   borderRadius: '4px',
-                  padding: '0.3rem 0.5rem',
-                  fontSize: '0.68rem',
                   color: '#60A5FA',
                   fontFamily: 'var(--font-mono)',
                   outline: 'none',
@@ -317,20 +306,21 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
               />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                Delivered Sequence
+            {/* Delivered Seq */}
+            <div style={{ display: 'grid', gridTemplateColumns: '125px 1fr', alignItems: 'center', gap: '0.5rem' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)', margin: 0 }}>
+                Delivered Seq:
               </label>
               <input
                 type="text"
                 readOnly
                 value={`Stream Seq ${directStatus?.delivered_seq ?? consumerStatus?.delivered_seq ?? 0}`}
                 style={{
-                  background: 'rgba(0, 0, 0, 0.35)',
+                  padding: '0.42rem 0.7rem',
+                  fontSize: '0.875rem',
+                  background: 'rgba(0, 0, 0, 0.3)',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   borderRadius: '4px',
-                  padding: '0.3rem 0.5rem',
-                  fontSize: '0.68rem',
                   color: '#A78BFA',
                   fontFamily: 'var(--font-mono)',
                   outline: 'none',
@@ -343,144 +333,204 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
           </div>
         </div>
 
-        {/* Visual Link showing how processor-service connects to the NATS Consumer */}
+        {/* 2. Worker Daemon Card (processor-service) */}
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '0.4rem',
-          fontSize: '0.64rem',
-          color: 'var(--text-dim)',
-          margin: '-0.3rem 0'
-        }}>
-          <span>|</span>
-          <span>Binds via NATS Go Client: <code>CreateOrUpdateConsumer("{consumerName}")</code></span>
-          <span>|</span>
-        </div>
-
-        {/* 2. Microservice Plane: processor-service (Application Level) */}
-        <div style={{
-          background: 'rgba(15, 23, 42, 0.75)',
+          background: 'rgba(15, 23, 42, 0.65)',
           border: '1px solid var(--border-color)',
           borderRadius: '6px',
-          padding: '0.65rem 0.75rem',
-          fontSize: '0.72rem'
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+          {/* Worker Daemon Header */}
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.03)',
+            borderBottom: '1px solid var(--border-color)',
+            padding: '0.38rem 0.75rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.75rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <span style={{ 
-                width: '7px', 
-                height: '7px', 
+                width: '6px', 
+                height: '6px', 
                 borderRadius: '50%', 
                 background: isConnected ? (isProcessing ? '#10B981' : '#F59E0B') : '#F87171',
-                boxShadow: isConnected && isProcessing ? '0 0 8px rgba(16, 185, 129, 0.8)' : 'none'
+                boxShadow: isConnected && isProcessing ? '0 0 6px rgba(16, 185, 129, 0.8)' : 'none'
               }} />
-              <strong style={{ color: 'var(--text-bright)', fontSize: '0.8rem' }}>
-                processor-service
-              </strong>
-              <span style={{ 
-                fontSize: '0.62rem', 
-                color: 'var(--text-dim)', 
-                background: 'rgba(255, 255, 255, 0.05)',
-                padding: '1px 5px',
-                borderRadius: '3px',
-                fontFamily: 'var(--font-mono)'
-              }}>
-                :8082
-              </span>
+              <strong style={{ color: 'var(--text-bright)', fontSize: '0.82rem' }}>Worker Daemon (processor-service)</strong>
             </div>
+            <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem', fontFamily: 'var(--font-mono)' }}>:8082</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem', marginTop: '0.2rem' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                Role
+          {/* Worker Daemon Fields (Field: Value-box) */}
+          <div style={{ padding: '0.55rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+            {/* Pull Loop */}
+            <div style={{ display: 'grid', gridTemplateColumns: '125px 1fr', alignItems: 'center', gap: '0.5rem' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)', margin: 0 }}>
+                Pull Loop:
               </label>
-              <input
-                type="text"
-                readOnly
-                value="Go Worker Daemon"
-                style={{
-                  background: 'rgba(0, 0, 0, 0.35)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '4px',
-                  padding: '0.3rem 0.5rem',
-                  fontSize: '0.68rem',
-                  color: 'var(--text-secondary)',
-                  fontFamily: 'var(--font-mono)',
-                  outline: 'none',
-                  cursor: 'default',
-                  width: '100%',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.32rem 0.55rem',
+                background: isProcessing ? 'rgba(16, 185, 129, 0.06)' : 'rgba(245, 158, 11, 0.06)',
+                border: `1px solid ${isProcessing ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)'}`,
+                borderRadius: '4px',
+                width: '100%',
+                boxSizing: 'border-box'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span style={{ 
+                    width: '6px', 
+                    height: '6px', 
+                    borderRadius: '50%', 
+                    background: isProcessing ? '#10B981' : '#F59E0B',
+                    boxShadow: isProcessing ? '0 0 6px rgba(16, 185, 129, 0.8)' : 'none'
+                  }} />
+                  <span style={{ fontSize: '0.82rem', fontWeight: 600, color: isProcessing ? '#34D399' : '#FBBF24' }}>
+                    {isProcessing ? 'ACTIVE (Pulling)' : 'PAUSED (Buffering)'}
+                  </span>
+                </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                Consuming From
-              </label>
-              <input
-                type="text"
-                readOnly
-                value={`${consumerName} (Pull)`}
-                style={{
-                  background: 'rgba(0, 0, 0, 0.35)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '4px',
-                  padding: '0.3rem 0.5rem',
-                  fontSize: '0.68rem',
-                  color: '#60A5FA',
-                  fontFamily: 'var(--font-mono)',
-                  outline: 'none',
-                  cursor: 'default',
-                  width: '100%',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
-
-            {/* Dynamic Worker Pool Scaling Stepper */}
-            <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255, 255, 255, 0.03)', padding: '0.35rem 0.5rem', borderRadius: '4px', marginTop: '0.1rem', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                <span style={{ fontWeight: 600, color: 'var(--text-bright)', fontSize: '0.69rem' }}>
-                  Worker Pool Size:
-                </span>
-                <span style={{ color: '#60A5FA', fontWeight: 700, fontSize: '0.7rem' }}>
-                  {workerCount} Concurrent Worker(s)
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
-                {[1, 2, 3, 5].map((count) => (
+                <div style={{
+                  display: 'inline-flex',
+                  background: '#0D1117',
+                  border: '1px solid #30363D',
+                  borderRadius: '12px',
+                  padding: '1px',
+                  gap: '2px'
+                }}>
                   <button
-                    key={count}
                     type="button"
-                    disabled={isScaling}
-                    onClick={() => handleScaleWorkers(count)}
+                    disabled={isToggling || !isConnected}
+                    onClick={() => { if (!isProcessing) handleToggle(); }}
                     style={{
-                      border: count === workerCount ? '1px solid #60A5FA' : '1px solid var(--border-color)',
-                      background: count === workerCount ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.04)',
-                      color: count === workerCount ? '#93C5FD' : 'var(--text-dim)',
-                      borderRadius: '3px',
-                      padding: '1px 6px',
-                      fontSize: '0.65rem',
+                      border: 'none',
+                      borderRadius: '10px',
+                      padding: '1px 8px',
+                      fontSize: '0.72rem',
                       fontWeight: 700,
-                      cursor: isScaling ? 'not-allowed' : 'pointer',
+                      cursor: isToggling || !isConnected ? 'not-allowed' : 'pointer',
+                      background: isProcessing ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
+                      color: isProcessing ? '#34D399' : 'var(--text-dim)',
                       transition: 'all 0.15s ease'
                     }}
-                    title={`Scale JetStream worker pool to ${count} worker goroutines`}
                   >
-                    {count}W
+                    ON
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    disabled={isToggling || !isConnected}
+                    onClick={() => { if (isProcessing) handleToggle(); }}
+                    style={{
+                      border: 'none',
+                      borderRadius: '10px',
+                      padding: '1px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 700,
+                      cursor: isToggling || !isConnected ? 'not-allowed' : 'pointer',
+                      background: !isProcessing ? 'rgba(239, 68, 68, 0.25)' : 'transparent',
+                      color: !isProcessing ? '#F87171' : 'var(--text-dim)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    OFF
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                  Goroutine State
-                </label>
+            {/* Worker Pool */}
+            <div style={{ display: 'grid', gridTemplateColumns: '125px 1fr', alignItems: 'center', gap: '0.5rem' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)', margin: 0 }}>
+                Worker Pool:
+              </label>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.32rem 0.55rem',
+                background: 'rgba(0, 0, 0, 0.3)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '4px',
+                width: '100%',
+                boxSizing: 'border-box'
+              }}>
+                <span style={{ color: '#60A5FA', fontWeight: 600, fontSize: '0.82rem' }}>
+                  {workerCount} Concurrent Worker(s)
+                </span>
+                <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+                  {[1, 2, 3, 5].map((count) => (
+                    <button
+                      key={count}
+                      type="button"
+                      disabled={isScaling}
+                      onClick={() => handleScaleWorkers(count)}
+                      style={{
+                        border: count === workerCount ? '1px solid #60A5FA' : '1px solid var(--border-color)',
+                        background: count === workerCount ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                        color: count === workerCount ? '#93C5FD' : 'var(--text-dim)',
+                        borderRadius: '3px',
+                        padding: '1px 6px',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        cursor: isScaling ? 'not-allowed' : 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title={`Scale JetStream worker pool to ${count} worker goroutines`}
+                    >
+                      {count}W
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Goroutines */}
+            <div style={{ display: 'grid', gridTemplateColumns: '125px 1fr', alignItems: 'center', gap: '0.5rem' }}>
+              <label className="form-label" style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text-secondary)', margin: 0 }}>
+                Goroutines:
+              </label>
+              <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  readOnly
+                  value={
+                    crashedWorker
+                      ? `${goroutineStatus} (${activeGoroutines}/${workerCount} active - ${crashedWorker} crashed)`
+                      : `${goroutineStatus} (${activeGoroutines}/${workerCount} active)`
+                  }
+                  style={{
+                    padding: '0.42rem 0.7rem',
+                    fontSize: '0.85rem',
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: `1px solid ${
+                      goroutineStatus === 'CRASHED'
+                        ? 'rgba(239, 68, 68, 0.5)'
+                        : goroutineStatus === 'DEGRADED'
+                        ? 'rgba(245, 158, 11, 0.5)'
+                        : 'rgba(255, 255, 255, 0.08)'
+                    }`,
+                    borderRadius: '4px',
+                    color:
+                      goroutineStatus === 'CRASHED'
+                        ? '#EF4444'
+                        : goroutineStatus === 'DEGRADED'
+                        ? '#FBBF24'
+                        : isProcessing
+                        ? '#34D399'
+                        : '#F59E0B',
+                    fontFamily: 'var(--font-mono)',
+                    outline: 'none',
+                    cursor: 'default',
+                    flex: 1,
+                    boxSizing: 'border-box'
+                  }}
+                />
                 {(goroutineStatus === 'CRASHED' || goroutineStatus === 'DEGRADED') && (
                   <button
                     type="button"
@@ -489,135 +539,19 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                       background: 'rgba(139, 92, 246, 0.2)',
                       border: '1px solid #8B5CF6',
                       color: '#C4B5FD',
-                      fontSize: '0.6rem',
-                      padding: '1px 6px',
-                      borderRadius: '3px',
-                      cursor: 'pointer'
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      padding: '0.35rem 0.6rem',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
                     }}
                     title="Manually respawn crashed worker goroutine"
                   >
-                    Revive Goroutine Now
+                    Revive
                   </button>
                 )}
               </div>
-              <input
-                type="text"
-                readOnly
-                value={
-                  crashedWorker
-                    ? `${goroutineStatus} (${activeGoroutines}/${workerCount} active - ${crashedWorker} crashed)`
-                    : `${goroutineStatus} (${activeGoroutines}/${workerCount} active)`
-                }
-                style={{
-                  background: 'rgba(0, 0, 0, 0.35)',
-                  border: `1px solid ${
-                    goroutineStatus === 'CRASHED'
-                      ? 'rgba(239, 68, 68, 0.5)'
-                      : goroutineStatus === 'DEGRADED'
-                      ? 'rgba(245, 158, 11, 0.5)'
-                      : 'rgba(255, 255, 255, 0.08)'
-                  }`,
-                  borderRadius: '4px',
-                  padding: '0.3rem 0.5rem',
-                  fontSize: '0.68rem',
-                  color:
-                    goroutineStatus === 'CRASHED'
-                      ? '#EF4444'
-                      : goroutineStatus === 'DEGRADED'
-                      ? '#FBBF24'
-                      : isProcessing
-                      ? '#34D399'
-                      : '#F59E0B',
-                  fontFamily: 'var(--font-mono)',
-                  outline: 'none',
-                  cursor: 'default',
-                  width: '100%',
-                  boxSizing: 'border-box'
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Modern Tactile Segmented Toggle Switch */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '0.4rem 0.6rem',
-            background: isProcessing ? 'rgba(16, 185, 129, 0.05)' : 'rgba(245, 158, 11, 0.05)',
-            border: `1px solid ${isProcessing ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)'}`,
-            borderRadius: '5px',
-            marginTop: '0.5rem',
-            transition: 'all 0.2s ease'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-              <span style={{ 
-                width: '6px', 
-                height: '6px', 
-                borderRadius: '50%', 
-                background: isProcessing ? '#10B981' : '#F59E0B',
-                boxShadow: isProcessing ? '0 0 6px rgba(16, 185, 129, 0.8)' : 'none',
-                animation: isProcessing ? 'pulse 1.5s infinite' : 'none'
-              }} />
-              <div>
-                <span style={{ fontSize: '0.74rem', fontWeight: 600, color: isProcessing ? '#34D399' : '#FBBF24' }}>
-                  {isProcessing ? 'Worker Pull Loop: ACTIVE' : 'Worker Pull Loop: PAUSED'}
-                </span>
-                <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>
-                  {isProcessing 
-                    ? 'Pulling and executing messages from NATS JetStream' 
-                    : 'Paused. Inbound messages buffer safely in NATS stream'}
-                </div>
-              </div>
-            </div>
-
-            {/* Segmented Pill Toggle Buttons */}
-            <div style={{
-              display: 'inline-flex',
-              background: '#0D1117',
-              border: '1px solid #30363D',
-              borderRadius: '16px',
-              padding: '2px',
-              gap: '2px'
-            }}>
-              <button
-                type="button"
-                disabled={isToggling || !isConnected}
-                onClick={() => { if (!isProcessing) handleToggle(); }}
-                style={{
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '2px 9px',
-                  fontSize: '0.65rem',
-                  fontWeight: 700,
-                  cursor: isToggling || !isConnected ? 'not-allowed' : 'pointer',
-                  background: isProcessing ? 'rgba(16, 185, 129, 0.25)' : 'transparent',
-                  color: isProcessing ? '#34D399' : 'var(--text-dim)',
-                  boxShadow: isProcessing ? '0 0 6px rgba(16, 185, 129, 0.25)' : 'none',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                ON
-              </button>
-              <button
-                type="button"
-                disabled={isToggling || !isConnected}
-                onClick={() => { if (isProcessing) handleToggle(); }}
-                style={{
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '2px 9px',
-                  fontSize: '0.65rem',
-                  fontWeight: 700,
-                  cursor: isToggling || !isConnected ? 'not-allowed' : 'pointer',
-                  background: !isProcessing ? 'rgba(239, 68, 68, 0.25)' : 'transparent',
-                  color: !isProcessing ? '#F87171' : 'var(--text-dim)',
-                  boxShadow: !isProcessing ? '0 0 6px rgba(239, 68, 68, 0.25)' : 'none',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                OFF
-              </button>
             </div>
           </div>
         </div>
@@ -628,7 +562,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
           border: '1px solid rgba(239, 68, 68, 0.25)',
           borderRadius: '6px',
           overflow: 'hidden',
-          fontSize: '0.72rem'
+          fontSize: '0.82rem'
         }}>
           {/* Collapsible Header */}
           <div 
@@ -651,7 +585,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                 color: '#F87171', 
                 borderRadius: '3px', 
                 padding: '1px 5px', 
-                fontSize: '0.65rem', 
+                fontSize: '0.75rem', 
                 fontWeight: 700 
               }}>
                 FAILURE LAB
@@ -664,7 +598,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                 color: activeScenario === 'normal' ? 'var(--text-dim)' : '#FBBF24',
                 padding: '1px 6px',
                 borderRadius: '4px',
-                fontSize: '0.62rem',
+                fontSize: '0.82rem',
                 fontWeight: 600
               }}>
                 {activeScenario === 'normal' ? 'MODE: NORMAL' : `ARMED: ${activeScenario.toUpperCase()}`}
@@ -700,7 +634,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   style={{
                     flex: 1,
                     padding: '5px 8px',
-                    fontSize: '0.68rem',
+                    fontSize: '0.85rem',
                     fontWeight: failureLabTab === 'partA' ? 700 : 500,
                     background: failureLabTab === 'partA' ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.02)',
                     border: `1px solid ${failureLabTab === 'partA' ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255, 255, 255, 0.06)'}`,
@@ -725,7 +659,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   style={{
                     flex: 1,
                     padding: '5px 8px',
-                    fontSize: '0.68rem',
+                    fontSize: '0.85rem',
                     fontWeight: failureLabTab === 'partB' ? 700 : 500,
                     background: failureLabTab === 'partB' ? 'rgba(239, 68, 68, 0.18)' : 'rgba(255, 255, 255, 0.02)',
                     border: `1px solid ${failureLabTab === 'partB' ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255, 255, 255, 0.06)'}`,
@@ -762,14 +696,14 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.875rem' }}>
                           1. Baseline Ingestion &amp; Storage
                         </strong>
-                        <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                        <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                           OPERATOR ACTION
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         Click <strong>Publish Message</strong> in Stage 1. Commits record to disk under <code>JOBS</code> stream; routes to <code>job-processor</code> consumer.
                       </div>
                     </div>
@@ -788,14 +722,14 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.875rem' }}>
                           2. Server Deduplication (Nats-Msg-Id)
                         </strong>
-                        <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                        <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                           OPERATOR ACTION
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         Keep same <code>Nats-Msg-Id</code> and click <strong>Publish Message</strong> again. Checks 2-min cache; broker suppresses duplicate disk write.
                       </div>
                     </div>
@@ -814,14 +748,14 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.875rem' }}>
                           3. Decoupled Ingestion &amp; Buffering
                         </strong>
-                        <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#FBBF24', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                        <span style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#FBBF24', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                           OPERATOR ACTION
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         Toggle Worker Pull Loop to <strong>OFF</strong> above, then click <strong>Publish Message</strong> 3 times. Messages buffer safely on disk in broker.
                       </div>
                     </div>
@@ -840,14 +774,14 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.875rem' }}>
                           4. Sequential Catch-up Drain
                         </strong>
-                        <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34D399', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                        <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34D399', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                           OPERATOR ACTION
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         Toggle Worker Pull Loop back to <strong>ON</strong> above. Fetches unacknowledged messages sequentially starting from <code>AckFloor + 1</code>.
                       </div>
                     </div>
@@ -866,16 +800,16 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: activeScenario === 'out_of_order_ack' ? '#60A5FA' : 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: activeScenario === 'out_of_order_ack' ? '#60A5FA' : 'var(--text-bright)', fontSize: '0.875rem' }}>
                           5. Out-of-Order ACK &amp; Hole Safety
                         </strong>
                         {activeScenario === 'out_of_order_ack' && (
-                          <span style={{ background: '#3B82F6', color: '#FFF', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                          <span style={{ background: '#3B82F6', color: '#FFF', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                             ARMED
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         Pulls 3 messages. Msg 1 &amp; 3 ACKed immediately while Msg 2 delays 10s. AckFloor stays pinned at 1 until Msg 2 resolves.
                       </div>
                     </div>
@@ -885,7 +819,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                       onClick={() => handleSetScenario(activeScenario === 'out_of_order_ack' ? 'normal' : 'out_of_order_ack')}
                       style={{
                         padding: '4px 9px',
-                        fontSize: '0.65rem',
+                        fontSize: '0.75rem',
                         fontWeight: 600,
                         borderRadius: '4px',
                         border: activeScenario === 'out_of_order_ack' ? '1px solid #3B82F6' : '1px solid var(--border-color)',
@@ -917,14 +851,14 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.875rem' }}>
                           6. Demand Work Distribution (Competing Pull)
                         </strong>
-                        <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                        <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                           OPERATOR ACTION
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         Set workers to <strong>3W</strong>, click <strong>Batch (6 Jobs)</strong>. Delivers reactively based on worker pull requests.
                       </div>
                     </div>
@@ -943,14 +877,14 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.875rem' }}>
                           7. Dynamic Scale-Out (Scenario 10)
                         </strong>
-                        <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                        <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                           OPERATOR ACTION
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         Set <strong>1W</strong>, toggle <strong>OFF</strong>, click <strong>Batch (6 Jobs)</strong>, switch to <strong>3W</strong>, toggle <strong>ON</strong>. Spawns workers without repartitioning pauses.
                       </div>
                     </div>
@@ -969,14 +903,14 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: 'var(--text-bright)', fontSize: '0.875rem' }}>
                           8. Dynamic Scale-In (Scenario 9)
                         </strong>
-                        <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                        <span style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60A5FA', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                           OPERATOR ACTION
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         Set <strong>3W</strong>, click <strong>Batch (6 Jobs)</strong>, then immediately click <strong>1W</strong>. Retiring workers finish in-flight jobs gracefully.
                       </div>
                     </div>
@@ -995,16 +929,16 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: activeScenario === 'crash_before_ack' ? '#F87171' : 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: activeScenario === 'crash_before_ack' ? '#F87171' : 'var(--text-bright)', fontSize: '0.875rem' }}>
                           9. Worker Crash Failover (Scenario 7)
                         </strong>
                         {activeScenario === 'crash_before_ack' && (
-                          <span style={{ background: '#EF4444', color: '#FFF', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                          <span style={{ background: '#EF4444', color: '#FFF', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                             ARMED
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         Simulates panic in 1 worker before ACK. Surviving workers continue; broker redelivers to healthy peer after 5s AckWait.
                       </div>
                     </div>
@@ -1014,7 +948,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                       onClick={() => handleSetScenario(activeScenario === 'crash_before_ack' ? 'normal' : 'crash_before_ack')}
                       style={{
                         padding: '4px 9px',
-                        fontSize: '0.65rem',
+                        fontSize: '0.75rem',
                         fontWeight: 600,
                         borderRadius: '4px',
                         border: activeScenario === 'crash_before_ack' ? '1px solid #EF4444' : '1px solid var(--border-color)',
@@ -1041,16 +975,16 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: activeScenario === 'exceed_ack_wait' ? '#FBBF24' : 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: activeScenario === 'exceed_ack_wait' ? '#FBBF24' : 'var(--text-bright)', fontSize: '0.875rem' }}>
                           10. Slow Worker Timeout (Scenario 8)
                         </strong>
                         {activeScenario === 'exceed_ack_wait' && (
-                          <span style={{ background: '#F59E0B', color: '#000', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                          <span style={{ background: '#F59E0B', color: '#000', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                             ARMED
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         One worker delays 7s (&gt;5s AckWait). Broker redelivers to healthy peer at 5s; original worker sends late ACK at 7s.
                       </div>
                     </div>
@@ -1060,7 +994,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                       onClick={() => handleSetScenario(activeScenario === 'exceed_ack_wait' ? 'normal' : 'exceed_ack_wait')}
                       style={{
                         padding: '4px 9px',
-                        fontSize: '0.65rem',
+                        fontSize: '0.75rem',
                         fontWeight: 600,
                         borderRadius: '4px',
                         border: activeScenario === 'exceed_ack_wait' ? '1px solid #F59E0B' : '1px solid var(--border-color)',
@@ -1087,16 +1021,16 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: activeScenario === 'nak_message' ? '#F87171' : 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: activeScenario === 'nak_message' ? '#F87171' : 'var(--text-bright)', fontSize: '0.875rem' }}>
                           11. Fast Retry via NAK (msg.Nak())
                         </strong>
                         {activeScenario === 'nak_message' && (
-                          <span style={{ background: '#EF4444', color: '#FFF', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                          <span style={{ background: '#EF4444', color: '#FFF', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                             ARMED
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         Worker sends explicit NAK. Broker immediately requeues message for redelivery without waiting 5s.
                       </div>
                     </div>
@@ -1106,7 +1040,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                       onClick={() => handleSetScenario(activeScenario === 'nak_message' ? 'normal' : 'nak_message')}
                       style={{
                         padding: '4px 9px',
-                        fontSize: '0.65rem',
+                        fontSize: '0.75rem',
                         fontWeight: 600,
                         borderRadius: '4px',
                         border: activeScenario === 'nak_message' ? '1px solid #EF4444' : '1px solid var(--border-color)',
@@ -1133,16 +1067,16 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
-                        <strong style={{ color: activeScenario === 'term_message' ? '#F87171' : 'var(--text-bright)', fontSize: '0.73rem' }}>
+                        <strong style={{ color: activeScenario === 'term_message' ? '#F87171' : 'var(--text-bright)', fontSize: '0.875rem' }}>
                           12. Poison Pill Termination (msg.Term())
                         </strong>
                         {activeScenario === 'term_message' && (
-                          <span style={{ background: '#DC2626', color: '#FFF', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
+                          <span style={{ background: '#DC2626', color: '#FFF', fontSize: '0.68rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
                             ARMED
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
                         Worker sends msg.Term(). Broker marks permanently terminated; no redelivery; ACK floor advances.
                       </div>
                     </div>
@@ -1152,7 +1086,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                       onClick={() => handleSetScenario(activeScenario === 'term_message' ? 'normal' : 'term_message')}
                       style={{
                         padding: '4px 9px',
-                        fontSize: '0.65rem',
+                        fontSize: '0.75rem',
                         fontWeight: 600,
                         borderRadius: '4px',
                         border: activeScenario === 'term_message' ? '1px solid #DC2626' : '1px solid var(--border-color)',
@@ -1177,7 +1111,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                     onClick={() => handleSetScenario('normal')}
                     style={{
                       padding: '3px 8px',
-                      fontSize: '0.63rem',
+                      fontSize: '0.875rem',
                       fontWeight: 600,
                       borderRadius: '4px',
                       border: '1px solid var(--border-color)',
@@ -1193,7 +1127,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
 
               {/* CLI Command Helper */}
               <div style={{
-                fontSize: '0.63rem',
+                fontSize: '0.875rem',
                 color: 'var(--text-dim)',
                 background: 'rgba(0, 0, 0, 0.3)',
                 padding: '0.35rem 0.5rem',
@@ -1212,7 +1146,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                     background: 'transparent',
                     border: 'none',
                     color: copiedCli ? '#34D399' : '#60A5FA',
-                    fontSize: '0.62rem',
+                    fontSize: '0.82rem',
                     cursor: 'pointer',
                     padding: '0 4px'
                   }}
@@ -1230,7 +1164,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
         borderTop: '1px solid var(--border-color)', 
         padding: '0.45rem 1rem', 
         background: 'rgba(0, 0, 0, 0.2)',
-        fontSize: '0.65rem',
+        fontSize: '0.75rem',
         color: 'var(--text-dim)',
         display: 'flex',
         justifyContent: 'space-between',

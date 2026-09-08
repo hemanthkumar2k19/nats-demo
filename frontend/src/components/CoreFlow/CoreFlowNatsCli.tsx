@@ -166,7 +166,7 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
         {/* Section 1: Setup Phase */}
         <div>
           <div style={{ 
-            fontSize: '0.68rem', 
+            fontSize: '0.78rem', 
             textTransform: 'uppercase', 
             letterSpacing: '0.05em', 
             color: '#34D399', 
@@ -190,11 +190,11 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-bright)' }}>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-bright)' }}>
                     {snip.title}
                   </span>
                   <span style={{ 
-                    fontSize: '0.62rem', 
+                    fontSize: '0.72rem', 
                     padding: '1px 5px', 
                     borderRadius: '3px',
                     background: snip.badgeBg,
@@ -214,7 +214,7 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
                   padding: '0.25rem 0.4rem', 
                   gap: '0.5rem', 
                   fontFamily: 'monospace', 
-                  fontSize: '0.72rem' 
+                  fontSize: '0.82rem'
                 }}>
                   <span style={{ flex: 1, color: '#34D399', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {snip.cmd}
@@ -224,7 +224,7 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
                     className="btn-secondary"
                     onClick={() => copyToClipboard(snip.cmd, snip.id)}
                     style={{ 
-                      fontSize: '0.65rem', 
+                      fontSize: '0.75rem', 
                       padding: '1px 6px', 
                       minWidth: '50px',
                       background: copiedId === snip.id ? 'rgba(16, 185, 129, 0.2)' : undefined,
@@ -243,7 +243,7 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
         {/* Section 2: Handy Commands (Without --context) */}
         <div>
           <div style={{ 
-            fontSize: '0.68rem', 
+            fontSize: '0.78rem', 
             textTransform: 'uppercase', 
             letterSpacing: '0.05em', 
             color: '#60A5FA', 
@@ -267,7 +267,7 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.76rem', fontWeight: 600, color: 'var(--text-bright)' }}>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-bright)' }}>
                     {snip.title}
                   </span>
                 </div>
@@ -281,7 +281,7 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
                   padding: '0.25rem 0.4rem', 
                   gap: '0.5rem', 
                   fontFamily: 'monospace', 
-                  fontSize: '0.72rem' 
+                  fontSize: '0.82rem'
                 }}>
                   <span style={{ flex: 1, color: '#E6EDF3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {snip.cmd}
@@ -291,7 +291,7 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
                     className="btn-secondary"
                     onClick={() => copyToClipboard(snip.cmd, snip.id)}
                     style={{ 
-                      fontSize: '0.65rem', 
+                      fontSize: '0.75rem', 
                       padding: '1px 6px', 
                       minWidth: '50px',
                       background: copiedId === snip.id ? 'rgba(16, 185, 129, 0.2)' : undefined,

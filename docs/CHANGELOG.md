@@ -16,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/) and adher
 - Lightweight execution toggle `MODE=demo` (and `PROCESSOR_MODE`) to run strictly JetStream pull workers without transient subscriber overhead.
 
 ### Changed
+- Cleaned up Stage 1 Publish Panel in `CoreFlowPublisher.tsx`: defaulted `Nats-Msg-Id:` to empty string to demonstrate it is optional; added dedicated on-demand `Regen` button; removed distracting SDK/code annotations and fixed badges; standardized Job ID, Job Type (with `<select>` options matching PubSub panel), and Payload (JSON); and formatted all fields into a clean, aligned `Field: Value-box` horizontal grid layout.
+- Updated backend publishers (`publisher.go`) to only set `Nats-Msg-Id` when explicitly provided by the caller, without forcing fallback to `job_id`.
+- Rearranged Stage 3 Process Message panel in `CoreFlowProcessor.tsx`: cleanly wrapped the NATS consumer properties (`Stream:`, `Filter Subject:`, `Ack Policy:`, `AckWait:`, `Ack Floor:`, `Delivered Seq:`) into a dedicated framed Consumer Card (`Consumer: job-processor`), wrapped worker controls (`Pull Loop:`, `Worker Pool:`, `Goroutines:`) into a dedicated Worker Daemon Card (`Worker Daemon (processor-service)`), and formatted all fields into an aligned `Field: Value-box` layout matching Stage 1.
 - Redesigned Stage 3 Failure Lab with a 2-tab layout strictly partitioned into Part A: Single-Worker Scenarios (Steps 1-5) and Part B: Multi-Worker Scenarios (Steps 6-12) matching docs/demo.md, placing ARM triggers exclusively on scenarios requiring fault injection (Steps 5, 9, 10, 11, 12).
 - Reorganized Stage 3 UI to prioritize the JetStream `job-processor` durable consumer view above worker details.
 - Suppressed periodic `/health` polling logs in `job-service` router.
@@ -27,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/) and adher
 - Filtered JetStream broker duplicate publications from transient subscriber console logs.
 
 ### Removed
+- Removed `X-Message-Id` template preview field from Stage 1 Publish Panel to avoid confusion with `Nats-Msg-Id` (the NATS JetStream deduplication header).
 - Fully pruned legacy Consumer Lab feature from UI, API gateway, and backend services.
 - Removed legacy Saga Orchestration module, worker responders, and HTTP routes.
 

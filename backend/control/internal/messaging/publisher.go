@@ -44,9 +44,6 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job) error
 	}
 
 	msgID := job.MsgID
-	if msgID == "" {
-		msgID = job.JobID
-	}
 
 	source := job.Source
 	if source == "" {
@@ -73,7 +70,9 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job) error
 
 	msg := nats.NewMsg(targetSubject)
 	msg.Header.Set("Content-Type", contentType)
-	msg.Header.Set("Nats-Msg-Id", msgID)
+	if msgID != "" {
+		msg.Header.Set("Nats-Msg-Id", msgID)
+	}
 	msg.Header.Set("X-Message-Id", fmt.Sprintf("msg-sub-%s-%d", job.JobID, time.Now().UnixNano()))
 	msg.Header.Set("X-Source", source)
 	msg.Header.Set("X-Delivery-Mode", deliveryMode)
