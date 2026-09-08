@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-08
 
+### Added (Processor Service Execution Mode Toggle)
+- **Environment-based MODE Toggle (`MODE=demo` vs `MODE=all`) (`backend/services/cmd/processor-service/main.go`, `config.go`, `.env`, `.env.example`)**:
+  - Added support for `MODE` (and `PROCESSOR_MODE`) environment toggle in `config.go` with helper `GetProcessorMode()`.
+  - Configured `MODE=demo` by default in `backend/services/.env` and documented in `.env.example` for the NATS Demo View.
+  - When `MODE=demo` (or `MODE=model`), `processor-service` starts strictly the JetStream pull consumer (`job-processor`), competing worker goroutines, and direct HTTP API (`:8082`) for the NATS Demo View.
+  - Suppressed all Core NATS transient subscriber, Queue Group, RPC validation, and demo control responder subscriptions and startup logs in `demo` mode to prevent log clutter and confusion.
+  - Retained `MODE=all` as optional toggle for comprehensive Capability Studio demonstrations.
+  - Guarded `unsubscribeQueueGroup()` to prevent deactivation log messages when queue groups were never initialized.
+
 ### Added (Multiple Worker Failure Scenarios from docs/feature.md)
 - **Scenario 7 — One Worker Crashes (`worker.go`, `http_server.go`, `CoreFlowProcessor.tsx`)**:
   - Implemented isolated worker crash semantics in `crash_before_ack`: when 1 worker crashes in a multi-worker pool, surviving workers continue pulling from `job-processor` uninterrupted.
@@ -38,6 +47,10 @@ All notable changes to this project will be documented in this file.
   - Updated `messaging.SubjectConsumerConfigSet` handler to call `a.ScaleWorkers(req.Workers)` instead of restarting the entire worker pool, ensuring zero-disruption worker scaling from all interfaces.
 
 ### Changed
+- **Job Service Health Log Suppression & Publishing Telemetry (`backend/services/cmd/job-service/main.go`, `api/http/job_handler.go`, `messaging/publisher.go`)**:
+  - Configured Gin HTTP router with `gin.LoggerConfig{SkipPaths: []string{"/health"}}` to suppress periodic health check poll logs from `demo-control-service`.
+  - Added structured `[JobService] [RECEIVED]` entry on HTTP POST `/jobs` arrival.
+  - Added structured `[Publisher] [PUBLISHED]` and `[Publisher] [PUBACK RECEIVED]` logs indicating stream sequence and status (`STORED` vs `DUPLICATE`).
 - **Stage 3 UI Reorganization & Non-Editable Configuration Fields (`frontend/src/components/CoreFlow/CoreFlowProcessor.tsx`)**:
   - Moved the `job-processor` JetStream Consumer card to the top above `processor-service`.
   - Renamed the consumer badge from `NATS Object` to `JetStream Object`.
@@ -51,6 +64,9 @@ All notable changes to this project will be documented in this file.
   - Changed the default state of `isFailureLabOpen` to `false` (collapsed by default).
 
 ### Fixed
+- **Misleading Consumer Logs on Duplicate Publishes (`backend/services/internal/messaging/consumer.go`, `publisher.go`)**:
+  - Filtered out `JETSTREAM` messages before logging in the Core NATS subscriber (`SubscribeJobSubmitted`), preventing misleading `[Consumer] Received message` logs that appeared to freeze when JetStream duplicates were dropped by the broker.
+  - Added explicit deduplication console logs in `publisher.go` when `ack.Duplicate` is true (`[Publisher] [DEDUPLICATED] JetStream broker detected duplicate...`).
 - **Empty Critical Section in Processor Service (`backend/services/cmd/processor-service/control.go`, `main.go`)**:
   - Eliminated empty critical section (`a.consumerMu.Lock()` / `a.consumerMu.Unlock()`) in the `consumer.reset` responder.
   - Removed unused `consumerMu sync.Mutex` field from struct `App`.

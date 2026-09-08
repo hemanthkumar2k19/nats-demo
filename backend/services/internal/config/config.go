@@ -16,8 +16,21 @@ type Config struct {
 	NATSSysPassword string `env:"NATS_SYS_PASSWORD" envDefault:"sys_admin_pwd!"`
 	Port            string `env:"PORT" envDefault:"8080"`
 	ProcessorPort   string `env:"PROCESSOR_PORT" envDefault:"8082"`
+	Mode            string `env:"MODE" envDefault:""`
+	ProcessorMode   string `env:"PROCESSOR_MODE" envDefault:"all"`
 	OtelEndpoint    string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:4317"`
 	OtelInsecure    bool   `env:"OTEL_EXPORTER_OTLP_INSECURE" envDefault:"true"`
+}
+
+// GetProcessorMode returns the resolved processor execution mode ("demo", "model", or "all").
+func (c *Config) GetProcessorMode() string {
+	if c.Mode != "" {
+		return c.Mode
+	}
+	if c.ProcessorMode != "" {
+		return c.ProcessorMode
+	}
+	return "all"
 }
 
 

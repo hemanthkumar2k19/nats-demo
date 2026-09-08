@@ -103,6 +103,7 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job) error
 		pubSpan.SetAttributes(attribute.Int64("jetstream.sequence", int64(ack.Sequence)))
 		if ack.Duplicate {
 			pubSpan.SetAttributes(attribute.Bool("jetstream.duplicate", true))
+			log.Printf("[Publisher] [DEDUPLICATED] JetStream broker detected duplicate Nats-Msg-Id='%s' (original seq #%d). Suppressed by broker - not written to stream.", msgID, ack.Sequence)
 			// Duplicate publish recognized by JetStream deduplication window
 			_ = p.PublishJobLifecycle(SubjectJobDeduplicated, job.JobID, "DEDUPLICATED", 1, "Duplicate message recognized by JetStream deduplication window", source, deliveryMode, ack.Sequence)
 		} else {

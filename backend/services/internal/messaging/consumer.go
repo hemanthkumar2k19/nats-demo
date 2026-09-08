@@ -38,7 +38,16 @@ func (c *Consumer) SubscribeJobSubmitted(handler JobHandler) (*nats.Subscription
 			return
 		}
 
-		log.Printf("[Consumer] Received message on subject: %s | Job ID: %s", msg.Subject, job.JobID)
+		deliveryMode := msg.Header.Get("X-Delivery-Mode")
+		if deliveryMode == "" {
+			deliveryMode = job.DeliveryMode
+		}
+		if deliveryMode == "JETSTREAM" {
+			// Handled by JetStream durable pull consumer; ignore in transient Core NATS subscriber
+			return
+		}
+
+		log.Printf("[Core NATS] Received message on subject: %s | Job ID: %s", msg.Subject, job.JobID)
 
 		parentCtx := telemetry.ExtractTraceContext(context.Background(), msg.Header)
 		if err := handler(parentCtx, job); err != nil {

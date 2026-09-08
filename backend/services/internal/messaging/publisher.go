@@ -90,7 +90,7 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job) error
 	// Inject W3C traceparent into NATS message headers
 	telemetry.InjectTraceContext(pubCtx, msg.Header)
 
-	log.Printf("[Publisher] Publishing to NATS | Subject=%s | Nats-Msg-Id=%s | Mode=%s", targetSubject, msgID, deliveryMode)
+	log.Printf("[Publisher] [PUBLISHED] Message dispatched to NATS | Subject=%s | Nats-Msg-Id=%s | Mode=%s", targetSubject, msgID, deliveryMode)
 
 	if deliveryMode == "JETSTREAM" {
 		pubSpan.SetAttributes(attribute.String("jetstream.stream", "JOBS"))
@@ -98,14 +98,17 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job) error
 		if err != nil {
 			pubSpan.RecordError(err)
 			pubSpan.SetStatus(codes.Error, err.Error())
+			log.Printf("[Publisher] [PUBACK ERROR] JetStream publish failed for JobID=%s: %v", job.JobID, err)
 			return fmt.Errorf("failed to publish to JetStream: %w", err)
 		}
 		pubSpan.SetAttributes(attribute.Int64("jetstream.sequence", int64(ack.Sequence)))
 		if ack.Duplicate {
 			pubSpan.SetAttributes(attribute.Bool("jetstream.duplicate", true))
+			log.Printf("[Publisher] [PUBACK RECEIVED] Stream=JOBS | Seq=%d | Status=DUPLICATE (Nats-Msg-Id='%s' duplicate detected - dropped by broker)", ack.Sequence, msgID)
 			// Duplicate publish recognized by JetStream deduplication window
 			_ = p.PublishJobLifecycle(SubjectJobDeduplicated, job.JobID, "DEDUPLICATED", 1, "Duplicate message recognized by JetStream deduplication window", source, deliveryMode, ack.Sequence)
 		} else {
+			log.Printf("[Publisher] [PUBACK RECEIVED] Stream=JOBS | Seq=%d | Status=STORED | JobID=%s", ack.Sequence, job.JobID)
 			// Stored successfully: publish jobs.stored event
 			_ = p.PublishJobLifecycle(SubjectJobStored, job.JobID, "STORED", 1, "", source, deliveryMode, ack.Sequence)
 		}
@@ -113,8 +116,10 @@ func (p *Publisher) PublishJobSubmitted(ctx context.Context, job jobs.Job) error
 		if err := p.client.Conn.PublishMsg(msg); err != nil {
 			pubSpan.RecordError(err)
 			pubSpan.SetStatus(codes.Error, err.Error())
+			log.Printf("[Publisher] [ERROR] Core NATS publish failed for JobID=%s: %v", job.JobID, err)
 			return fmt.Errorf("failed to publish to NATS: %w", err)
 		}
+		log.Printf("[Publisher] [FIRE-AND-FORGET] Core NATS transient message delivered to subject=%s (no PubACK required)", targetSubject)
 	}
 
 	pubSpan.SetStatus(codes.Ok, "published")

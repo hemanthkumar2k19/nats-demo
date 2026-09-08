@@ -77,9 +77,13 @@ func (a *App) Init() error {
 	a.jobService = jobs.NewService(publisher)
 	jobHandler := apihttp.NewJobHandler(a.jobService)
 
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{"/health"},
+	}))
+	router.Use(gin.Recovery())
 	apihttp.RegisterJobRoutes(router, jobHandler)
-	log.Println("[Init] Registered Job routes")
+	log.Println("[Init] Registered Job routes (health check logging suppressed)")
 
 	a.httpServer = &http.Server{
 		Addr:    ":" + a.port,

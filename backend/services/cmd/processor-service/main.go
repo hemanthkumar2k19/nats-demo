@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -74,7 +75,7 @@ func (a *App) Init() error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 	a.cfg = cfg
-	log.Printf("[Init] Loaded configuration: NATS_URL=%s, USER=%s, PORT=%s", a.cfg.NATSURL, a.cfg.NATSUser, a.cfg.ProcessorPort)
+	log.Printf("[Init] Loaded configuration: NATS_URL=%s, USER=%s, PORT=%s, MODE=%s", a.cfg.NATSURL, a.cfg.NATSUser, a.cfg.ProcessorPort, a.cfg.GetProcessorMode())
 
 	// Initialize thread-safe in-memory event tracker for direct UI observation
 	a.eventTracker = NewEventTracker(50)
@@ -145,19 +146,21 @@ func (a *App) Run() error {
 	if workerName == "" {
 		workerName = "processor-1"
 	}
-	log.Printf("[Run] Starting processor instance: %s", workerName)
 
-	var coreWorkerCounter uint64
-
-	// Build Core NATS job processing handler
-	jobHandler := a.buildCoreJobHandler(&coreWorkerCounter)
-
-	// Subscribe to Core NATS
-	if err := a.subscribeCore(workerName, jobHandler); err != nil {
-		return fmt.Errorf("failed to subscribe to Core NATS: %w", err)
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MODE")))
+	if mode == "" {
+		mode = strings.ToLower(strings.TrimSpace(os.Getenv("PROCESSOR_MODE")))
+	}
+	if mode == "" {
+		mode = strings.ToLower(strings.TrimSpace(a.cfg.GetProcessorMode()))
+	}
+	if mode == "" {
+		mode = "all"
 	}
 
-	// Initialize and Subscribe to JetStream Pull consumer
+	log.Printf("[Run] Starting processor instance: %s (mode: %s)", workerName, mode)
+
+	// Initialize and Subscribe to JetStream Pull consumer (active in all modes)
 	if err := a.subscribeJetStream(); err != nil {
 		log.Printf("[Run] Warning: JetStream Pull subscription failed (JOBS stream may not exist yet): %v", err)
 	}
@@ -165,24 +168,41 @@ func (a *App) Run() error {
 	// Run JetStream Pull Workers (multi-worker competing pool)
 	a.startWorkers(context.Background())
 
-	// Subscribe to jobs.validate Request/Reply
-	if err := a.subscribeValidation(workerName); err != nil {
-		return fmt.Errorf("failed to subscribe to validation subject: %w", err)
-	}
-	log.Printf("[Run] Subscribed to validation subject: %s", messaging.SubjectJobValidate)
-
-	// Subscribe Core NATS Queue Group workers
-	if err := a.subscribeQueueGroup(); err != nil {
-		return fmt.Errorf("failed to subscribe queue group workers: %w", err)
-	}
-
-	// Subscribe runtime demo control responders
-	if err := a.subscribeControlResponders(workerName, jobHandler); err != nil {
-		return fmt.Errorf("failed to subscribe control responders: %w", err)
-	}
-
-	// Start direct processor HTTP API server
+	// Start direct processor HTTP API server (:8082)
 	a.httpServer = a.startHTTPServer(a.cfg.ProcessorPort)
+
+	// Mode handling:
+	// "model" (or "demo") runs only the JetStream pull consumer, workers, and HTTP server for NATS Demo View.
+	// "all" runs all components, including Core NATS transient pub/sub, RPC validation, queue groups, and demo control responders.
+	if mode == "model" || mode == "demo" {
+		log.Printf("[Run] Mode '%s' active: Running JetStream 'job-processor' pull workers and direct HTTP server (:8082) only.", mode)
+	} else {
+		var coreWorkerCounter uint64
+
+		// Build Core NATS job processing handler
+		jobHandler := a.buildCoreJobHandler(&coreWorkerCounter)
+
+		// Subscribe to Core NATS
+		if err := a.subscribeCore(workerName, jobHandler); err != nil {
+			return fmt.Errorf("failed to subscribe to Core NATS: %w", err)
+		}
+
+		// Subscribe to jobs.validate Request/Reply
+		if err := a.subscribeValidation(workerName); err != nil {
+			return fmt.Errorf("failed to subscribe to validation subject: %w", err)
+		}
+		log.Printf("[Run] Subscribed to validation subject: %s", messaging.SubjectJobValidate)
+
+		// Subscribe Core NATS Queue Group workers
+		if err := a.subscribeQueueGroup(); err != nil {
+			return fmt.Errorf("failed to subscribe queue group workers: %w", err)
+		}
+
+		// Subscribe runtime demo control responders
+		if err := a.subscribeControlResponders(workerName, jobHandler); err != nil {
+			return fmt.Errorf("failed to subscribe control responders: %w", err)
+		}
+	}
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -205,14 +225,20 @@ func (a *App) Stop() {
 	a.unsubscribeCore()
 	a.unsubscribeJetStream()
 
-	log.Println("[Stop] Unsubscribing queue group...")
-	a.unsubscribeQueueGroup()
+	if len(a.queueSubs) > 0 {
+		log.Println("[Stop] Unsubscribing queue group...")
+		a.unsubscribeQueueGroup()
+	}
 
-	log.Println("[Stop] Unsubscribing validation consumer...")
-	a.unsubscribeValidation()
+	if a.valSub != nil {
+		log.Println("[Stop] Unsubscribing validation consumer...")
+		a.unsubscribeValidation()
+	}
 
-	log.Println("[Stop] Unsubscribing control responders...")
-	a.unsubscribeControlResponders()
+	if a.statusSub != nil || a.consumerConfigSub != nil {
+		log.Println("[Stop] Unsubscribing control responders...")
+		a.unsubscribeControlResponders()
+	}
 
 	log.Println("[Stop] Closing NATS connection...")
 

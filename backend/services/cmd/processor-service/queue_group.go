@@ -46,6 +46,10 @@ func (a *App) unsubscribeQueueGroup() {
 	a.queueMu.Lock()
 	defer a.queueMu.Unlock()
 
+	if len(a.queueSubs) == 0 {
+		return
+	}
+
 	for _, sub := range a.queueSubs {
 		if sub != nil {
 			_ = sub.Unsubscribe()

@@ -73,8 +73,21 @@ func (h *JobHandler) SubmitJob(c *gin.Context) {
 		attribute.String("job.type", job.Type),
 	)
 
-	log.Printf("[JobHandler] SubmitJob received: ID=%s, MsgID=%s, Subject=%s, Mode=%s, Source=%s",
-		job.JobID, job.MsgID, job.Subject, job.DeliveryMode, job.Source)
+	msgID := job.MsgID
+	if msgID == "" {
+		msgID = job.JobID
+	}
+	targetSubject := job.Subject
+	if targetSubject == "" {
+		targetSubject = "jobs.submitted"
+	}
+	deliveryMode := job.DeliveryMode
+	if deliveryMode == "" {
+		deliveryMode = "JETSTREAM"
+	}
+
+	log.Printf("[JobService] [RECEIVED] HTTP POST /jobs | JobID=%s | MsgID=%s | Subject=%s | Mode=%s",
+		job.JobID, msgID, targetSubject, deliveryMode)
 
 	if job.JobID == "" {
 		span.SetStatus(codes.Error, "missing job_id")
