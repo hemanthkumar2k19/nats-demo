@@ -13,8 +13,9 @@
 
 ## 2. Multi Worker Testing
 
-*(Add new multi-worker failure test cases here as they are implemented in the system)*
-
-| Failure | Description | How NATS works in this | How to do demo |
+| Test Case | Description | How NATS works in this | How to do demo |
 | :--- | :--- | :--- | :--- |
-| (Pending) | (Pending) | (Pending) | (Pending) |
+| Competing Consumers Load Balancing | Multiple worker goroutines concurrently pull and process messages from the same durable pull consumer (`job-processor`). | NATS JetStream server balances pull requests across active worker fetch connections. Each message from the `JOBS` stream is delivered to exactly one worker; no message duplication occurs. | 1. In Stage 3, set Worker Pool Size to `3W`.<br>2. In Stage 1, click `Batch (6 Jobs)`.<br>3. In processor-service terminal, observe interleaved concurrent logs across `[processor-1]`, `[processor-2]`, and `[processor-3]`.<br>4. In Stage 3, verify live Load Distribution badges display ~2 jobs per worker. |
+| Throughput Scaling (Linear Speedup) | Increasing worker count reduces total processing duration for batch workloads proportionally. | Each job simulates 1.0s business execution. With 1 worker, 6 jobs process sequentially in ~6.0s. With 3 workers, jobs process concurrently in ~2.0s (~3x throughput improvement). | 1. In Stage 3, set Worker Pool to `1W`. In Stage 1, click `Batch (6 Jobs)` and time execution (~6.1s total).<br>2. In Stage 3, set Worker Pool to `3W`. In Stage 1, click `Batch (6 Jobs)` and observe all 6 jobs complete in ~2.1s.<br>3. Compare start and completion timestamps in terminal stdout to verify simultaneous execution. |
+| Dynamic Worker Pool Resizing (Zero Downtime) | Scaling worker pool between 1, 2, 3, and 5 workers on-the-fly without restarting the daemon or deleting the durable consumer. | The NATS durable consumer object remains untouched. On scale up, existing workers continue processing uninterrupted while new worker goroutines attach to the consumer. On scale down, excess worker goroutines from the tail are cleanly stopped via context cancellation. | 1. In Stage 3, click between `[ 1W ]`, `[ 2W ]`, `[ 3W ]`, and `[ 5W ]`.<br>2. In processor-service terminal, observe explicit scale logs: `[WORKERS] Scaling worker pool request: N -> M worker(s)` followed by incremental add/stop worker notices.<br>3. Submit jobs to confirm immediate processing by the resized pool. |
+

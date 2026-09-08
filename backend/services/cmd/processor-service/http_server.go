@@ -176,6 +176,48 @@ func (a *App) startHTTPServer(port string) *http.Server {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
+	// PUT /processor/workers - dynamically scales worker pool size (1-5)
+	mux.HandleFunc("/processor/workers", func(w http.ResponseWriter, r *http.Request) {
+		setCorsHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		if r.Method == http.MethodPut {
+			var body struct {
+				Workers int `json:"workers"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "Invalid JSON: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			if body.Workers < 1 {
+				body.Workers = 1
+			} else if body.Workers > 5 {
+				body.Workers = 5
+			}
+
+			a.ScaleWorkers(body.Workers)
+
+			a.mu.RLock()
+			workers := a.consumerConfig.Workers
+			active := a.activeGoroutines
+			a.mu.RUnlock()
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":            "scaled",
+				"workers":           workers,
+				"active_goroutines": active,
+			})
+			return
+		}
+
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
 	// PUT /processor/scenario - arms or updates failure scenario on worker
 	mux.HandleFunc("/processor/scenario", func(w http.ResponseWriter, r *http.Request) {
 		setCorsHeaders(w)

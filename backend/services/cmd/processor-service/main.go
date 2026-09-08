@@ -15,7 +15,6 @@ import (
 	"nats-demo/services/internal/jobs"
 	"nats-demo/services/internal/messaging"
 	"nats-demo/services/internal/natsclient"
-	"nats-demo/services/internal/saga"
 	"nats-demo/services/internal/telemetry"
 
 	"github.com/nats-io/nats.go"
@@ -39,7 +38,6 @@ type App struct {
 	consumerConfig    jobs.ConsumerConfig
 	consumerName      string
 	workerCancels     []context.CancelFunc
-	sagaWorkers       *saga.WorkerResponders
 	otelShutdown      func(context.Context) error
 	eventTracker      *EventTracker
 	httpServer        *http.Server
@@ -51,10 +49,11 @@ type App struct {
 	activeGoroutines int
 	goroutineStatus  string // "RUNNING", "CRASHED", "PAUSED"
 
-	// JetStream Consumer distribution tracking
+	// JetStream Consumer state
 	consumerMu           sync.Mutex
-	consumerDistribution map[string]int
 	consumerResetSub     *nats.Subscription
+	attemptsMu           sync.Mutex
+	attempts             map[string]int
 
 	// Core NATS Queue Group state
 	queueMu           sync.Mutex
@@ -120,23 +119,7 @@ func (a *App) Init() error {
 		"processor-4": 0,
 		"processor-5": 0,
 	}
-
-	// Initialize JetStream Consumer distribution tracking
-	a.consumerDistribution = map[string]int{
-		"processor-1": 0,
-		"processor-2": 0,
-		"processor-3": 0,
-		"processor-4": 0,
-		"processor-5": 0,
-	}
-
-	// Initialize Saga worker responders (Allocate, Prepare, Execute, Release)
-	a.sagaWorkers = saga.NewWorkerResponders(a.natsClient.Conn)
-	if err := a.sagaWorkers.Start(); err != nil {
-		log.Printf("[Init] Warning: failed to start Saga worker responders: %v", err)
-	} else {
-		log.Println("[Init] Successfully registered Saga worker command responders")
-	}
+	a.attempts = make(map[string]int)
 
 	// Initialize default failure scenario and goroutine status
 	a.activeScenario = "normal"
@@ -155,12 +138,10 @@ func (a *App) Run() error {
 	}
 	log.Printf("[Run] Starting processor instance: %s", workerName)
 
-	var attemptsMu sync.Mutex
-	attempts := make(map[string]int)
 	var coreWorkerCounter uint64
 
 	// Build Core NATS job processing handler
-	jobHandler := a.buildCoreJobHandler(attempts, &attemptsMu, &coreWorkerCounter)
+	jobHandler := a.buildCoreJobHandler(&coreWorkerCounter)
 
 	// Subscribe to Core NATS
 	if err := a.subscribeCore(workerName, jobHandler); err != nil {
@@ -173,7 +154,7 @@ func (a *App) Run() error {
 	}
 
 	// Run JetStream Pull Workers (multi-worker competing pool)
-	a.startWorkers(context.Background(), attempts, &attemptsMu)
+	a.startWorkers(context.Background())
 
 	// Subscribe to jobs.validate Request/Reply
 	if err := a.subscribeValidation(workerName); err != nil {
@@ -187,7 +168,7 @@ func (a *App) Run() error {
 	}
 
 	// Subscribe runtime demo control responders
-	if err := a.subscribeControlResponders(workerName, jobHandler, attempts, &attemptsMu); err != nil {
+	if err := a.subscribeControlResponders(workerName, jobHandler); err != nil {
 		return fmt.Errorf("failed to subscribe control responders: %w", err)
 	}
 
@@ -225,10 +206,6 @@ func (a *App) Stop() {
 	a.unsubscribeControlResponders()
 
 	log.Println("[Stop] Closing NATS connection...")
-	if a.sagaWorkers != nil {
-		log.Println("[Stop] Unregistering Saga worker command responders...")
-		a.sagaWorkers.Stop()
-	}
 
 	if a.natsClient != nil {
 		a.natsClient.Close()

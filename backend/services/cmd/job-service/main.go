@@ -16,7 +16,6 @@ import (
 	"nats-demo/services/internal/jobs"
 	"nats-demo/services/internal/messaging"
 	"nats-demo/services/internal/natsclient"
-	"nats-demo/services/internal/saga"
 	"nats-demo/services/internal/telemetry"
 
 	"github.com/gin-gonic/gin"
@@ -24,13 +23,12 @@ import (
 
 // App manages the lifecycle of the pure business job-service.
 type App struct {
-	cfg              *config.Config
-	port             string
-	natsClient       *natsclient.Client
-	httpServer       *http.Server
-	jobService       *jobs.Service
-	sagaOrchestrator *saga.Orchestrator
-	otelShutdown     func(context.Context) error
+	cfg          *config.Config
+	port         string
+	natsClient   *natsclient.Client
+	httpServer   *http.Server
+	jobService   *jobs.Service
+	otelShutdown func(context.Context) error
 }
 
 // Init loads configuration, establishes connections, and configures business routing.
@@ -75,18 +73,13 @@ func (a *App) Init() error {
 		log.Println("[Init] Guaranteed JOBS JetStream stream exists")
 	}
 
-	// Initialize Saga Orchestration engine
-	a.sagaOrchestrator = saga.NewOrchestrator(a.natsClient.Conn)
-	sagaHandler := apihttp.NewSagaHandler(a.sagaOrchestrator)
-
 	publisher := messaging.NewPublisher(a.natsClient)
 	a.jobService = jobs.NewService(publisher)
-	jobHandler := apihttp.NewJobHandler(a.jobService).WithSagaOrchestrator(a.sagaOrchestrator)
+	jobHandler := apihttp.NewJobHandler(a.jobService)
 
 	router := gin.Default()
 	apihttp.RegisterJobRoutes(router, jobHandler)
-	apihttp.RegisterSagaRoutes(router, sagaHandler)
-	log.Println("[Init] Registered Job and Saga Orchestration routes")
+	log.Println("[Init] Registered Job routes")
 
 	a.httpServer = &http.Server{
 		Addr:    ":" + a.port,

@@ -44,6 +44,44 @@ export const CoreFlowPublisher: React.FC<CoreFlowPublisherProps> = ({
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [publishedHistory, setPublishedHistory] = useState<PublishedReceipt[]>([]);
   const [showAdvancedHeaders, setShowAdvancedHeaders] = useState<boolean>(false);
+  const [isBatchPublishing, setIsBatchPublishing] = useState<boolean>(false);
+
+  const handleBatchPublish = async (count = 6) => {
+    setIsBatchPublishing(true);
+    setJsonError(null);
+    try {
+      const parsed = JSON.parse(payloadStr);
+      const baseNum = Math.floor(1000 + Math.random() * 9000);
+      for (let i = 1; i <= count; i++) {
+        const batchJobId = `job-${baseNum}-${i}`;
+        const job: Job = {
+          job_id: batchJobId,
+          type: jobType.trim() || 'generic-message',
+          subject: subject.trim() || 'jobs.submitted',
+          delivery_mode: 'JETSTREAM',
+          msg_id: `msg-${baseNum}-${i}`,
+          source: source.trim() || 'job-service',
+          content_type: contentType.trim() || 'application/json',
+          headers: Object.keys(headersMap).length > 0 ? headersMap : undefined,
+          payload: parsed,
+        };
+        await onPublish(job);
+        const receipt: PublishedReceipt = {
+          jobId: job.job_id,
+          type: job.type || 'generic-message',
+          subject: subject.trim() || 'jobs.submitted',
+          deliveryMode: 'JETSTREAM',
+          msgId: job.msg_id || job.job_id,
+          timestamp: new Date().toLocaleTimeString(),
+        };
+        setPublishedHistory((prev) => [receipt, ...prev.slice(0, 7)]);
+      }
+    } catch (err: any) {
+      setJsonError(err.message || 'Batch publish failed');
+    } finally {
+      setIsBatchPublishing(false);
+    }
+  };
 
   const regenerateIds = () => {
     const num = Math.floor(100 + Math.random() * 900);
@@ -495,29 +533,54 @@ export const CoreFlowPublisher: React.FC<CoreFlowPublisherProps> = ({
           </div>
         )}
 
-        {/* Publish Action Button */}
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={isSubmitting}
-          style={{ 
-            width: '100%', 
-            padding: '0.55rem 1rem', 
-            fontSize: '0.8rem',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '0.4rem',
-            boxShadow: '0 0 16px rgba(37, 99, 235, 0.25)'
-          }}
-        >
-          {isSubmitting ? (
-            <span>Publishing to NATS...</span>
-          ) : (
-            <span>Publish Message to NATS -&gt;</span>
-          )}
-        </button>
+        {/* Publish Action Buttons (Single Message & Concurrent Batch) */}
+        <div style={{ display: 'flex', gap: '0.45rem' }}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={isSubmitting || isBatchPublishing}
+            style={{ 
+              flex: 1,
+              padding: '0.55rem 0.8rem', 
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.4rem',
+              boxShadow: '0 0 16px rgba(37, 99, 235, 0.25)'
+            }}
+          >
+            {isSubmitting ? (
+              <span>Publishing...</span>
+            ) : (
+              <span>Publish Message -&gt;</span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleBatchPublish(6)}
+            disabled={isSubmitting || isBatchPublishing}
+            style={{
+              padding: '0.55rem 0.85rem',
+              fontSize: '0.76rem',
+              fontWeight: 700,
+              borderRadius: '6px',
+              border: '1px solid #10B981',
+              background: 'rgba(16, 185, 129, 0.15)',
+              color: '#34D399',
+              cursor: isSubmitting || isBatchPublishing ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap'
+            }}
+            title="Publish a burst of 6 concurrent messages to demonstrate worker pool throughput and horizontal scaling"
+          >
+            {isBatchPublishing ? 'Publishing 6x...' : 'Batch (6 Jobs)'}
+          </button>
+        </div>
       </form>
 
       {/* Publisher Activity Log (Bottom of Panel) */}

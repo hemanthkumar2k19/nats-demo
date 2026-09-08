@@ -3,15 +3,12 @@ package http
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"nats-demo/services/internal/jobs"
 	"nats-demo/services/internal/messaging"
-	"nats-demo/services/internal/saga"
 	"nats-demo/services/internal/telemetry"
 
 	"github.com/gin-gonic/gin"
@@ -33,8 +30,7 @@ type JobServiceDomain interface {
 
 // JobHandler handles HTTP requests for the pure business Job Service.
 type JobHandler struct {
-	jobService       JobServiceDomain
-	sagaOrchestrator *saga.Orchestrator
+	jobService JobServiceDomain
 }
 
 // NewJobHandler instantiates a new JobHandler.
@@ -42,12 +38,6 @@ func NewJobHandler(jobService JobServiceDomain) *JobHandler {
 	return &JobHandler{
 		jobService: jobService,
 	}
-}
-
-// WithSagaOrchestrator registers a Saga Orchestrator to resolve Saga instances in GetJob.
-func (h *JobHandler) WithSagaOrchestrator(orchestrator *saga.Orchestrator) *JobHandler {
-	h.sagaOrchestrator = orchestrator
-	return h
 }
 
 // HealthCheck returns health status for job-service.
@@ -193,32 +183,6 @@ func (h *JobHandler) GetJob(c *gin.Context) {
 	}
 
 	job, exists := h.jobService.GetJob(jobID)
-	if !exists && h.sagaOrchestrator != nil {
-		if sagaInstance, sExists := h.sagaOrchestrator.GetSaga(jobID); sExists {
-			history := make([]jobs.JobHistoryItem, 0, len(sagaInstance.Steps)+1)
-			history = append(history, jobs.JobHistoryItem{
-				Status:    "SAGA_STARTED",
-				Timestamp: sagaInstance.CreatedAt,
-			})
-			for _, step := range sagaInstance.Steps {
-				history = append(history, jobs.JobHistoryItem{
-					Status:    fmt.Sprintf("STEP_%s_%s", strings.ToUpper(step.Name), step.Status),
-					Timestamp: step.StartedAt,
-				})
-			}
-			job = &jobs.JobDetailResponse{
-				JobID:         sagaInstance.JobID,
-				Type:          "saga-orchestration",
-				Status:        string(sagaInstance.State),
-				DeliveryCount: 1,
-				DeliveryMode:  "SAGA",
-				Worker:        "saga-orchestrator",
-				History:       history,
-				Payload:       sagaInstance.Payload,
-			}
-			exists = true
-		}
-	}
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Job not found"})
 		return
@@ -340,5 +304,3 @@ func (h *JobHandler) ScheduleJob(c *gin.Context) {
 	telemetry.RecordJobSubmission(spanCtx, req.DeliveryMode, "SCHEDULED", time.Since(start))
 	c.JSON(http.StatusAccepted, resp)
 }
-
-

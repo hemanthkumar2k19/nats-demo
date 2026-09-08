@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
 	"nats-demo/services/internal/jobs"
@@ -15,7 +14,7 @@ import (
 )
 
 // subscribeControlResponders registers NATS Request/Reply responders for runtime demo control.
-func (a *App) subscribeControlResponders(workerName string, jobHandler messaging.JobHandler, attempts map[string]int, attemptsMu *sync.Mutex) error {
+func (a *App) subscribeControlResponders(workerName string, jobHandler messaging.JobHandler) error {
 	// 1. Status Ping Responder (status.processor)
 	statusSub, err := a.natsClient.Conn.Subscribe("status.processor", func(msg *nats.Msg) {
 		a.mu.RLock()
@@ -28,16 +27,8 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 		cAck := a.consumerConfig.AckPolicy
 		a.mu.RUnlock()
 
-		a.consumerMu.Lock()
-		distCopy := make(map[string]int)
-		for k, v := range a.consumerDistribution {
-			distCopy[k] = v
-		}
-		a.consumerMu.Unlock()
-		distJSON, _ := json.Marshal(distCopy)
-
-		respBytes := []byte(fmt.Sprintf(`{"status":"ACTIVE","processing":%t,"consumer_type":"%s","consumer_name":"%s","workers":%d,"ordering":"%s","deliver_policy":"%s","ack_policy":"%s","distribution":%s}`,
-			enabled, cType, cName, cWorkers, cOrdering, cDeliver, cAck, string(distJSON)))
+		respBytes := fmt.Appendf(nil, `{"status":"ACTIVE","processing":%t,"consumer_type":"%s","consumer_name":"%s","workers":%d,"ordering":"%s","deliver_policy":"%s","ack_policy":"%s"}`,
+			enabled, cType, cName, cWorkers, cOrdering, cDeliver, cAck)
 		if err := msg.Respond(respBytes); err != nil {
 			log.Printf("[Processor] Failed to send status reply: %v", err)
 		}
@@ -97,8 +88,8 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 			log.Printf("[Processor] Re-subscribing JetStream consumer failed: %v", err)
 		}
 
-		// Restart workers matching the new worker count
-		a.startWorkers(context.Background(), attempts, attemptsMu)
+		// Scale workers incrementally matching the new worker count
+		a.ScaleWorkers(req.Workers)
 
 		var pending uint64
 		var ackPending, redelivered int
@@ -119,13 +110,6 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 			statusVal = "STOPPED"
 		}
 
-		a.consumerMu.Lock()
-		distCopy := make(map[string]int)
-		for k, v := range a.consumerDistribution {
-			distCopy[k] = v
-		}
-		a.consumerMu.Unlock()
-
 		resp := jobs.ConsumerStatusResponse{
 			Name:          a.consumerName,
 			Type:          req.Type,
@@ -138,7 +122,6 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 			Pending:       pending,
 			AckPending:    ackPending,
 			Redelivered:   redelivered,
-			Distribution:  distCopy,
 		}
 		respBytes, _ := json.Marshal(resp)
 		_ = msg.Respond(respBytes)
@@ -154,14 +137,6 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 	// 3. Consumer Distribution Reset (consumer.reset)
 	consumerResetSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectConsumerReset, func(msg *nats.Msg) {
 		a.consumerMu.Lock()
-		a.consumerDistribution = make(map[string]int)
-		for i := 1; i <= 5; i++ {
-			a.consumerDistribution[fmt.Sprintf("processor-%d", i)] = 0
-		}
-		distCopy := make(map[string]int)
-		for k, v := range a.consumerDistribution {
-			distCopy[k] = v
-		}
 		a.consumerMu.Unlock()
 
 		a.mu.RLock()
@@ -203,7 +178,6 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 			Pending:       pending,
 			AckPending:    ackPending,
 			Redelivered:   redelivered,
-			Distribution:  distCopy,
 		}
 		respBytes, _ := json.Marshal(resp)
 		_ = msg.Respond(respBytes)
@@ -239,7 +213,7 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 			if err := a.subscribeJetStream(); err != nil {
 				log.Printf("[Processor] JetStream subscription failed on toggle: %v", err)
 			}
-			a.startWorkers(context.Background(), attempts, attemptsMu)
+			a.startWorkers(context.Background())
 		} else {
 			a.unsubscribeCore()
 			a.mu.Lock()
@@ -252,7 +226,7 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 		}
 
 		log.Printf("[Processor] Processing toggled to enabled=%t (status: %s)", req.Enabled, statusVal)
-		respBytes := []byte(fmt.Sprintf(`{"enabled":%t,"status":"%s"}`, req.Enabled, statusVal))
+		respBytes := fmt.Appendf(nil, `{"enabled":%t,"status":"%s"}`, req.Enabled, statusVal)
 		if err := msg.Respond(respBytes); err != nil {
 			log.Printf("[Processor] Failed to send state response: %v", err)
 		}
@@ -284,7 +258,7 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 
 		if err := a.subscribeQueueGroup(); err != nil {
 			log.Printf("[Processor] Failed to reconfigure queue group subscribers: %v", err)
-			_ = msg.Respond([]byte(fmt.Sprintf(`{"error":"Failed to reconfigure: %v"}`, err)))
+			_ = msg.Respond(fmt.Appendf(nil, `{"error":"Failed to reconfigure: %v"}`, err))
 			return
 		}
 

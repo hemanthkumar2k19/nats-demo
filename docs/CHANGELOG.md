@@ -2,6 +2,88 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-09-08
+
+### Documentation
+- **Tailored NATS Demo View Confluence Guide (`docs/demo.md`)**:
+  - Authored clean, Confluence-level documentation tailored exclusively to the 3-Stage **NATS Demo View** (Publisher -> JetStream Stream -> Processor).
+  - Removed top metadata block and Section 2.3 Message Lifecycle Flow ASCII diagram for a tighter executive and technical presentation.
+  - Re-focused Section 1 purpose and evaluation objectives to strictly emphasize NATS server publishing, durable delivery via JetStream, durable pull consumers, competing workers, offline buffering, and interactive failure simulations.
+  - Included tabular breakdowns for Objective & Scope, 3-tier component architecture, Stage 1-2-3 capabilities, Failure Lab scenarios (`crash_before_ack`, `exceed_ack_wait`, `nak_message`, `term_message`), and an 8-step live demonstration runbook.
+
+### Added (Worker Observability & Incremental Scaling)
+- **Real-Time Worker Load Distribution Logging (`backend/services/cmd/processor-service/worker.go`)**:
+  - Added helper `getLoadDistributionSummary()` to format active pool load distribution (`processor-1=X, processor-2=Y, ...`).
+  - Added real-time load distribution logging on message `[PULLED]`: `Worker load: N (Pool: [processor-1=X, ...])`.
+  - Added real-time load distribution logging on message `[REDELIVERED]`, `[ACK SENT]`, and `[LATE ACK SENT]`.
+- **Incremental Scaling in Control Responders (`backend/services/cmd/processor-service/control.go`)**:
+  - Updated `messaging.SubjectConsumerConfigSet` handler to call `a.ScaleWorkers(req.Workers)` instead of restarting the entire worker pool, ensuring zero-disruption worker scaling from all interfaces.
+
+### Changed
+- **Stage 3 UI Reorganization & Non-Editable Configuration Fields (`frontend/src/components/CoreFlow/CoreFlowProcessor.tsx`)**:
+  - Moved the `job-processor` JetStream Consumer card to the top above `processor-service`.
+  - Renamed the consumer badge from `NATS Object` to `JetStream Object`.
+  - Converted consumer settings (Attached Stream, Filter Subject, Ack Policy, AckWait Threshold) into styled non-editable form input fields (`readOnly`) with clear uppercase labels.
+  - Removed redundant `BOUND WORKER` and `BROKER DURABILITY` fields from the consumer card for a clean 2x2 grid.
+  - Converted `processor-service:8082` parameters (Role, Consuming From, Goroutine State) into the same non-editable input field format.
+  - Removed the `ACTIVE WORKER` status badge from `processor-service:8082`.
+- **Stage 3 UI Failure Lab Cleanup (`frontend/src/components/CoreFlow/CoreFlowProcessor.tsx`)**:
+  - Removed heading `Goroutine Failure Scenarios` next to the `FAILURE LAB` badge.
+  - Converted the collapsible section indicator from text `[+]`/`[-]` to an animated SVG chevron dropdown arrow.
+  - Changed the default state of `isFailureLabOpen` to `false` (collapsed by default).
+
+### Fixed
+- **Undefined Variable Fix in Processor Service (`backend/services/cmd/processor-service/main.go`)**:
+  - Fixed Go compiler error `undefined: attemptsMu` by correctly qualifying receiver fields `a.attempts` and `&a.attemptsMu` in the `subscribeControlResponders` call.
+- **Batch Publish Job Interface Compliance (`frontend/src/components/CoreFlow/CoreFlowPublisher.tsx`)**:
+  - Fixed TypeScript compiler error where `status` and `max_retries` were incorrectly included on the `Job` object literal in `handleBatchPublish`.
+  - Aligned batch publish payload with the canonical `Job` interface and single publish flow (`source`, `content_type`, `headers`, `payload`).
+
+### Removed
+- **Grafana Header Link Removal (`frontend/src/components/Header.tsx`)**:
+  - Removed the `[Grafana (:3000)->]` external dashboard link from the top navigation bar header.
+- **Worker Load Distribution UI & API Removal (`frontend/`, `backend/services/cmd/processor-service/`)**:
+  - Removed the `Active Load Distribution (Competing Pull)` section and per-worker badges from Stage 3 UI (`CoreFlowProcessor.tsx`).
+  - Removed `worker_distribution` from `ProcessorDirectStatus` in `demoApi.ts`.
+  - Removed `worker_distribution` from `GET /processor/status` and `PUT /processor/workers` JSON responses in `http_server.go`.
+  - Removed `consumerDistribution` tracking and logging from `worker.go`, `main.go`, and `control.go`.
+- **Saga Orchestration Removal from Studio View (`frontend/src/`)**:
+  - Removed "Saga Orchestration" tab from `CapabilityStudio.tsx` (`StudioTab` type, nav bar button, panel render).
+  - Deleted unused standalone `frontend/src/components/SagaPanel.tsx`.
+  - Removed obsolete Saga API functions (`startSaga`, `advanceSagaStep`, `getSagaStatus`, `injectSagaFailure`, `cancelSaga`, `listSagas`) and models from `frontend/src/api/demoApi.ts`.
+  - Removed `saga-orchestration` knowledge card from `frontend/src/content/natsInfo.ts`.
+- **Saga Worker Responders from Processor Service (`backend/services/cmd/processor-service/main.go`)**:
+  - Removed auxiliary `sagaWorkers *saga.WorkerResponders` and import from `processor-service`.
+- **Complete Deletion of Saga Package & Job Service Endpoints (`backend/services/`)**:
+  - Deleted obsolete `backend/services/internal/saga/` package (`model.go`, `orchestrator.go`, `worker.go`).
+  - Deleted `backend/services/api/http/saga_handler.go`.
+  - Removed Saga Orchestrator initialization, routes, and `WithSagaOrchestrator` fallback from `job-service` (`cmd/job-service/main.go`, `api/http/job_handler.go`, `api/http/routes.go`).
+
+### Changed
+- **Processor Service Code Cleanup & Stale Code Removal (`backend/services/cmd/processor-service/`)**:
+  - Removed redundant parameter threading of struct fields `attempts` and `attemptsMu` across `buildCoreJobHandler`, `subscribeControlResponders`, `startWorkers`, `jsPullLoop`, and `handleJetStreamMsg`, using direct receiver field access.
+  - Eliminated dead fallback code in `handleJetStreamMsg` where `attemptCount <= 0` was impossible under JetStream message metadata.
+  - Consolidated duplicate failure lifecycle events in `buildCoreJobHandler` to publish solely to canonical `jobs.failed`.
+  - Cleaned up stale hardcoded line numbers in the simulated panic trace log.
+- **Incremental Worker Pool Scaling (`backend/services/cmd/processor-service/worker.go`)**:
+  - Replaced the stop-and-recreate worker pool strategy with true incremental scaling in `ScaleWorkers`.
+  - On scale UP (e.g. 2 -> 3): Keeps existing workers running uninterrupted without context cancellation, spawning only the delta (`processor-3`).
+  - On scale DOWN (e.g. 4 -> 1): Cancels only excess worker goroutines from the tail (stops `processor-4`, `processor-3`, `processor-2`), keeping `processor-1` running uninterrupted.
+
+### Added (Multiple Processors & Competing Consumer Scaling)
+- **Dynamic Worker Pool Scaling & Live Logs (`backend/services/cmd/processor-service/`)**:
+  - Implemented dynamic worker pool resizing via `PUT /processor/workers` without restarting the daemon or modifying the NATS durable consumer.
+  - Enhanced `startWorkers` and added `ScaleWorkers` with explicit, prominent ASCII logs detailing pool transitions: `[WORKERS] Scaling worker pool request: N -> M worker(s)`, stopping existing goroutines, and initializing new worker goroutines.
+  - Added worker distribution tracking to `GET /processor/status` (`worker_distribution: {"processor-1": X, "processor-2": Y}`).
+- **Interactive Worker Scaling & Batch Publishing UI (`frontend/src/`)**:
+  - In Stage 1 (`CoreFlowPublisher.tsx`), added a `Batch (6 Jobs)` action to instantly dispatch 6 concurrent jobs to the `JOBS` stream.
+  - In Stage 3 (`CoreFlowProcessor.tsx`), replaced static worker count with a dynamic stepper `[ 1W ] [ 2W ] [ 3W ] [ 5W ]` in Card 1.
+  - Added live Load Distribution badges in Card 1 displaying real-time job allocation per worker (`processor-1: 2`, `processor-2: 2`, `processor-3: 2`) along with throughput speedup metrics (~3x speedup with 3 workers).
+  - Added `updateProcessorWorkers` in `demoApi.ts`.
+- **Multi Worker Testing Reference (`docs/consumer_testing.md`)**:
+  - Populated Section 2 (Multi Worker Testing) with single-table test matrix covering Competing Consumers Load Balancing, Throughput Scaling (Linear Speedup), and Dynamic Worker Pool Resizing (Zero Downtime).
+  - Updated `docs/DEVELOPER_GUIDE.md` with Competing Consumers & Horizontal Scaling architecture.
+
 ## 2026-09-07
 
 ### Added (Durable Consumer Failure Scenarios & Rich Goroutine Diagnostics)

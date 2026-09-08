@@ -19,14 +19,6 @@ func RegisterJobRoutes(router *gin.Engine, h *JobHandler) {
 	router.POST("/jobs/stream", h.SubmitStreamJobs)
 }
 
-// RegisterSagaRoutes registers Saga Orchestrator endpoints onto the router.
-func RegisterSagaRoutes(router *gin.Engine, h *SagaHandler) {
-	router.POST("/sagas/jobs", h.StartSaga)
-	router.POST("/sagas/jobs/:job_id/step", h.AdvanceStep)
-	router.GET("/sagas/jobs/:job_id", h.GetSagaStatus)
-	router.GET("/sagas/jobs", h.ListSagas)
-}
-
 // CORSMiddleware returns a Gin HandlerFunc that configures CORS headers.
 func CORSMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {

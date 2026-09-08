@@ -9,6 +9,7 @@ import {
   restartProcessorWorker,
   updateProcessorDirectState,
   updateProcessorScenario,
+  updateProcessorWorkers,
 } from '../../api/demoApi';
 
 export interface CoreFlowProcessorProps {
@@ -33,7 +34,21 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
   const [isConnected, setIsConnected] = useState(true);
   const [isSettingScenario, setIsSettingScenario] = useState(false);
   const [copiedCli, setCopiedCli] = useState(false);
-  const [isFailureLabOpen, setIsFailureLabOpen] = useState<boolean>(true);
+  const [isFailureLabOpen, setIsFailureLabOpen] = useState<boolean>(false);
+  const [isScaling, setIsScaling] = useState(false);
+
+  const handleScaleWorkers = async (newCount: number) => {
+    if (newCount === workerCount || isScaling) return;
+    setIsScaling(true);
+    try {
+      await updateProcessorWorkers(newCount);
+      await refreshDirectData();
+    } catch (err) {
+      console.error('Failed to scale workers:', err);
+    } finally {
+      setIsScaling(false);
+    }
+  };
 
   // Poll direct processor HTTP API on port 8082
   const refreshDirectData = async () => {
@@ -136,7 +151,164 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
       </div>
 
       <div style={{ padding: '0.75rem 1rem 0 1rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-        {/* 1. Microservice Plane: processor-service (Application Level) */}
+        {/* 1. Broker Plane: NATS JetStream Consumer Object */}
+        <div style={{
+          background: 'rgba(15, 23, 42, 0.75)',
+          border: '1px solid rgba(59, 130, 246, 0.2)',
+          borderRadius: '6px',
+          padding: '0.65rem 0.75rem',
+          fontSize: '0.72rem'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+              <span style={{ 
+                width: '7px', 
+                height: '7px', 
+                borderRadius: '50%', 
+                background: '#60A5FA'
+              }} />
+              <strong style={{ color: 'var(--text-bright)', fontSize: '0.8rem' }}>
+                {consumerName}
+              </strong>
+              <span style={{ 
+                fontSize: '0.62rem', 
+                color: '#60A5FA', 
+                background: 'rgba(59, 130, 246, 0.12)',
+                padding: '1px 5px',
+                borderRadius: '3px',
+                fontFamily: 'var(--font-mono)'
+              }}>
+                JetStream Object
+              </span>
+            </div>
+            <span style={{ 
+              background: 'rgba(59, 130, 246, 0.15)', 
+              color: '#93C5FD', 
+              padding: '1px 7px', 
+              borderRadius: '4px',
+              fontWeight: 600,
+              fontSize: '0.65rem',
+              letterSpacing: '0.04em'
+            }}>
+              {consumerType} CONSUMER
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem', marginTop: '0.2rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                Attached Stream
+              </label>
+              <input
+                type="text"
+                readOnly
+                value={streamName}
+                style={{
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '4px',
+                  padding: '0.3rem 0.5rem',
+                  fontSize: '0.68rem',
+                  color: '#34D399',
+                  fontFamily: 'var(--font-mono)',
+                  outline: 'none',
+                  cursor: 'default',
+                  width: '100%',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                Filter Subject
+              </label>
+              <input
+                type="text"
+                readOnly
+                value="jobs.submitted"
+                style={{
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '4px',
+                  padding: '0.3rem 0.5rem',
+                  fontSize: '0.68rem',
+                  color: '#60A5FA',
+                  fontFamily: 'var(--font-mono)',
+                  outline: 'none',
+                  cursor: 'default',
+                  width: '100%',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                Ack Policy
+              </label>
+              <input
+                type="text"
+                readOnly
+                value="Explicit (msg.Ack())"
+                style={{
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '4px',
+                  padding: '0.3rem 0.5rem',
+                  fontSize: '0.68rem',
+                  color: '#34D399',
+                  fontFamily: 'var(--font-mono)',
+                  outline: 'none',
+                  cursor: 'default',
+                  width: '100%',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                AckWait Threshold
+              </label>
+              <input
+                type="text"
+                readOnly
+                value={`${ackWaitSeconds}s (Redelivery Timer)`}
+                style={{
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '4px',
+                  padding: '0.3rem 0.5rem',
+                  fontSize: '0.68rem',
+                  color: '#FBBF24',
+                  fontFamily: 'var(--font-mono)',
+                  outline: 'none',
+                  cursor: 'default',
+                  width: '100%',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Visual Link showing how processor-service connects to the NATS Consumer */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '0.4rem',
+          fontSize: '0.64rem',
+          color: 'var(--text-dim)',
+          margin: '-0.3rem 0'
+        }}>
+          <span>|</span>
+          <span>Binds via NATS Go Client: <code>CreateOrUpdateConsumer("{consumerName}")</code></span>
+          <span>|</span>
+        </div>
+
+        {/* 2. Microservice Plane: processor-service (Application Level) */}
         <div style={{
           background: 'rgba(15, 23, 42, 0.75)',
           border: '1px solid var(--border-color)',
@@ -167,56 +339,135 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                 :8082
               </span>
             </div>
-            <span style={{ 
-              background: isConnected ? (isProcessing ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)') : 'rgba(239, 68, 68, 0.15)', 
-              color: isConnected ? (isProcessing ? '#34D399' : '#FBBF24') : '#F87171', 
-              padding: '1px 7px', 
-              borderRadius: '4px',
-              fontWeight: 600,
-              fontSize: '0.65rem',
-              letterSpacing: '0.04em'
-            }}>
-              {isConnected ? (isProcessing ? 'ACTIVE WORKER' : 'PAUSED WORKER') : 'OFFLINE'}
-            </span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem', color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-            <div>
-              Role: <strong style={{ color: 'var(--text-secondary)' }}>Go Worker Daemon</strong>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem', marginTop: '0.2rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                Role
+              </label>
+              <input
+                type="text"
+                readOnly
+                value="Go Worker Daemon"
+                style={{
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '4px',
+                  padding: '0.3rem 0.5rem',
+                  fontSize: '0.68rem',
+                  color: 'var(--text-secondary)',
+                  fontFamily: 'var(--font-mono)',
+                  outline: 'none',
+                  cursor: 'default',
+                  width: '100%',
+                  boxSizing: 'border-box'
+                }}
+              />
             </div>
-            <div>
-              Consuming From: <strong style={{ color: '#60A5FA' }}>{consumerName} (Pull)</strong>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+              <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                Consuming From
+              </label>
+              <input
+                type="text"
+                readOnly
+                value={`${consumerName} (Pull)`}
+                style={{
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: '4px',
+                  padding: '0.3rem 0.5rem',
+                  fontSize: '0.68rem',
+                  color: '#60A5FA',
+                  fontFamily: 'var(--font-mono)',
+                  outline: 'none',
+                  cursor: 'default',
+                  width: '100%',
+                  boxSizing: 'border-box'
+                }}
+              />
             </div>
-            <div>
-              Worker Pool: <strong style={{ color: 'var(--text-secondary)' }}>{workerCount} Worker(s)</strong>
+
+            {/* Dynamic Worker Pool Scaling Stepper */}
+            <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255, 255, 255, 0.03)', padding: '0.35rem 0.5rem', borderRadius: '4px', marginTop: '0.1rem', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-bright)', fontSize: '0.69rem' }}>
+                  Worker Pool Size:
+                </span>
+                <span style={{ color: '#60A5FA', fontWeight: 700, fontSize: '0.7rem' }}>
+                  {workerCount} Concurrent Worker(s)
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+                {[1, 2, 3, 5].map((count) => (
+                  <button
+                    key={count}
+                    type="button"
+                    disabled={isScaling}
+                    onClick={() => handleScaleWorkers(count)}
+                    style={{
+                      border: count === workerCount ? '1px solid #60A5FA' : '1px solid var(--border-color)',
+                      background: count === workerCount ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                      color: count === workerCount ? '#93C5FD' : 'var(--text-dim)',
+                      borderRadius: '3px',
+                      padding: '1px 6px',
+                      fontSize: '0.65rem',
+                      fontWeight: 700,
+                      cursor: isScaling ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title={`Scale JetStream worker pool to ${count} worker goroutines`}
+                  >
+                    {count}W
+                  </button>
+                ))}
+              </div>
             </div>
-            <div>
-              HTTP Control Port: <strong style={{ color: '#34D399' }}>:8082 (Direct)</strong>
-            </div>
-            <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px dashed rgba(255, 255, 255, 0.08)', paddingTop: '0.25rem', marginTop: '0.1rem' }}>
-              <span>
-                Goroutine State: <strong style={{ color: goroutineStatus === 'CRASHED' ? '#EF4444' : (isProcessing ? '#34D399' : '#F59E0B') }}>
-                  {goroutineStatus} ({activeGoroutines} active)
-                </strong>
-              </span>
-              {goroutineStatus === 'CRASHED' && (
-                <button
-                  type="button"
-                  onClick={handleRestart}
-                  style={{
-                    background: 'rgba(139, 92, 246, 0.2)',
-                    border: '1px solid #8B5CF6',
-                    color: '#C4B5FD',
-                    fontSize: '0.62rem',
-                    padding: '1px 6px',
-                    borderRadius: '3px',
-                    cursor: 'pointer'
-                  }}
-                  title="Manually respawn worker goroutine"
-                >
-                  Revive Goroutine Now
-                </button>
-              )}
+
+            <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                  Goroutine State
+                </label>
+                {goroutineStatus === 'CRASHED' && (
+                  <button
+                    type="button"
+                    onClick={handleRestart}
+                    style={{
+                      background: 'rgba(139, 92, 246, 0.2)',
+                      border: '1px solid #8B5CF6',
+                      color: '#C4B5FD',
+                      fontSize: '0.6rem',
+                      padding: '1px 6px',
+                      borderRadius: '3px',
+                      cursor: 'pointer'
+                    }}
+                    title="Manually respawn worker goroutine"
+                  >
+                    Revive Goroutine Now
+                  </button>
+                )}
+              </div>
+              <input
+                type="text"
+                readOnly
+                value={`${goroutineStatus} (${activeGoroutines} active)`}
+                style={{
+                  background: 'rgba(0, 0, 0, 0.35)',
+                  border: `1px solid ${goroutineStatus === 'CRASHED' ? 'rgba(239, 68, 68, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+                  borderRadius: '4px',
+                  padding: '0.3rem 0.5rem',
+                  fontSize: '0.68rem',
+                  color: goroutineStatus === 'CRASHED' ? '#EF4444' : (isProcessing ? '#34D399' : '#F59E0B'),
+                  fontFamily: 'var(--font-mono)',
+                  outline: 'none',
+                  cursor: 'default',
+                  width: '100%',
+                  boxSizing: 'border-box'
+                }}
+              />
             </div>
           </div>
 
@@ -304,86 +555,6 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
           </div>
         </div>
 
-        {/* Visual Link showing how processor-service connects to the NATS Consumer */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '0.4rem',
-          fontSize: '0.64rem',
-          color: 'var(--text-dim)',
-          margin: '-0.3rem 0'
-        }}>
-          <span>|</span>
-          <span>Binds via NATS Go Client: <code>CreateOrUpdateConsumer("{consumerName}")</code></span>
-          <span>|</span>
-        </div>
-
-        {/* 2. Broker Plane: NATS JetStream Consumer Object */}
-        <div style={{
-          background: 'rgba(15, 23, 42, 0.75)',
-          border: '1px solid rgba(59, 130, 246, 0.2)',
-          borderRadius: '6px',
-          padding: '0.65rem 0.75rem',
-          fontSize: '0.72rem'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-              <span style={{ 
-                width: '7px', 
-                height: '7px', 
-                borderRadius: '50%', 
-                background: '#60A5FA'
-              }} />
-              <strong style={{ color: 'var(--text-bright)', fontSize: '0.8rem' }}>
-                {consumerName}
-              </strong>
-              <span style={{ 
-                fontSize: '0.62rem', 
-                color: '#60A5FA', 
-                background: 'rgba(59, 130, 246, 0.12)',
-                padding: '1px 5px',
-                borderRadius: '3px',
-                fontFamily: 'var(--font-mono)'
-              }}>
-                NATS Object
-              </span>
-            </div>
-            <span style={{ 
-              background: 'rgba(59, 130, 246, 0.15)', 
-              color: '#93C5FD', 
-              padding: '1px 7px', 
-              borderRadius: '4px',
-              fontWeight: 600,
-              fontSize: '0.65rem',
-              letterSpacing: '0.04em'
-            }}>
-              {consumerType} CONSUMER
-            </span>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.3rem', color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-            <div>
-              Attached Stream: <strong style={{ color: '#34D399' }}>{streamName}</strong>
-            </div>
-            <div>
-              Filter Subject: <strong style={{ color: '#60A5FA' }}>jobs.submitted</strong>
-            </div>
-            <div>
-              Ack Policy: <strong style={{ color: '#34D399' }}>Explicit (msg.Ack())</strong>
-            </div>
-            <div>
-              AckWait Threshold: <strong style={{ color: '#FBBF24' }}>{ackWaitSeconds}s (Redelivery Timer)</strong>
-            </div>
-            <div>
-              Bound Worker: <strong style={{ color: '#60A5FA' }}>processor-service (Pull Loop)</strong>
-            </div>
-            <div>
-              Broker Durability: <strong style={{ color: '#34D399' }}>Durable (Survives Restarts)</strong>
-            </div>
-          </div>
-        </div>
-
         {/* 3. Durable Consumer Failure Lab (Collapsible & Vertically Arranged) */}
         <div style={{
           background: 'rgba(15, 23, 42, 0.85)',
@@ -418,9 +589,6 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
               }}>
                 FAILURE LAB
               </span>
-              <strong style={{ color: 'var(--text-bright)', fontSize: '0.76rem' }}>
-                Goroutine Failure Scenarios
-              </strong>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -434,14 +602,23 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
               }}>
                 {activeScenario === 'normal' ? 'MODE: NORMAL' : `ARMED: ${activeScenario.toUpperCase()}`}
               </span>
-              <span style={{ 
-                color: 'var(--text-dim)', 
-                fontSize: '0.72rem', 
-                fontFamily: 'monospace',
-                fontWeight: 700 
-              }}>
-                {isFailureLabOpen ? '[-]' : '[+]'}
-              </span>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{
+                  color: 'var(--text-dim)',
+                  transform: isFailureLabOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s ease'
+                }}
+              >
+                <path d="M19 9l-7 7-7-7" />
+              </svg>
             </div>
           </div>
 

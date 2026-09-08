@@ -254,6 +254,14 @@ Demonstrates how NATS JetStream handles consumer failures according to server-si
    - Demonstrates that stopping or restarting the worker process preserves the durable consumer object in NATS.
    - Previously acknowledged messages are never redelivered; only pending backlog messages in the stream are fetched and processed upon reconnect.
 
+### Competing Consumers & Horizontal Scaling (Throughput Demonstration)
+JetStream pull consumers support the Competing Consumers pattern, where multiple worker goroutines (`processor-1`, `processor-2`, `processor-3`) simultaneously pull from the single durable consumer `job-processor`:
+- **Load Balancing**: The NATS JetStream server distributes incoming messages across whichever workers issue pull requests.
+- **Linear Throughput Scaling**: With each job simulating 1.0s of business execution:
+  - **1 Worker**: 6 jobs take ~6.0s (sequential processing).
+  - **3 Workers**: 6 jobs take ~2.0s (concurrent processing, ~3x throughput).
+- **Dynamic Worker Pool Resizing**: Calling `PUT /processor/workers` (`{"workers": N}`) stops previous worker loops cleanly and initializes N new worker goroutines, enabling real-time scaling between 1 and 5 workers without restarting the service or altering the NATS consumer.
+
 ### Stable Dashboard Log Ordering
 Events happening within the same second are sorted by logical state sequence (`PUBLISHED` -> `RECEIVED` -> `COMPLETED`) and grouped by `JobID` in the backend before being sent to the UI.
 

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,7 +21,7 @@ import (
 )
 
 // buildCoreJobHandler returns the message handler callback for Core NATS messages.
-func (a *App) buildCoreJobHandler(attempts map[string]int, attemptsMu *sync.Mutex, coreWorkerCounter *uint64) messaging.JobHandler {
+func (a *App) buildCoreJobHandler(coreWorkerCounter *uint64) messaging.JobHandler {
 	return func(ctx context.Context, job jobs.Job) error {
 		deliveryMode := job.DeliveryMode
 		if deliveryMode == "" {
@@ -41,13 +40,13 @@ func (a *App) buildCoreJobHandler(attempts map[string]int, attemptsMu *sync.Mute
 		if workersCount <= 0 {
 			workersCount = 1
 		}
-		currWorkerIdx := (atomic.AddUint64(coreWorkerCounter, 1) - 1)%uint64(workersCount) + 1
+		currWorkerIdx := (atomic.AddUint64(coreWorkerCounter, 1)-1)%uint64(workersCount) + 1
 		assignedWorkerName := fmt.Sprintf("processor-%d", currWorkerIdx)
 
-		attemptsMu.Lock()
-		attempts[job.JobID]++
-		attemptCount := attempts[job.JobID]
-		attemptsMu.Unlock()
+		a.attemptsMu.Lock()
+		a.attempts[job.JobID]++
+		attemptCount := a.attempts[job.JobID]
+		a.attemptsMu.Unlock()
 
 		log.Printf("[%s] Received Core NATS job %s | Attempt: %d", assignedWorkerName, job.JobID, attemptCount)
 
@@ -132,17 +131,6 @@ func (a *App) buildCoreJobHandler(attempts map[string]int, attemptsMu *sync.Mute
 			procSpan.End()
 
 			telemetry.RecordJobFailed(procCtx, deliveryMode, assignedWorkerName)
-
-			_ = a.publisher.PublishJobLifecycle(
-				messaging.SubjectJobProcessingFailed,
-				job.JobID,
-				"FAILED",
-				attemptCount,
-				errMsg,
-				assignedWorkerName,
-				deliveryMode,
-				0,
-			)
 
 			_ = a.publisher.PublishJobLifecycle(
 				messaging.SubjectJobFailed,
@@ -330,11 +318,70 @@ func (a *App) unsubscribeJetStream() {
 	}
 }
 
-// startWorkers spawns the configured number of JetStream pull workers (e.g. processor-1, processor-2)
-func (a *App) startWorkers(ctx context.Context, attempts map[string]int, attemptsMu *sync.Mutex) {
+// ScaleWorkers dynamically resizes the JetStream pull worker pool on the fly.
+// Scale UP: Spawns only the additional workers, keeping existing workers uninterrupted.
+// Scale DOWN: Stops only excess workers from the tail (e.g. 4 -> 1 stops 4, 3, 2).
+func (a *App) ScaleWorkers(targetCount int) {
+	if targetCount <= 0 {
+		targetCount = 1
+	} else if targetCount > 5 {
+		targetCount = 5
+	}
+
 	a.mu.Lock()
-	for _, cancel := range a.workerCancels {
-		cancel()
+	if a.consumerConfig.Ordering == "ordered" {
+		targetCount = 1
+	}
+	oldCount := a.consumerConfig.Workers
+	currentWorkers := len(a.workerCancels)
+	a.consumerConfig.Workers = targetCount
+
+	log.Println("================================================================================")
+	log.Printf("[WORKERS] Scaling worker pool request: %d -> %d worker(s)", oldCount, targetCount)
+	log.Printf("[WORKERS] Competing pull consumer: '%s' | Stream: 'JOBS'", a.consumerName)
+	log.Println("================================================================================")
+
+	if targetCount > currentWorkers {
+		// Incremental Scale UP: Keep existing workers running; add new workers
+		addedCount := targetCount - currentWorkers
+		log.Printf("[WORKERS] Scaling UP: Keeping %d existing worker(s) running uninterrupted, adding %d new worker(s)...", currentWorkers, addedCount)
+		for i := currentWorkers + 1; i <= targetCount; i++ {
+			workerName := fmt.Sprintf("processor-%d", i)
+			wCtx, cancel := context.WithCancel(context.Background())
+			a.workerCancels = append(a.workerCancels, cancel)
+			go a.jsPullLoop(wCtx, workerName)
+			log.Printf("[WORKERS] Added new JetStream pull worker goroutine: %s", workerName)
+		}
+	} else if targetCount < currentWorkers {
+		// Incremental Scale DOWN: Remove excess workers from the tail (e.g. 4 down to 1 stops 4, 3, 2)
+		excessCount := currentWorkers - targetCount
+		log.Printf("[WORKERS] Scaling DOWN: Stopping %d excess worker goroutine(s) from tail, keeping workers 1..%d uninterrupted...", excessCount, targetCount)
+		for i := currentWorkers - 1; i >= targetCount; i-- {
+			workerName := fmt.Sprintf("processor-%d", i+1)
+			log.Printf("[WORKERS] Stopping excess worker goroutine: %s...", workerName)
+			a.workerCancels[i]()
+		}
+		a.workerCancels = a.workerCancels[:targetCount]
+	} else {
+		log.Printf("[WORKERS] Worker pool already has %d active worker(s). No adjustment needed.", targetCount)
+	}
+
+	a.activeGoroutines = len(a.workerCancels)
+	a.goroutineStatus = "RUNNING"
+	a.mu.Unlock()
+
+	log.Printf("[WORKERS] Current worker state: %d active worker goroutines", targetCount)
+}
+
+// startWorkers spawns the configured number of JetStream pull workers (e.g. processor-1, processor-2)
+func (a *App) startWorkers(ctx context.Context) {
+	a.mu.Lock()
+	oldWorkers := len(a.workerCancels)
+	if oldWorkers > 0 {
+		log.Printf("[WORKERS] Stopping %d active worker goroutine(s)...", oldWorkers)
+		for _, cancel := range a.workerCancels {
+			cancel()
+		}
 	}
 	a.workerCancels = nil
 
@@ -351,18 +398,18 @@ func (a *App) startWorkers(ctx context.Context, attempts map[string]int, attempt
 		workerName := fmt.Sprintf("processor-%d", i)
 		wCtx, cancel := context.WithCancel(ctx)
 		cancels = append(cancels, cancel)
-		go a.jsPullLoop(wCtx, workerName, attempts, attemptsMu)
+		go a.jsPullLoop(wCtx, workerName)
 	}
 	a.workerCancels = cancels
 	a.activeGoroutines = workersCount
 	a.goroutineStatus = "RUNNING"
 	a.mu.Unlock()
 
-	log.Printf("[WORKERS] Initializing %d JetStream pull worker goroutine(s)...", workersCount)
+	log.Printf("[WORKERS] Initializing %d JetStream pull worker goroutine(s) for consumer '%s'...", workersCount, a.consumerName)
 }
 
 // jsPullLoop performs pull operations from JetStream stream when enabled
-func (a *App) jsPullLoop(ctx context.Context, workerName string, attempts map[string]int, attemptsMu *sync.Mutex) {
+func (a *App) jsPullLoop(ctx context.Context, workerName string) {
 	log.Printf("[%s] Worker goroutine READY and polling consumer '%s'", workerName, a.consumerName)
 	for {
 		select {
@@ -392,7 +439,7 @@ func (a *App) jsPullLoop(ctx context.Context, workerName string, attempts map[st
 			}
 
 			for msg := range batch.Messages() {
-				shouldTerminate := a.handleJetStreamMsg(msg, workerName, attempts, attemptsMu)
+				shouldTerminate := a.handleJetStreamMsg(msg, workerName)
 				if shouldTerminate {
 					log.Printf("[%s] Pull loop TERMINATING due to simulated crash.", workerName)
 					return
@@ -404,7 +451,7 @@ func (a *App) jsPullLoop(ctx context.Context, workerName string, attempts map[st
 
 // handleJetStreamMsg processes a pulled JetStream message.
 // Returns true if the worker goroutine must terminate immediately (crash simulation).
-func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts map[string]int, attemptsMu *sync.Mutex) bool {
+func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string) bool {
 	deliveryMode := msg.Headers().Get("X-Delivery-Mode")
 	if deliveryMode == "" {
 		deliveryMode = "CORE"
@@ -433,16 +480,6 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts 
 	}
 
 	attemptCount := int(numDelivered)
-	if attemptCount <= 0 {
-		attemptsMu.Lock()
-		attempts[job.JobID]++
-		attemptCount = attempts[job.JobID]
-		attemptsMu.Unlock()
-	}
-
-	a.consumerMu.Lock()
-	a.consumerDistribution[workerName]++
-	a.consumerMu.Unlock()
 
 	// 1. Extract Trace Context and start Consumer Receive span
 	parentCtx := telemetry.ExtractTraceContext(context.Background(), msg.Headers())
@@ -535,11 +572,11 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts 
 		log.Println("")
 		log.Println("goroutine [running]:")
 		log.Printf("main.(*App).handleJetStreamMsg(...)")
-		log.Printf("    backend/services/cmd/processor-service/worker.go:490")
+		log.Printf("    backend/services/cmd/processor-service/worker.go")
 		log.Printf("main.(*App).jsPullLoop(...)")
-		log.Printf("    backend/services/cmd/processor-service/worker.go:384")
+		log.Printf("    backend/services/cmd/processor-service/worker.go")
 		log.Printf("created by main.(*App).startWorkers")
-		log.Printf("    backend/services/cmd/processor-service/worker.go:347")
+		log.Printf("    backend/services/cmd/processor-service/worker.go")
 		log.Println("================================================================================")
 		log.Printf("[CRASH DETECTED] Worker goroutine %s DIED. Pull loop TERMINATED.", workerName)
 		log.Printf("[BROKER STATE] No ACK transmitted. JetStream AckWait (5s) countdown active on server.")
@@ -573,7 +610,7 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string, attempts 
 			a.recordWorkerEvent(jID, jType, "[SUPERVISOR RESPAWN]", "#8B5CF6", "Supervisor revived worker goroutine after AckWait expiry", att, dMode)
 
 			// Launch brand new worker goroutine!
-			go a.jsPullLoop(wCtx, wName, attempts, attemptsMu)
+			go a.jsPullLoop(wCtx, wName)
 		}(workerName, job.JobID, job.Type, deliveryMode, attemptCount)
 
 		// Intentionally exit without msg.Ack() or msg.Nak() AND signal jsPullLoop to terminate

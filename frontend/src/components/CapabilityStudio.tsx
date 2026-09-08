@@ -8,9 +8,8 @@ import { ReplayPanel } from './ReplayPanel';
 import { QueueGroupPanel } from './QueueGroupPanel';
 import { ConsumerLabPanel } from './ConsumerLabPanel';
 import { DelayedRetryPanel } from './DelayedRetryPanel';
-import { SagaPanel } from './SagaPanel';
 
-export type StudioTab = 'pubsub' | 'delayed-retry' | 'queue-group' | 'consumer-lab' | 'request-reply' | 'dlq' | 'replay' | 'saga';
+export type StudioTab = 'pubsub' | 'delayed-retry' | 'queue-group' | 'consumer-lab' | 'request-reply' | 'dlq' | 'replay';
 
 interface CapabilityStudioProps {
   // Job Actions
@@ -116,14 +115,6 @@ export const CapabilityStudio: React.FC<CapabilityStudioProps> = ({
         >
           <span className="tab-label">Stream Replay</span>
         </button>
-
-        <button
-          type="button"
-          className={`studio-tab-btn ${activeTab === 'saga' ? 'active' : ''}`}
-          onClick={() => setActiveTab('saga')}
-        >
-          <span className="tab-label">Saga Orchestration</span>
-        </button>
       </div>
 
       {/* Active Tab Panel Content */}
@@ -217,13 +208,6 @@ export const CapabilityStudio: React.FC<CapabilityStudioProps> = ({
             onShowInfo={onShowInfo}
             onRefresh={onRefreshStatus}
             isRefreshing={isRefreshingStatus}
-          />
-        )}
-
-        {activeTab === 'saga' && (
-          <SagaPanel
-            onShowInfo={onShowInfo}
-            onAlert={onAlert}
           />
         )}
       </div>
