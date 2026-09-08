@@ -137,6 +137,7 @@ func (a *App) startHTTPServer(port string) *http.Server {
 			workers := a.consumerConfig.Workers
 			gStatus := a.goroutineStatus
 			activeGoroutines := a.activeGoroutines
+			crashedWorker := a.crashedWorker
 			a.mu.RUnlock()
 
 			a.scenarioMu.RLock()
@@ -145,9 +146,6 @@ func (a *App) startHTTPServer(port string) *http.Server {
 
 			if workers <= 0 {
 				workers = 1
-			}
-			if activeGoroutines <= 0 && processing {
-				activeGoroutines = workers
 			}
 			if gStatus == "" {
 				if processing {
@@ -167,6 +165,7 @@ func (a *App) startHTTPServer(port string) *http.Server {
 				"scenario":          activeScenario,
 				"goroutine_status":  gStatus,
 				"active_goroutines": activeGoroutines,
+				"crashed_worker":    crashedWorker,
 				"ack_wait_seconds":  5,
 				"ack_policy":        "explicit",
 			})

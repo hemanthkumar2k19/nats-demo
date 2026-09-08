@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -368,6 +369,7 @@ func (a *App) ScaleWorkers(targetCount int) {
 
 	a.activeGoroutines = len(a.workerCancels)
 	a.goroutineStatus = "RUNNING"
+	a.crashedWorker = ""
 	a.mu.Unlock()
 
 	log.Printf("[WORKERS] Current worker state: %d active worker goroutines", targetCount)
@@ -403,6 +405,7 @@ func (a *App) startWorkers(ctx context.Context) {
 	a.workerCancels = cancels
 	a.activeGoroutines = workersCount
 	a.goroutineStatus = "RUNNING"
+	a.crashedWorker = ""
 	a.mu.Unlock()
 
 	log.Printf("[WORKERS] Initializing %d JetStream pull worker goroutine(s) for consumer '%s'...", workersCount, a.consumerName)
@@ -505,13 +508,23 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string) bool {
 
 	if numDelivered > 1 {
 		telemetry.RecordMessageRedelivered(recvCtx, deliveryMode, workerName)
+		wLoad, poolSummary := a.recordWorkerPull(workerName)
 		log.Println("================================================================================")
-		log.Printf("[%s] [REDELIVERED] JetStream job %s REDELIVERED by server (Delivery attempt #%d, Stream Seq #%d)", workerName, job.JobID, attemptCount, sequence)
+		log.Printf("[%s] [REDELIVERED] JetStream job %s REDELIVERED by server (Delivery attempt #%d, Stream Seq #%d) | Worker load: %d (Pool: [%s])", workerName, job.JobID, attemptCount, sequence, wLoad, poolSummary)
+		a.mu.RLock()
+		crashed := a.crashedWorker
+		a.mu.RUnlock()
+		if crashed != "" && crashed != workerName {
+			log.Printf("[%s] [FAILOVER ACTIVE] Surviving healthy worker %s picked up redelivered job from crashed worker %s!", workerName, workerName, crashed)
+		} else if crashed == "" {
+			log.Printf("[%s] [REDELIVERY TAKEOVER] Competing worker %s picked up redelivered job (peer worker exceeded AckWait)!", workerName, workerName)
+		}
 		log.Printf("[%s] [RETRY EXECUTION] Worker processing redelivered message...", workerName)
 		log.Println("================================================================================")
 		a.recordWorkerEvent(job.JobID, job.Type, "[REDELIVERED]", "#FBBF24", fmt.Sprintf("Redelivery #%d from JOBS stream (Seq #%d)", attemptCount, sequence), attemptCount, deliveryMode)
 	} else {
-		log.Printf("[%s] [PULLED] %s | Stream Seq: %d | Delivery: #%d", workerName, job.JobID, sequence, attemptCount)
+		wLoad, poolSummary := a.recordWorkerPull(workerName)
+		log.Printf("[%s] [PULLED] %s | Stream Seq: %d | Delivery: #%d | Worker load: %d (Pool: [%s])", workerName, job.JobID, sequence, attemptCount, wLoad, poolSummary)
 		a.recordWorkerEvent(job.JobID, job.Type, "[PULLED]", "#60A5FA", fmt.Sprintf("Fetched from JOBS stream (Seq #%d)", sequence), attemptCount, deliveryMode)
 	}
 
@@ -566,9 +579,26 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string) bool {
 			a.scenarioMu.Unlock()
 		}
 
+		a.mu.Lock()
+		if a.activeGoroutines > 0 {
+			a.activeGoroutines--
+		}
+		totalWorkers := len(a.workerCancels)
+		if totalWorkers == 0 {
+			totalWorkers = 1
+		}
+		a.crashedWorker = workerName
+		if a.activeGoroutines > 0 {
+			a.goroutineStatus = "DEGRADED"
+		} else {
+			a.goroutineStatus = "CRASHED"
+		}
+		activeRemaining := a.activeGoroutines
+		a.mu.Unlock()
+
 		log.Println("================================================================================")
-		log.Printf("[FATAL GOROUTINE CRASH] Simulating unhandled panic in worker goroutine!")
-		log.Printf("panic: runtime error: worker crashed abruptly before sending ACK (job: %s)", job.JobID)
+		log.Printf("[FATAL GOROUTINE CRASH] Simulating unhandled panic in worker goroutine %s!", workerName)
+		log.Printf("panic: runtime error: worker %s crashed abruptly before sending ACK (job: %s)", workerName, job.JobID)
 		log.Println("")
 		log.Println("goroutine [running]:")
 		log.Printf("main.(*App).handleJetStreamMsg(...)")
@@ -579,15 +609,14 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string) bool {
 		log.Printf("    backend/services/cmd/processor-service/worker.go")
 		log.Println("================================================================================")
 		log.Printf("[CRASH DETECTED] Worker goroutine %s DIED. Pull loop TERMINATED.", workerName)
+		log.Printf("[POOL STATUS] %d/%d active worker(s) remaining alive.", activeRemaining, totalWorkers)
+		if activeRemaining > 0 {
+			log.Printf("[POOL STATUS] Surviving healthy workers continue polling durable consumer '%s' uninterrupted.", a.consumerName)
+		}
 		log.Printf("[BROKER STATE] No ACK transmitted. JetStream AckWait (5s) countdown active on server.")
-		log.Printf("[SUPERVISOR] Scheduled automatic goroutine respawn in 5.5s...")
+		log.Printf("[SUPERVISOR] Scheduled automatic goroutine respawn for %s in 5.5s (post-AckWait)...", workerName)
 
-		a.mu.Lock()
-		a.goroutineStatus = "CRASHED"
-		a.activeGoroutines = 0
-		a.mu.Unlock()
-
-		crashReason := "Worker goroutine panicked before sending ACK. JetStream AckWait (5s) ticking..."
+		crashReason := fmt.Sprintf("Worker goroutine %s panicked before sending ACK. JetStream AckWait (5s) ticking...", workerName)
 		procSpan.SetStatus(codes.Error, crashReason)
 		procSpan.SetAttributes(attribute.String("processing.result", "goroutine_crashed"))
 		procSpan.End()
@@ -599,15 +628,24 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string) bool {
 		go func(wName string, jID, jType, dMode string, att int) {
 			time.Sleep(5500 * time.Millisecond)
 			log.Println("================================================================================")
-			log.Printf("[SUPERVISOR] Respawning worker goroutine for consumer '%s'...", a.consumerName)
+			log.Printf("[SUPERVISOR] Respawning worker goroutine %s for consumer '%s'...", wName, a.consumerName)
 			log.Println("================================================================================")
 			a.mu.Lock()
-			a.goroutineStatus = "RUNNING"
-			a.activeGoroutines = 1
+			a.activeGoroutines++
+			total := len(a.workerCancels)
+			if a.activeGoroutines >= total {
+				a.goroutineStatus = "RUNNING"
+				a.crashedWorker = ""
+			}
 			wCtx, cancel := context.WithCancel(context.Background())
-			a.workerCancels = []context.CancelFunc{cancel}
+			var idx int
+			if _, err := fmt.Sscanf(wName, "processor-%d", &idx); err == nil && idx >= 1 && idx <= len(a.workerCancels) {
+				a.workerCancels[idx-1] = cancel
+			} else {
+				a.workerCancels = append(a.workerCancels, cancel)
+			}
 			a.mu.Unlock()
-			a.recordWorkerEvent(jID, jType, "[SUPERVISOR RESPAWN]", "#8B5CF6", "Supervisor revived worker goroutine after AckWait expiry", att, dMode)
+			a.recordWorkerEvent(jID, jType, "[SUPERVISOR RESPAWN]", "#8B5CF6", fmt.Sprintf("Supervisor revived %s after AckWait expiry", wName), att, dMode)
 
 			// Launch brand new worker goroutine!
 			go a.jsPullLoop(wCtx, wName)
@@ -625,9 +663,17 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string) bool {
 			a.scenarioMu.Unlock()
 		}
 
-		slowReason := "Simulating slow processing (7s duration, exceeds 5s AckWait threshold)..."
-		log.Printf("[%s] [SLOW PROCESSING] %s | %s", workerName, job.JobID, slowReason)
-		log.Printf("[BROKER NOTICE] JetStream server AckWait timer (5s) will expire before processing completes!")
+		slowReason := fmt.Sprintf("Worker %s executing slow transaction (7s duration, exceeds 5s AckWait threshold)...", workerName)
+		log.Println("================================================================================")
+		log.Printf("[%s] [SLOW WORKER] %s | %s", workerName, job.JobID, slowReason)
+		log.Printf("[BROKER NOTICE] JetStream server AckWait timer (5s) will expire while %s is still processing!", workerName)
+		a.mu.RLock()
+		totalWorkers := len(a.workerCancels)
+		a.mu.RUnlock()
+		if totalWorkers > 1 {
+			log.Printf("[POOL STATUS] Surviving healthy workers continue polling consumer '%s' concurrently.", a.consumerName)
+		}
+		log.Println("================================================================================")
 
 		a.recordWorkerEvent(job.JobID, job.Type, "[SLOW PROCESSING]", "#F59E0B", slowReason, attemptCount, deliveryMode)
 
@@ -637,7 +683,9 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string) bool {
 		// Send late ACK after delay
 		if a.consumerConfig.AckPolicy != "none" {
 			if err := msg.Ack(); err != nil {
-				log.Printf("[%s] Late ACK notice: %v", workerName, err)
+				log.Printf("[%s] [LATE ACK] Notice (message likely acknowledged by peer worker): %v", workerName, err)
+			} else {
+				log.Printf("[%s] [LATE ACK SENT] %s | Late explicit msg.Ack() transmitted to JetStream. | Pool: [%s]", workerName, job.JobID, a.getLoadDistributionSummary())
 			}
 		}
 
@@ -646,7 +694,6 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string) bool {
 		procSpan.End()
 
 		log.Printf("[%s] [COMPLETED] %s | Slow transaction finished after 7.0s.", workerName, job.JobID)
-		log.Printf("[%s] [LATE ACK SENT] %s | Explicit late msg.Ack() sent to JetStream.", workerName, job.JobID)
 		a.recordWorkerEvent(job.JobID, job.Type, "[COMPLETED]", "#34D399", "Slow execution finished after 7s", attemptCount, deliveryMode)
 		a.recordWorkerEvent(job.JobID, job.Type, "[LATE ACK SENT]", "#10B981", "Sent late msg.Ack() after 7s delay", attemptCount, deliveryMode)
 		return false
@@ -822,7 +869,7 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string) bool {
 		if err := msg.Ack(); err != nil {
 			log.Printf("[%s] Failed to ACK message %s: %v", workerName, job.JobID, err)
 		} else {
-			log.Printf("[%s] [ACK SENT] %s | Explicit msg.Ack() confirmed to JetStream", workerName, job.JobID)
+			log.Printf("[%s] [ACK SENT] %s | Explicit msg.Ack() confirmed to JetStream | Pool: [%s]", workerName, job.JobID, a.getLoadDistributionSummary())
 		}
 	}
 
@@ -831,4 +878,45 @@ func (a *App) handleJetStreamMsg(msg jetstream.Msg, workerName string) bool {
 	telemetry.RecordJobProcessed(recvCtx, deliveryMode, workerName, "COMPLETED", procDuration)
 	a.recordWorkerEvent(job.JobID, job.Type, "[ACK SENT]", "#10B981", "Explicit msg.Ack() sent to JetStream", attemptCount, deliveryMode)
 	return false
+}
+
+// getLoadDistributionSummary formats the active worker pool load distribution for JetStream workers.
+func (a *App) getLoadDistributionSummary() string {
+	a.mu.RLock()
+	totalWorkers := len(a.workerCancels)
+	a.mu.RUnlock()
+	if totalWorkers == 0 {
+		totalWorkers = 1
+	}
+
+	a.consumerDistMu.Lock()
+	defer a.consumerDistMu.Unlock()
+
+	maxIdx := totalWorkers
+	for i := 1; i <= 5; i++ {
+		w := fmt.Sprintf("processor-%d", i)
+		if a.consumerDistribution[w] > 0 && i > maxIdx {
+			maxIdx = i
+		}
+	}
+
+	var parts []string
+	for i := 1; i <= maxIdx; i++ {
+		w := fmt.Sprintf("processor-%d", i)
+		parts = append(parts, fmt.Sprintf("%s=%d", w, a.consumerDistribution[w]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// recordWorkerPull increments the worker's pull count and returns its count along with the pool summary.
+func (a *App) recordWorkerPull(workerName string) (int, string) {
+	a.consumerDistMu.Lock()
+	if a.consumerDistribution == nil {
+		a.consumerDistribution = make(map[string]int)
+	}
+	a.consumerDistribution[workerName]++
+	count := a.consumerDistribution[workerName]
+	a.consumerDistMu.Unlock()
+
+	return count, a.getLoadDistributionSummary()
 }

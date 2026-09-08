@@ -88,7 +88,8 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
   const workerCount = directStatus?.workers || consumerStatus?.workers || 1;
   const activeScenario = directStatus?.scenario || 'normal';
   const goroutineStatus = directStatus?.goroutine_status || (isProcessing ? 'RUNNING' : 'PAUSED');
-  const activeGoroutines = directStatus?.active_goroutines ?? (isProcessing ? 1 : 0);
+  const activeGoroutines = directStatus?.active_goroutines ?? (isProcessing ? workerCount : 0);
+  const crashedWorker = directStatus?.crashed_worker || '';
   const ackWaitSeconds = directStatus?.ack_wait_seconds || 5;
 
   const handleSetScenario = async (sc: FailureScenario) => {
@@ -431,7 +432,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                 <label style={{ fontSize: '0.61rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
                   Goroutine State
                 </label>
-                {goroutineStatus === 'CRASHED' && (
+                {(goroutineStatus === 'CRASHED' || goroutineStatus === 'DEGRADED') && (
                   <button
                     type="button"
                     onClick={handleRestart}
@@ -444,7 +445,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                       borderRadius: '3px',
                       cursor: 'pointer'
                     }}
-                    title="Manually respawn worker goroutine"
+                    title="Manually respawn crashed worker goroutine"
                   >
                     Revive Goroutine Now
                   </button>
@@ -453,14 +454,31 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
               <input
                 type="text"
                 readOnly
-                value={`${goroutineStatus} (${activeGoroutines} active)`}
+                value={
+                  crashedWorker
+                    ? `${goroutineStatus} (${activeGoroutines}/${workerCount} active - ${crashedWorker} crashed)`
+                    : `${goroutineStatus} (${activeGoroutines}/${workerCount} active)`
+                }
                 style={{
                   background: 'rgba(0, 0, 0, 0.35)',
-                  border: `1px solid ${goroutineStatus === 'CRASHED' ? 'rgba(239, 68, 68, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+                  border: `1px solid ${
+                    goroutineStatus === 'CRASHED'
+                      ? 'rgba(239, 68, 68, 0.5)'
+                      : goroutineStatus === 'DEGRADED'
+                      ? 'rgba(245, 158, 11, 0.5)'
+                      : 'rgba(255, 255, 255, 0.08)'
+                  }`,
                   borderRadius: '4px',
                   padding: '0.3rem 0.5rem',
                   fontSize: '0.68rem',
-                  color: goroutineStatus === 'CRASHED' ? '#EF4444' : (isProcessing ? '#34D399' : '#F59E0B'),
+                  color:
+                    goroutineStatus === 'CRASHED'
+                      ? '#EF4444'
+                      : goroutineStatus === 'DEGRADED'
+                      ? '#FBBF24'
+                      : isProcessing
+                      ? '#34D399'
+                      : '#F59E0B',
                   fontFamily: 'var(--font-mono)',
                   outline: 'none',
                   cursor: 'default',
@@ -641,7 +659,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
                       <strong style={{ color: activeScenario === 'crash_before_ack' ? '#F87171' : 'var(--text-bright)', fontSize: '0.73rem' }}>
-                        1. Worker Crash Before ACK
+                        1. Worker Crash Before ACK (Failover to Peer)
                       </strong>
                       {activeScenario === 'crash_before_ack' && (
                         <span style={{ background: '#EF4444', color: '#FFF', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
@@ -650,7 +668,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                       )}
                     </div>
                     <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
-                      Simulates unhandled goroutine panic before ACK. Broker holds message for 5s AckWait, then redelivers to respawned worker.
+                      Simulates panic in 1 worker before ACK. Surviving workers continue; broker redelivers to healthy peer after 5s AckWait.
                     </div>
                   </div>
                   <button
@@ -687,7 +705,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.15rem' }}>
                       <strong style={{ color: activeScenario === 'exceed_ack_wait' ? '#FBBF24' : 'var(--text-bright)', fontSize: '0.73rem' }}>
-                        2. Exceed AckWait Threshold (7s)
+                        2. Exceed AckWait Threshold (Slow Worker)
                       </strong>
                       {activeScenario === 'exceed_ack_wait' && (
                         <span style={{ background: '#F59E0B', color: '#000', fontSize: '0.58rem', fontWeight: 700, padding: '0 4px', borderRadius: '2px' }}>
@@ -696,7 +714,7 @@ export const CoreFlowProcessor: React.FC<CoreFlowProcessorProps> = ({
                       )}
                     </div>
                     <div style={{ fontSize: '0.63rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
-                      Simulates 7s execution exceeding 5s AckWait. Broker timer expires, followed by late explicit ACK.
+                      One worker delays 7s (&gt;5s AckWait). Surviving workers continue processing; broker redelivers to healthy peer at 5s.
                     </div>
                   </div>
                   <button

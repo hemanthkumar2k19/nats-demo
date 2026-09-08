@@ -136,8 +136,15 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 
 	// 3. Consumer Distribution Reset (consumer.reset)
 	consumerResetSub, err := a.natsClient.Conn.Subscribe(messaging.SubjectConsumerReset, func(msg *nats.Msg) {
-		a.consumerMu.Lock()
-		a.consumerMu.Unlock()
+		a.consumerDistMu.Lock()
+		for k := range a.consumerDistribution {
+			a.consumerDistribution[k] = 0
+		}
+		distCopy := make(map[string]int)
+		for k, v := range a.consumerDistribution {
+			distCopy[k] = v
+		}
+		a.consumerDistMu.Unlock()
 
 		a.mu.RLock()
 		statusVal := "ACTIVE"
@@ -178,6 +185,7 @@ func (a *App) subscribeControlResponders(workerName string, jobHandler messaging
 			Pending:       pending,
 			AckPending:    ackPending,
 			Redelivered:   redelivered,
+			Distribution:  distCopy,
 		}
 		respBytes, _ := json.Marshal(resp)
 		_ = msg.Respond(respBytes)

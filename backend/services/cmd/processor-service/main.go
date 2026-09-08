@@ -47,13 +47,15 @@ type App struct {
 	activeScenario   string // "normal", "crash_before_ack", "exceed_ack_wait"
 	scenarioOnce     bool
 	activeGoroutines int
-	goroutineStatus  string // "RUNNING", "CRASHED", "PAUSED"
+	goroutineStatus  string // "RUNNING", "DEGRADED", "CRASHED", "PAUSED"
+	crashedWorker    string // "processor-X" if a worker crashed
 
 	// JetStream Consumer state
-	consumerMu           sync.Mutex
 	consumerResetSub     *nats.Subscription
 	attemptsMu           sync.Mutex
 	attempts             map[string]int
+	consumerDistMu       sync.Mutex
+	consumerDistribution map[string]int
 
 	// Core NATS Queue Group state
 	queueMu           sync.Mutex
@@ -120,6 +122,13 @@ func (a *App) Init() error {
 		"processor-5": 0,
 	}
 	a.attempts = make(map[string]int)
+	a.consumerDistribution = map[string]int{
+		"processor-1": 0,
+		"processor-2": 0,
+		"processor-3": 0,
+		"processor-4": 0,
+		"processor-5": 0,
+	}
 
 	// Initialize default failure scenario and goroutine status
 	a.activeScenario = "normal"

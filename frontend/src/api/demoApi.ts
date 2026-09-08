@@ -110,6 +110,7 @@ export interface ProcessorDirectStatus {
   scenario?: FailureScenario;
   goroutine_status?: string;
   active_goroutines?: number;
+  crashed_worker?: string;
   ack_wait_seconds?: number;
   ack_policy?: string;
 }

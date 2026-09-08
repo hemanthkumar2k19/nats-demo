@@ -4,15 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## 2026-09-08
 
+### Added (Multiple Worker Failure Scenarios from docs/feature.md)
+- **Scenario 7 — One Worker Crashes (`worker.go`, `http_server.go`, `CoreFlowProcessor.tsx`)**:
+  - Implemented isolated worker crash semantics in `crash_before_ack`: when 1 worker crashes in a multi-worker pool, surviving workers continue pulling from `job-processor` uninterrupted.
+  - Set status to `DEGRADED: X/Y active` with `crashed_worker` identification.
+  - Upon AckWait (5s) expiration, surviving healthy peer picks up the redelivered message and ACKs.
+  - Supervisor revives the crashed worker after 5.5s, restoring pool capacity.
+- **Scenario 8 — One Worker Is Slow (`worker.go`, `CoreFlowProcessor.tsx`)**:
+  - In `exceed_ack_wait`, slow worker delays 7s (>5s AckWait) while surviving peer workers continue pulling and executing concurrent jobs without delay.
+  - At T = 5s, server marks slow message for redelivery; healthy peer pulls attempt #2 and ACKs at T = 6s.
+  - Slow worker wakes up at T = 7s and emits late ACK notice.
+- **Scenarios 9 & 10 — Worker Pool Scales Down & Scales Up (`worker.go`, `CoreFlowProcessor.tsx`)**:
+  - Verified incremental worker scaling (`ScaleWorkers`): scaling down stops excess workers from the tail while remaining workers process backlog with zero loss; scaling up spawns new goroutines that immediately join the competing pull.
+
 ### Documentation
-- **Tailored NATS Demo View Confluence Guide (`docs/demo.md`)**:
-  - Authored clean, Confluence-level documentation tailored exclusively to the 3-Stage **NATS Demo View** (Publisher -> JetStream Stream -> Processor).
-  - Removed top metadata block and Section 2.3 Message Lifecycle Flow ASCII diagram for a tighter executive and technical presentation.
-  - Re-focused Section 1 purpose and evaluation objectives to strictly emphasize NATS server publishing, durable delivery via JetStream, durable pull consumers, competing workers, offline buffering, and interactive failure simulations.
-  - Included tabular breakdowns for Objective & Scope, 3-tier component architecture, Stage 1-2-3 capabilities, Failure Lab scenarios (`crash_before_ack`, `exceed_ack_wait`, `nak_message`, `term_message`), and an 8-step live demonstration runbook.
+- **Core Flow & Failure Scenarios Comprehensive Guide (`docs/demo.md`)**:
+  - Fully refreshed `docs/demo.md` to reflect the reorganized Stage 3 layout (JetStream consumer 2x2 grid on top, followed by `processor-service:8082` non-editable status inputs).
+  - Clarified backend endpoints on `:8082` (`PUT /processor/state`, `GET /processor/status`, `PUT /processor/workers`, `PUT /processor/scenario`, `POST /processor/worker/restart`) and documented deprecation of `GET /processor/events`.
+  - Documented real-time terminal load distribution summaries (`Pool: [processor-1=X, processor-2=Y]`).
+  - Detailed Failure Lab failure states (`RUNNING`, `DEGRADED: X/Y active`, `CRASHED`) and supervisor/manual revival mechanisms.
+  - Expanded the 10-step live demonstration runbook and added NATS CLI inspection commands.
 
 ### Added (Worker Observability & Incremental Scaling)
-- **Real-Time Worker Load Distribution Logging (`backend/services/cmd/processor-service/worker.go`)**:
+- **Restored Aggregated Worker Load Distribution Logging (`backend/services/cmd/processor-service/`)**:
+  - Re-introduced `consumerDistribution` map and `consumerDistMu` mutex on `App` in `main.go`.
+  - Added `getLoadDistributionSummary()` and `recordWorkerPull()` in `worker.go` to display cumulative per-worker load and pool distribution (`Worker load: N (Pool: [processor-1=X, processor-2=Y])`).
+  - Integrated real-time distribution summaries into `[PULLED]`, `[REDELIVERED]`, `[ACK SENT]`, and `[LATE ACK SENT]` console logs.
+  - Handled counter reset on `consumer.reset` in `control.go`.
   - Added helper `getLoadDistributionSummary()` to format active pool load distribution (`processor-1=X, processor-2=Y, ...`).
   - Added real-time load distribution logging on message `[PULLED]`: `Worker load: N (Pool: [processor-1=X, ...])`.
   - Added real-time load distribution logging on message `[REDELIVERED]`, `[ACK SENT]`, and `[LATE ACK SENT]`.
@@ -33,6 +51,12 @@ All notable changes to this project will be documented in this file.
   - Changed the default state of `isFailureLabOpen` to `false` (collapsed by default).
 
 ### Fixed
+- **Empty Critical Section in Processor Service (`backend/services/cmd/processor-service/control.go`, `main.go`)**:
+  - Eliminated empty critical section (`a.consumerMu.Lock()` / `a.consumerMu.Unlock()`) in the `consumer.reset` responder.
+  - Removed unused `consumerMu sync.Mutex` field from struct `App`.
+  - Safely reset `consumerDistribution` under `a.consumerDistMu` before sending response, and included zeroed distribution in `ConsumerStatusResponse`.
+- **JSX Unescaped Token Fix (`frontend/src/components/CoreFlow/CoreFlowProcessor.tsx`)**:
+  - Escaped unescaped literal `>` character as `&gt;` inside JSX text in scenario description to resolve TSX/JSX parser syntax error.
 - **Undefined Variable Fix in Processor Service (`backend/services/cmd/processor-service/main.go`)**:
   - Fixed Go compiler error `undefined: attemptsMu` by correctly qualifying receiver fields `a.attempts` and `&a.attemptsMu` in the `subscribeControlResponders` call.
 - **Batch Publish Job Interface Compliance (`frontend/src/components/CoreFlow/CoreFlowPublisher.tsx`)**:
