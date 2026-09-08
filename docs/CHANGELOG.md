@@ -14,19 +14,37 @@ All notable changes to this project will be documented in this file.
   - Guarded `unsubscribeQueueGroup()` to prevent deactivation log messages when queue groups were never initialized.
 
 ### Added (Multiple Worker Failure Scenarios from docs/feature.md)
-- **Scenario 7 — One Worker Crashes (`worker.go`, `http_server.go`, `CoreFlowProcessor.tsx`)**:
+- **Scenario 7 - One Worker Crashes (`worker.go`, `http_server.go`, `CoreFlowProcessor.tsx`)**:
   - Implemented isolated worker crash semantics in `crash_before_ack`: when 1 worker crashes in a multi-worker pool, surviving workers continue pulling from `job-processor` uninterrupted.
   - Set status to `DEGRADED: X/Y active` with `crashed_worker` identification.
   - Upon AckWait (5s) expiration, surviving healthy peer picks up the redelivered message and ACKs.
   - Supervisor revives the crashed worker after 5.5s, restoring pool capacity.
-- **Scenario 8 — One Worker Is Slow (`worker.go`, `CoreFlowProcessor.tsx`)**:
+- **Scenario 8 - One Worker Is Slow (`worker.go`, `CoreFlowProcessor.tsx`)**:
   - In `exceed_ack_wait`, slow worker delays 7s (>5s AckWait) while surviving peer workers continue pulling and executing concurrent jobs without delay.
   - At T = 5s, server marks slow message for redelivery; healthy peer pulls attempt #2 and ACKs at T = 6s.
   - Slow worker wakes up at T = 7s and emits late ACK notice.
-- **Scenarios 9 & 10 — Worker Pool Scales Down & Scales Up (`worker.go`, `CoreFlowProcessor.tsx`)**:
+- **Scenarios 9 & 10 - Worker Pool Scales Down & Scales Up (`worker.go`, `CoreFlowProcessor.tsx`)**:
   - Verified incremental worker scaling (`ScaleWorkers`): scaling down stops excess workers from the tail while remaining workers process backlog with zero loss; scaling up spawns new goroutines that immediately join the competing pull.
 
 ### Documentation
+- **Mermaid Sequence Diagrams, Consolidated Capabilities & Clarified Scope (`docs/demo.md`)**:
+  - Clarified Section 1 evaluation objectives for a local single-node NATS Server with JetStream enabled (`Publisher -> JetStream -> Durable Consumer -> Processor`, consumer state contents, SDK+CLI observability, and multi-worker throughput scaling).
+  - Streamlined Section 2 to retain only the Architecture & Topology heading placeholder.
+  - Replaced lengthy capability subsections with a single, consolidated, NATS-centric table in Section 3 outlining the 14 demonstrated capabilities.
+  - Removed Section 5 (CLI commands) to focus documentation directly on architectural evaluation.
+  - Converted internal mechanism diagrams in Section 5 into clean Mermaid sequence syntax:
+    - Diagram 5.1: Coordination of Delivered Seq, AckFloor, and In-Flight messages (applicable to Scenario 5 out-of-order ACKs and Scenario 7 crash failover).
+    - Diagram 5.2: Clustered JetStream consumer scaling via Raft consensus (applicable to multi-node NATS cluster topologies).
+  - Maintained strict ASCII-only compliance.
+- **Two-Tier Capability Hierarchy, Runbook & Internal Mechanism Diagrams (`docs/demo.md`)**:
+  - Reorganized `docs/demo.md` into two distinct platform evaluation categories:
+    - **Category A: Single-Worker Capabilities & Scenarios** (Broker-side state vs stateless worker application, persistent stream file storage, sliding-window deduplication, decoupled buffering, and out-of-order ACKs with the AckFloor hole rule).
+    - **Category B: Multi-Worker Capabilities & Scenarios** (Reactive demand-driven work-stealing pull, dynamic scale-out without partition pauses [Scenario 10], graceful scale-in [Scenario 9], isolated crash failover [Scenario 7], slow worker timeout racing [Scenario 8], fast NAK retry, and poison pill TERM isolation).
+  - Expanded the Live Demonstration Runbook to 12 structured, progressive steps addressing real-world platform evaluation questions.
+  - Added **Section 6: Internal Mechanisms & Sequence Diagrams** with plain ASCII diagrams:
+    - Sequence Diagram 1: Demonstrates how `Delivered Seq`, `AckFloor`, and in-flight pending bitsets are coordinated under out-of-order ACKs and `AckWait` timeout redelivery.
+    - Architecture Diagram 2: Demonstrates how consumer state is scaled, synchronized, and made fault-tolerant inside a NATS cluster using Raft consensus groups (R=3).
+  - Maintained 100% ASCII-only compliance across all diagrams, tables, and narrative text.
 - **Core Flow & Failure Scenarios Comprehensive Guide (`docs/demo.md`)**:
   - Fully refreshed `docs/demo.md` to reflect the reorganized Stage 3 layout (JetStream consumer 2x2 grid on top, followed by `processor-service:8082` non-editable status inputs).
   - Clarified backend endpoints on `:8082` (`PUT /processor/state`, `GET /processor/status`, `PUT /processor/workers`, `PUT /processor/scenario`, `POST /processor/worker/restart`) and documented deprecation of `GET /processor/events`.

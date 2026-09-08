@@ -1,175 +1,171 @@
-# NATS Platform Demo - Technical Documentation (NATS Demo View)
+# NATS Platform Demo - Capability Evaluation Guide (NATS Demo View)
 
 ## 1. Objective and Scope
 
 ### 1.1 Purpose
-The **NATS Demo View** (Platform Core Flow Stage 1-2-3) demonstrates Core NATS message publishing, durable at-least-once message delivery via NATS JetStream persistent streams, durable pull consumers with competing worker goroutines, dynamic scaling without service restart, and interactive runtime failure simulations.
+The **NATS Demo View** provides a live, interactive evaluation environment to demonstrate and validate NATS platform capabilities using a local single-node NATS Server setup with JetStream enabled (`nats://localhost:4222`, file storage).
 
 ### 1.2 Evaluation Objectives
-* **NATS Server Message Publishing**: Demonstrate single and concurrent batch message ingestion with custom headers, metadata, and sliding-window deduplication (`Nats-Msg-Id`).
-* **Durable Delivery via JetStream**: Demonstrate persistent, file-backed stream storage (`JOBS`) ensuring messages survive consumer detachment, service restarts, and worker crashes.
-* **Durable Pull Consumers & Dynamic Scaling**: Demonstrate how worker goroutines pull messages from durable consumer `job-processor`, with on-the-fly competing worker scaling (`1W` to `5W`) with zero message loss and zero service restarts.
-* **Decoupling & Offline Buffering**: Demonstrate broker-side queue buffering when worker pull loops are paused, followed by zero-loss drain upon resumption.
-* **Failure Simulations & Multi-Worker Fault Recovery**: Interactively simulate worker crashes with failover to healthy peers, broker AckWait timeouts with slow workers, explicit negative acknowledgments (`NAK`), and poison pill message termination (`TERM`).
-
-### 1.3 Scope Matrix (NATS Demo View)
-
-| Capability Domain | In Scope (Demonstrated in this View) | Out of Scope (Capability Studio) |
-| :--- | :--- | :--- |
-| **Stage 1: Publisher** | Single publish (`POST /jobs`), 6-job concurrent batching (`POST /jobs/batch`), deduplication (`Nats-Msg-Id`), custom headers builder, JSON payload editor, wire envelope inspector. | Synthetic continuous load generators. |
-| **Stage 2: Stream / Broker** | File-backed stream (`JOBS`), subject routing (`jobs.submitted`), limits retention, real-time message/byte metrics, copyable CLI commands, stream purge. | Multi-stream mirrors, cross-account imports. |
-| **Stage 3: Consumer / Worker** | Durable pull consumer (`job-processor`), 2x2 non-editable config grid, explicit ACK policy, dynamic scaling (`1W` to `5W`), tactile pause/resume switch, Failure Lab simulations, live terminal load distribution. | Core NATS ephemeral queue groups, synchronous RPC Request/Reply. |
-| **Failure Recovery** | Isolated worker crash before ACK (Scenario 7), slow worker AckWait timeout (Scenario 8), worker pool scale down (Scenario 9), worker pool scale up (Scenario 10), explicit worker NAK, poison message termination (DLQ routing), supervisor revival. | Network partition split-brain chaos tests. |
+This demonstration evaluates four key platform architectural areas:
+* **End-to-End Demo Flow**: Seamless ingestion and delivery through the complete data path: `Publisher (job-service:8081) -> JetStream (JOBS stream) -> Durable Consumer (job-processor) -> Worker Pool (processor-service:8082)`.
+* **Consumer Contents & State Tracking**: Broker-managed state machines tracking `AckFloor` (contiguous sequence boundary), delivered sequence pointers, pending in-flight bitsets, and explicit acknowledgment semantics (`ACK`, `NAK`, `TERM`).
+* **Unified View (SDK + CLI)**: Synchronized demonstrability combining real-time Go SDK runtime telemetry (logs, worker load distribution) with official `nats` CLI inspection views.
+* **Multi-Worker Throughput Scaling**: Competing pull consumer elasticity scaling dynamically between 1 and 5 workers to demonstrate capacity-driven load distribution, zero-loss scale-in/scale-out without service restarts, and runtime failure resilience.
 
 ---
 
-## 2. Architecture and Approach
+## 2. Architecture and Topology
 
-### 2.1 3-Stage Pipeline Topology
-The NATS Demo View aligns three distinct architectural tiers side-by-side:
+*(Architecture diagram and system topology to be provided)*
 
-```text
-+---------------------------------------------------------------------------------------------------------------+
-|                                            NATS DEMO VIEW CONSOLE                                             |
-+-----------------------------------+-----------------------------------+---------------------------------------+
-|         STAGE 1: PUBLISHER        |       STAGE 2: NATS STREAM        |          STAGE 3: PROCESSOR           |
-|       Application Ingestion       |      Broker Persistence Tier      |         Worker Execution Pool         |
-+-----------------------------------+-----------------------------------+---------------------------------------+
-| * Microservice: job-service:8081  | * JetStream Stream: 'JOBS'        | * JetStream Object:                   |
-| * Subject: jobs.submitted         | * Storage: File (Persistent)      |   - Consumer: job-processor           |
-| * Single & Batch (6 Jobs)         | * Real-time Stream Counters       |   - Attached Stream: JOBS             |
-| * Deduplication Window ID         | * Retention Policy: Limits        |   - Filter Subject: jobs.submitted    |
-| * Custom KV Headers & Metadata    | * Live Copyable CLI Commands      |   - Ack Policy: Explicit              |
-| * Live Wire Envelope Inspector    | * Instant Stream Purge Action     |   - AckWait: 5s                       |
-|                                   |                                   | * Microservice:                       |
-|                                   |                                   |   - processor-service:8082            |
-|                                   |                                   |   - Worker Pool: [1W..5W] (Dynamic)   |
-|                                   |                                   |   - Goroutine State: RUNNING/DEGRADED |
-|                                   |                                   |   - Pull Loop Switch: ON/OFF          |
-|                                   |                                   |   - Failure Lab: 4 Armed Scenarios    |
-|                                   |                                   |   - Terminal Load Telemetry           |
-+-----------------------------------+-----------------------------------+---------------------------------------+
+---
+
+## 3. Demonstrated NATS Capabilities
+
+The following table summarizes the NATS platform capabilities demonstrated within this demo view:
+
+| # | Capability Domain | NATS Feature / Mechanism | Demonstration Scope & Technical Behavior |
+| :-: | :--- | :--- | :--- |
+| **1** | **Ingestion & Routing** | Subject-Based Routing (`jobs.submitted`) | Publishers send structured JSON payloads routed to subject `jobs.submitted`. NATS delivers messages directly to bound streams. |
+| **2** | **Message Envelope** | Key-Value Headers & Trace Context | Publishers attach arbitrary application metadata and W3C `traceparent` headers. NATS preserves and forwards all headers across the wire without payload mutation. |
+| **3** | **Stream Persistence** | Persistent File Storage (`JOBS` Stream) | Messages commit directly to disk storage under stream `JOBS` with gapless sequential IDs (`Seq 1, 2, 3...`), surviving consumer detachment and broker restarts. |
+| **4** | **Ingestion Deduplication** | Sliding-Window Deduplication (`Nats-Msg-Id`) | Broker checks a 2-minute sliding deduplication cache. Duplicate IDs are suppressed from disk writes, returning a `PubAck(Duplicate=true)` and preventing duplicate downstream deliveries. |
+| **5** | **Decoupled Buffering** | Broker-Side Queueing (Offline Consumer) | When worker pull loops are stopped (`OFF`), the broker safely buffers inbound messages on disk. Zero dropped messages; resuming workers drain the backlog in strict sequence. |
+| **6** | **Durable Pull Consumer** | Shared Pull Consumer (`job-processor`) | Multiple worker goroutines pull from a single durable consumer tracking server-side cursors, using explicit acknowledgment (`AckExplicit`) and a 5-second `AckWait` threshold. |
+| **7** | **Work Distribution** | Reactive Capacity Pull (Work-Stealing) | Workers pull work on demand via `Fetch()` rather than push round-robin. Fast workers naturally pull more work, eliminating head-of-line blocking under unequal processing times. |
+| **8** | **Dynamic Scale-Out** | Elastic Worker Scaling (1W -> 3W / 5W) | Spawns additional competing worker goroutines under backlog without service restart or Kafka-style consumer group partition rebalance pauses (**Scenario 10**). |
+| **9** | **Graceful Scale-In** | Orderly Worker Drain (3W -> 1W) | Retiring workers complete in-flight jobs and shut down cleanly from the tail. Unpulled stream backlog remains in the broker and routes to the remaining worker (**Scenario 9**). |
+| **10** | **Crash Failover** | Timeout Redelivery (`AckWait` Expiry) | When a worker crashes midway before ACKing, the broker holds the message for 5s, then redelivers it (`Delivery: #2`) to an active healthy peer worker (**Scenario 7**). |
+| **11** | **Slow Worker Racing** | Timeout Expiration with Late ACK | When worker processing exceeds 5s, the broker times out and redelivers to a peer. The peer completes at 6s; the original worker finishes at 7s and emits a safe late ACK (**Scenario 8**). |
+| **12** | **Fast Negative ACK** | Immediate Retry via `msg.Nak()` | Worker explicitly rejects a transient failure. Broker bypasses the 5-second timeout countdown and immediately re-queues the message for instant redelivery. |
+| **13** | **Poison Pill Isolation** | Terminal Termination via `msg.Term()` | Worker terminates corrupt or unprocessable payloads. Broker halts redelivery loops permanently and routes the message to Dead Letter handling. |
+
+---
+
+## 4. Live Demonstration Runbook
+
+The live evaluation is organized into two practical demonstration parts: Single-Worker state & durability, followed by Multi-Worker concurrency & resilience.
+
+### 4.1 Part A: Single-Worker Scenarios (State, Cursor & Durability)
+
+| Step # | Capability Under Test | Operator Action | What NATS Does Under the Hood | Observable Confirmation |
+| :---: | :--- | :--- | :--- | :--- |
+| **1** | **Baseline Ingestion & Storage** | Click **Submit Job** in Stage 1. | Commits record to disk under `JOBS` stream; routes message to durable consumer `job-processor`. | Stage 1 shows accepted ID; Stage 2 increments message count; Stage 3 worker logs `[PULLED]` and `[ACK SENT]`. |
+| **2** | **Server Deduplication** | Keep same `Nats-Msg-Id` and click **Submit Job** again. | Checks 2-minute sliding deduplication cache; detects duplicate ID; drops write; returns `PubAck(Duplicate=true)`. | Stage 2 message count does NOT increase; `job-service` logs `Status=DUPLICATE`; workers receive zero messages. |
+| **3** | **Decoupled Ingestion & Buffering** | Toggle Worker Pull Loop to **OFF** in Stage 3, then click **Submit Job** 3 times. | Receives and stores all 3 messages on disk in `JOBS` stream; holds delivery because pull loop is idle. | Stage 2 stream messages increment by 3; Stage 3 shows 0 messages pulled; jobs remain buffered safely. |
+| **4** | **Sequential Catch-up Drain** | Toggle Worker Pull Loop to **ON** in Stage 3. | Resumes pull loop; fetches unacknowledged messages sequentially starting from `AckFloor + 1`. | All 3 buffered jobs are pulled, processed, and acknowledged in sequence with zero message loss. |
+| **5** | **Out-of-Order ACK & Hole Safety** | Single worker processes batch with out-of-order execution (Msg 1 and 3 ACKed, Msg 2 pending). | Keeps `AckFloor` pinned at 1; marks Msg 3 in pending bitset; advances `AckFloor` to 3 only after Msg 2 ACKs. | Broker tracks pending gap; `AckFloor` advances only when Msg 2 resolves. |
+
+---
+
+### 4.2 Part B: Multi-Worker Scenarios (Concurrency, Scaling & Resilience)
+
+| Step # | Capability Under Test | Operator Action | What NATS Does Under the Hood | Observable Confirmation |
+| :---: | :--- | :--- | :--- | :--- |
+| **6** | **Demand Work Distribution** | Set workers to **3W**, click **Batch (6 Jobs)**. | Delivers messages reactively based on worker pull requests; fast workers pull more work naturally. | Terminal logs show load distributed across `processor-1`, `processor-2`, and `processor-3` concurrently. |
+| **7** | **Dynamic Scale-Out (Scenario 10)** | Set workers to **1W**, toggle pull loop **OFF**, click **Batch (6 Jobs)**, switch to **3W**, toggle pull loop **ON**. | Spawns new worker goroutines that immediately join the shared pull consumer without repartitioning pauses. | Backlog drains 3x faster; load distributed across all 3 workers with zero duplicate deliveries. |
+| **8** | **Dynamic Scale-In (Scenario 9)** | Set workers to **3W**, click **Batch (6 Jobs)**, then immediately click **1W**. | Retiring workers finish in-flight jobs and shut down; unpulled jobs remain in stream and route to remaining worker. | Workers 2 and 3 stop gracefully; worker 1 completes all remaining jobs without dropped messages. |
+| **9** | **Worker Crash Failover (Scenario 7)** | Set workers to **3W**, expand **Failure Lab**, click **Arm Crash**, then click **Submit Job**. | Holds unacknowledged message during 5s `AckWait`; on timeout, redelivers message to healthy surviving peer. | `processor-1` panics (`DEGRADED: 2/3 active`); surviving workers continue; peer receives redelivery and ACKs; supervisor revives worker. |
+| **10** | **Slow Worker Timeout (Scenario 8)** | Set workers to **2W**, click **Arm Exceed (7s)**, click **Submit Job**, then click **Submit Job** again. | At `T = 5s`, marks unacknowledged message for redelivery to healthy peer while second job processes concurrently. | `processor-1` holds job for 7s; `processor-2` processes job 2 immediately, then receives redelivered job 1 at `T = 5s` and ACKs at `T = 6s`. |
+| **11** | **Fast Retry via NAK** | In Failure Lab, click **Arm NAK**, then click **Submit Job**. | Receives `msg.Nak()`, skips the 5s timeout countdown, and immediately places message back in pull queue. | Message redelivered instantly on Attempt #2 without waiting 5s; terminal confirms immediate re-pull. |
+| **12** | **Poison Pill Termination (TERM)** | In Failure Lab, click **Arm Term**, then click **Submit Job**. | Receives `msg.Term()`, immediately removes message from active delivery schedule, preventing retry storms. | Worker logs poison message termination; stream remains healthy and stable; no endless retry loop. |
+
+---
+
+## 5. Internal Mechanisms & Sequence Diagrams
+
+### 5.1 Coordination of Delivered Seq, AckFloor, and In-Flight Messages
+
+* **Applicable Setup & State**: Any pull consumer workload where messages are processed concurrently or out-of-order by one or more workers.
+* **Applicable Demo Scenarios**:
+  * **Scenario 5 (Out-of-Order ACKs)**: Proves why `AckFloor` cannot skip unacknowledged gaps.
+  * **Scenario 7 (Worker Crash Before ACK)**: Proves what happens when the worker holding the missing message dies, triggering the 5s `AckWait` countdown and failover to a healthy peer.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Pub as Publisher
+    participant Broker as NATS Broker (Stream: JOBS)
+    participant W1 as Worker-1
+    participant W2 as Worker-2
+
+    Pub->>Broker: Publish Msg Seq 1
+    Pub->>Broker: Publish Msg Seq 2
+    Pub->>Broker: Publish Msg Seq 3
+    Note over Broker: Stream: [1, 2, 3]<br/>Delivered: 0, AckFloor: 0
+
+    W1->>Broker: Pull Request
+    Broker-->>W1: Deliver Msg Seq 1 (Delivered: 1, In-Flight: [1])
+
+    W1->>Broker: Pull Request
+    Broker-->>W1: Deliver Msg Seq 2 (Delivered: 2, In-Flight: [1, 2])
+
+    W2->>Broker: Pull Request
+    Broker-->>W2: Deliver Msg Seq 3 (Delivered: 3, In-Flight: [1, 2, 3])
+
+    W1->>Broker: ACK Msg Seq 1
+    Note over Broker: AckFloor advances: 0 -> 1<br/>In-Flight: [2, 3]
+
+    W2->>Broker: ACK Msg Seq 3
+    Note over Broker: OUT-OF-ORDER ACK!<br/>AckFloor stays at 1 (Seq 2 missing)<br/>Pending Bitset marks Seq 3
+
+    Note over W1: Worker-1 Crashes before ACK Msg 2
+    Note over Broker: AckWait (5.0s) Timer Expires for Seq 2
+
+    Broker-->>W2: Redeliver Msg Seq 2 (Attempt 2)
+    Note over W2: Healthy peer processes redelivery
+    W2->>Broker: ACK Msg Seq 2
+    Note over Broker: GAP HEALED!<br/>AckFloor jumps: 1 -> 3<br/>In-Flight: [] (Clean)
 ```
 
-### 2.2 Component Roles & Specifications
-
-| Component | Network Endpoint | Primary Responsibility in Demo |
-| :--- | :--- | :--- |
-| **`job-service`** (Stage 1) | `http://localhost:8081` | Ingestion REST gateway. Accepts job submissions, binds headers, injects W3C trace IDs, and publishes to NATS. |
-| **NATS Server** (Stage 2) | `nats://localhost:4222`<br>`http://localhost:8222` | Core broker & JetStream engine. Manages `JOBS` stream, enforces deduplication, tracks sequence numbers, and coordinates pull consumer batches. |
-| **`processor-service`** (Stage 3) | `http://localhost:8082` | Background worker daemon. Pulls messages via `job-processor` durable consumer, executes business logic, scales goroutines (`1W`..`5W`), reports status (`/processor/status`), handles state toggles (`/processor/state`), and runs Failure Lab scenarios (`/processor/scenario`). |
-| **Demo Console** (UI) | `http://localhost:5173` | Unified React cockpit providing synchronized controls and live parameter inspection across all three stages. |
-
-> [!NOTE]
-> All real-time event streaming in the UI is ingested via `demo-control-service:8080`. The legacy direct endpoint `GET /processor/events` on `:8082` is deprecated; direct HTTP communication with `:8082` is used exclusively for worker pool control, status polling, and failure scenario triggers.
+#### Key Architectural Rules:
+1. **Contiguous Safety (`AckFloor`)**: The `AckFloor` never skips unacknowledged sequences. If sequence 2 is missing, `AckFloor` stays at 1 even if sequence 3 is acknowledged.
+2. **In-Flight Bitset Tracking**: Out-of-order ACKs (like sequence 3) are recorded in an internal pending bitset so they are not re-processed once sequence 2 resolves.
+3. **Automatic Gap Healing**: The moment sequence 2 is redelivered and acknowledged by any worker, the broker instantly cascades `AckFloor` up to the highest contiguous acknowledged sequence (jumping from 1 to 3).
 
 ---
 
-## 3. Capability Demonstration
+### 5.2 Scaling Consumer Inside JetStream via Raft Consensus
 
-### 3.1 Stage 1: Publisher Capabilities
+* **Applicable Setup & State**: High-Availability Clustered NATS Deployments (multi-node NATS cluster, e.g., 3 nodes with `Replicas: 3`).
+* **Applicable Demo Context**: In this local evaluation environment, NATS runs as a single-node broker (`Replicas: 1`). In production multi-node topologies, this Raft consensus architecture is the exact engine NATS uses to scale and replicate consumer state machines across cluster nodes with sub-second failover.
 
-| Control / Action | Type | Demo Purpose | Observable Result |
-| :--- | :--- | :--- | :--- |
-| **Submit Job** | Button (`POST /jobs`) | Publishes single payload to stream `JOBS` on subject `jobs.submitted`. | Message accepted; assigned unique ID and stream sequence. |
-| **Batch (6 Jobs)** | Button (`POST /jobs/batch`) | Dispatches 6 concurrent jobs in one action. | Demonstrates concurrent competing pull distribution across worker goroutines. |
-| **Deduplication Key** | Input (`Nats-Msg-Id`) | Tests exactly-once ingestion guarantee. | Re-submitting with unchanged ID increments duplicate counter in broker; worker does not re-process. |
-| **Custom Headers Builder** | Key-Value Grid | Appends custom application metadata to the NATS envelope. | Custom headers travel untouched across the wire to Stage 3. |
-| **Wire Envelope Inspector** | Collapsible JSON View | Displays raw message bytes, headers, and metadata before wire transit. | Transparent visibility into the exact payload dispatched to NATS. |
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as Worker Pool
+    participant N1 as NATS Node 1 (Raft Leader)
+    participant N2 as NATS Node 2 (Raft Follower)
+    participant N3 as NATS Node 3 (Raft Follower)
 
----
+    Note over N1,N3: Raft Consensus Group: Consumer 'job-processor' (Replicas: 3)
+    
+    W->>N1: Pull Request / Fetch(batch=1)
+    Note over N1: Allocate next stream sequence (Seq 4)
+    N1->>N2: Raft AppendEntries (Delivered: 4)
+    N1->>N3: Raft AppendEntries (Delivered: 4)
+    N2-->>N1: Raft AppendEntries ACK (Quorum 2/3 reached)
+    N3-->>N1: Raft AppendEntries ACK
+    N1-->>W: Deliver Msg Seq 4 to Worker
 
-### 3.2 Stage 2: Broker & Stream Management
+    W->>N1: ACK Msg Seq 4
+    N1->>N2: Raft AppendEntries (AckFloor: 4)
+    N1->>N3: Raft AppendEntries (AckFloor: 4)
+    N2-->>N1: Raft AppendEntries ACK (Quorum reached)
+    N1-->>W: ACK Accepted
 
-| Metric / Action | Display / Setting | Technical Significance |
-| :--- | :--- | :--- |
-| **Stream Name** | `JOBS` | Root storage container holding persisted job records. |
-| **Storage Engine** | `File` (`file`) | Messages persist to disk, surviving server restarts and network interruptions. |
-| **Retention Policy** | `Limits` (`limits`) | Enforces enterprise retention based on age, max messages, or max bytes. |
-| **Real-Time Counters** | Messages, Bytes, First/Last Seq | Direct telemetry reflecting stream ingestion and consumption state. |
-| **CLI Inspection Center** | Copyable Terminal Commands | Enables terminal users to cross-verify UI state with official `nats` CLI: `nats stream info JOBS`, `nats stream view JOBS`. |
-| **Purge Stream** | Action Button | Instantly clears stream messages while keeping consumer configuration intact. |
+    Note over N1: Node 1 Fails / Network Partition!
+    Note over N2,N3: Raft Election Triggered
+    N2->>N3: RequestVote
+    N3-->>N2: VoteGranted (Term + 1)
+    Note over N2: Node 2 Elected New Raft Leader!
 
----
-
-### 3.3 Stage 3: Consumer & Worker Execution
-
-#### 3.3.1 Consumer Configuration (JetStream Object)
-The broker-side consumer parameters are displayed at the top of Stage 3 as clean, non-editable configuration fields arranged in a 2x2 grid:
-
-| Field Name | Configured Value | Operational Purpose |
-| :--- | :--- | :--- |
-| **ATTACHED STREAM** | `JOBS` | Binds this consumer specifically to the `JOBS` storage stream. |
-| **FILTER SUBJECT** | `jobs.submitted` | Ensures workers only receive messages routed to `jobs.submitted`. |
-| **ACK POLICY** | `EXPLICIT` (`msg.Ack()`) | Broker requires explicit acknowledgment; unacknowledged messages are safely held. |
-| **ACKWAIT THRESHOLD** | `5s (Redelivery Timer)` | Server countdown timer for unacknowledged messages before triggering redelivery. |
-
-#### 3.3.2 Microservice Worker Pool (`processor-service:8082`)
-Directly below the JetStream consumer card, the microservice parameters and interactive controls are displayed:
-
-| Control / Parameter | Setting / Range | Operational Behavior |
-| :--- | :--- | :--- |
-| **ROLE** | `Go Worker Daemon` | Non-editable identifier for the backend processing daemon. |
-| **CONSUMING FROM** | `job-processor (Pull)` | Non-editable indicator of the bound JetStream consumer. |
-| **GOROUTINE STATE** | `RUNNING` / `DEGRADED` / `CRASHED` | Real-time health status. When a worker crashes in Failure Lab, displays `DEGRADED: X/Y active` with the crashed worker name and a `Revive Goroutine Now` action. |
-| **WORKER POOL SIZE** | `[ 1W ] [ 2W ] [ 3W ] [ 5W ]` | **Zero-Disruption Dynamic Scaling**:<br>* **Scale UP**: Spawns additional worker goroutines; existing workers continue running without interruption.<br>* **Scale DOWN**: Gracefully stops excess worker goroutines from the tail without dropping in-flight messages. |
-| **Worker Pull Loop Switch** | `ON` / `OFF` | **Offline Buffering Demonstration**:<br>* When **OFF**: Workers pause pulling. Inbound messages buffer safely in the JetStream stream.<br>* When **ON**: Pull loop resumes immediately, draining the buffered backlog. |
-
-#### 3.3.3 Real-Time Terminal Load Telemetry
-When workers process messages, `processor-service` emits real-time load distribution summaries to the terminal log:
-
-```text
-[Processor] [PULLED] Msg Seq=14 -> processor-1 | Worker load: 1 (Pool: [processor-1=1, processor-2=0])
-[Processor] [PULLED] Msg Seq=15 -> processor-2 | Worker load: 1 (Pool: [processor-1=1, processor-2=1])
-[Processor] [ACK SENT] Msg Seq=14 from processor-1 | Worker load: 1 (Pool: [processor-1=1, processor-2=1])
+    W->>N2: Client Auto-Reconnects & Issues Pull Request
+    Note over N2: Resumes seamlessly from committed AckFloor=4!
+    N2-->>W: Deliver Msg Seq 5
 ```
 
----
-
-### 3.4 Failure Lab (Simulated Edge Cases & Multi-Worker Failures)
-
-The **Failure Lab** is an arrow-based collapsible accordion embedded in Stage 3 (collapsed by default). It allows interactive simulation of real-world worker failures, broker timeouts, and competing consumer recovery directly mapping to `docs/feature.md`:
-
-| Scenario | Mode / Parameter | Simulated Failure | Broker Behavior | Worker Behavior | Outcome / Recovery |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **1. One Worker Crashes (Scenario 7)** | `crash_before_ack` | Simulates an unhandled Go runtime panic in one worker midway through transaction before `msg.Ack()`. | Starts 5s `AckWait` timer; holds message unacknowledged. | Panicked worker dies abruptly; state transitions to `DEGRADED: X/Y active` (identifying crashed worker). Surviving healthy workers continue pulling other jobs normally. | At `T = 5.0s`, server redelivers message (`Delivery: #2`) to an active healthy peer worker, which ACKs. Supervisor revives crashed worker automatically after 5.5s (or operator clicks `Revive Goroutine Now`). |
-| **2. One Worker Is Slow (Scenario 8)** | `exceed_ack_wait` | One worker takes 7.0s to process a job, exceeding the 5.0s broker `AckWait` threshold. | At `T = 5.0s`, server timer expires and marks message for redelivery. | Slow worker keeps running. Surviving peer workers continue pulling other messages concurrently. | At `T = 5.0s`, healthy peer pulls redelivered message, finishes, and ACKs at `T = 6.0s`. Slow worker sends late ACK notice at `T = 7.0s`. |
-| **3. Worker NAKs Message** | `nak_message` | Worker detects a transient downstream error and transmits explicit negative acknowledgment (`msg.Nak()`). | Broker does not wait for 5s timeout; immediately re-queues message for redelivery. | Worker drops attempt #1 and immediately re-pulls message. | Message is redelivered instantly (`Attempt #2`) without waiting for timeout dead time. |
-| **4. Worker Terminates Message** | `term_message` | Worker detects an unrecoverable poison message and issues terminal acknowledgment (`msg.Term()`). | Broker halts redelivery loop immediately; stops scheduling retries. | Worker drops the payload and records poison message event. | Protects worker pool from infinite retry poison pills; routes message to Dead Letter handling. |
-
----
-
-### 3.5 Live Demonstration Runbook
-
-| Step # | Demo Narrative | Operator Action | Observable Confirmation |
-| :--- | :--- | :--- | :--- |
-| **1. Baseline Ingestion** | Show normal message publishing and processing. | Click **Submit Job** in Stage 1. | Message ingested in Stage 2, processed by Stage 3, and acknowledged. |
-| **2. Server Deduplication** | Prove server prevents duplicate ingestion. | Keep same `Nats-Msg-Id` and click **Submit Job** again. | Stream message count does not increase; duplicate rejected by server. |
-| **3. Offline Buffering** | Show broker buffers jobs when consumers are offline. | Toggle Worker Pull Loop to **OFF** in Stage 3, then click **Submit Job** 3 times in Stage 1. | Stream messages increment to `3`. Zero jobs processed. Jobs buffered safely in broker. |
-| **4. Backlog Recovery** | Show zero message loss upon worker recovery. | Toggle Worker Pull Loop to **ON** in Stage 3. | All 3 buffered jobs immediately pulled and processed in sequence. |
-| **5. Worker Pool Scales Up (Scenario 10)** | Show backlog distribution across expanding workers without restart. | Set workers to **1W**, toggle pull loop **OFF**, click **Batch (6 Jobs)** to build backlog, switch to **3W**, and toggle pull loop **ON**. | New workers (`processor-2`, `processor-3`) join immediately; backlog drains 3x faster; no duplicate deliveries. |
-| **6. Worker Pool Scales Down (Scenario 9)** | Show worker pool reduction with zero dropped messages. | Set workers to **3W**, click **Batch (6 Jobs)**, then immediately click **1W**. | Excess workers stop gracefully from tail; remaining worker (`processor-1`) processes all remaining jobs without loss. |
-| **7. One Worker Crashes (Scenario 7)** | Prove failover to surviving healthy workers upon crash. | Set workers to **3W**, expand **Failure Lab**, click **Arm Crash**, click **Submit Job**. | `processor-1` panics (`DEGRADED: 2/3 active`). Surviving workers remain alive. At `T = 5s`, healthy peer pulls redelivery and ACKs. Supervisor revives worker at `T = 5.5s`. |
-| **8. One Worker Is Slow (Scenario 8)** | Prove timeout failover while other workers continue. | Set workers to **2W**, click **Arm Exceed (7s)**, click **Submit Job**, then click **Submit Job** again. | `processor-1` is slow (7s). `processor-2` processes job 2 immediately. At `T = 5s`, `processor-2` takes over job 1 redelivery and ACKs at `T = 6s`. |
-| **9. Fast Retry (NAK)** | Show immediate retry without timeout delay. | In Failure Lab, click **Arm NAK**, click **Submit Job**. | Worker sends `msg.Nak()`. Message redelivered instantly on Attempt #2 without waiting 5s. |
-| **10. Poison Pill (TERM)** | Show poison message isolation. | In Failure Lab, click **Arm Term**, click **Submit Job**. | Worker issues `msg.Term()`. Redeliveries halt immediately; stream remains stable. |
-
----
-
-## 4. Verification & Inspection CLI Commands
-
-Operators can verify the state of the broker and consumers at any point using the official `nats` CLI:
-
-```bash
-# Check JOBS stream status, message count, and bytes
-nats stream info JOBS
-
-# Inspect the last messages stored in the JOBS stream
-nats stream view JOBS
-
-# Check durable consumer job-processor status, pending acks, and redelivery counts
-nats consumer info JOBS job-processor
-
-# View real-time consumer message delivery
-nats consumer next JOBS job-processor --count 1
-```
+#### Key Architectural Rules:
+1. **Raft-Replicated State Machine**: Each JetStream stream and consumer is managed by a dedicated **Raft Consensus Group**. Consumer state (`AckFloor`, sequence pointers, and redelivery counts) is synchronized across cluster members (typically R=3 or R=5).
+2. **Leader-Coordinated Pulls**: One NATS node acts as the **Raft Leader** for `job-processor`. All worker pull requests and acknowledgments are handled by the leader and committed to the Raft log before being finalized.
+3. **Zero-Downtime Failover**: If `NATS Node 1` crashes, `Node 2` or `Node 3` is elected as the new Raft leader within milliseconds (< 1s). The new leader already has the committed `AckFloor` and pending ACK state, ensuring zero state loss.
