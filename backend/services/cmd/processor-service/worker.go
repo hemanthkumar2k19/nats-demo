@@ -437,6 +437,10 @@ func (a *App) jsPullLoop(ctx context.Context, workerName string) {
 					continue
 				}
 				log.Printf("[%s] Fetch notice: %v", workerName, err)
+				a.mu.Lock()
+				a.jsConsumer = nil
+				a.mu.Unlock()
+				_ = a.subscribeJetStream()
 				time.Sleep(1 * time.Second)
 				continue
 			}

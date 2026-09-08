@@ -9,6 +9,7 @@ import (
 
 	"nats-demo/services/internal/jobs"
 	"nats-demo/services/internal/messaging"
+	"nats-demo/services/internal/natsclient"
 	"nats-demo/services/internal/telemetry"
 
 	"github.com/gin-gonic/gin"
@@ -31,12 +32,14 @@ type JobServiceDomain interface {
 // JobHandler handles HTTP requests for the pure business Job Service.
 type JobHandler struct {
 	jobService JobServiceDomain
+	natsClient *natsclient.Client
 }
 
 // NewJobHandler instantiates a new JobHandler.
-func NewJobHandler(jobService JobServiceDomain) *JobHandler {
+func NewJobHandler(jobService JobServiceDomain, natsClient *natsclient.Client) *JobHandler {
 	return &JobHandler{
 		jobService: jobService,
+		natsClient: natsClient,
 	}
 }
 
@@ -45,6 +48,27 @@ func (h *JobHandler) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "UP",
 		"service": "job-service",
+	})
+}
+
+// ResetStream deletes and recreates the JOBS stream, resetting sequences to 1 and consumer cursor to 0.
+func (h *JobHandler) ResetStream(c *gin.Context) {
+	if h.natsClient == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "NATS client not initialized"})
+		return
+	}
+
+	if err := h.natsClient.ResetJobsStream(); err != nil {
+		log.Printf("[JobService] Failed to reset JOBS stream: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	log.Println("[JobService] JOBS stream deleted and recreated successfully (Seq reset to 1)")
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "SUCCESS",
+		"message": "JOBS stream recreated successfully. Sequence reset to 1.",
+		"stream":  "JOBS",
 	})
 }
 

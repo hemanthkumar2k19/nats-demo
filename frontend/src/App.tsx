@@ -33,7 +33,8 @@ import {
   DLQStatus,
   getDLQStatus,
   QueueGroupStatus,
-  getQueueGroupStatus
+  getQueueGroupStatus,
+  resetJobsStream
 } from './api/demoApi';
 
 const DEFAULT_SERVICES: ServiceStatus[] = [
@@ -58,6 +59,7 @@ export const App: React.FC = () => {
   const [isValidating, setIsValidating] = useState<boolean>(false);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState<boolean>(false);
   const [isRefreshingActivity, setIsRefreshingActivity] = useState<boolean>(false);
+  const [isResettingStream, setIsResettingStream] = useState<boolean>(false);
 
   // Inspector state
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -254,6 +256,21 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleResetStream = async () => {
+    setIsResettingStream(true);
+    setError(null);
+    try {
+      const res = await resetJobsStream();
+      setSuccess(res.message || 'JOBS stream recreated successfully. Sequence reset to 1.');
+      await refreshStatus(true);
+      await refreshActivity(true);
+    } catch (err: any) {
+      setError(err.message || 'Failed to recreate JOBS stream');
+    } finally {
+      setIsResettingStream(false);
+    }
+  };
+
   const handleSelectJob = async (jobId: string) => {
     setSelectedJobId(jobId);
     setIsLoadingInspector(true);
@@ -418,6 +435,8 @@ export const App: React.FC = () => {
             onClearActivity={handleClearActivity}
             onSelectJob={handleSelectJob}
             onRefreshNats={() => refreshStatus(false)}
+            onResetStream={handleResetStream}
+            isResettingStream={isResettingStream}
             onShowInfo={setActiveInfoKey}
           />
         </main>

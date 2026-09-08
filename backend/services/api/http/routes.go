@@ -17,6 +17,7 @@ func RegisterJobRoutes(router *gin.Engine, h *JobHandler) {
 	router.GET("/jobs/:job_id", h.GetJob)
 	router.POST("/jobs/queue", h.SubmitQueueJobs)
 	router.POST("/jobs/stream", h.SubmitStreamJobs)
+	router.POST("/stream/reset", h.ResetStream)
 }
 
 // CORSMiddleware returns a Gin HandlerFunc that configures CORS headers.

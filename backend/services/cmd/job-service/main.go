@@ -75,7 +75,7 @@ func (a *App) Init() error {
 
 	publisher := messaging.NewPublisher(a.natsClient)
 	a.jobService = jobs.NewService(publisher)
-	jobHandler := apihttp.NewJobHandler(a.jobService)
+	jobHandler := apihttp.NewJobHandler(a.jobService, a.natsClient)
 
 	router := gin.New()
 	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{

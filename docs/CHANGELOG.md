@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/) and adher
 ## 2026-09-08
 
 ### Added
+- Delivery Sequence, First Sequence, & Cursor State educational model with number line diagram and formula Q&A in Stage 2 (NATS View & CLI) info popover.
+- Interactive "Recreate JOBS Stream (Seq 1)" action in NATS Demo View and direct `job-service` API (`POST /stream/reset` on `:8081`) to reset stream sequence to 1 and consumer cursor to 0 on demand.
 - Multi-worker resiliency scenarios in Failure Lab: worker crash failover (Scenario 7), slow worker timeout racing (Scenario 8), and dynamic worker pool scaling (Scenarios 9 & 10).
 - Lightweight execution toggle `MODE=demo` (and `PROCESSOR_MODE`) to run strictly JetStream pull workers without transient subscriber overhead.
 

@@ -1,3 +1,9 @@
+export interface InfoQnA {
+  question: string;
+  answer: string;
+  formula?: string;
+}
+
 export interface NatsComponentInfo {
   id: string;
   title: string;
@@ -5,6 +11,8 @@ export interface NatsComponentInfo {
   concepts: string[];
   demoUsage: string;
   trivia?: string;
+  diagram?: string;
+  qna?: InfoQnA[];
 }
 
 export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
@@ -96,6 +104,64 @@ export const NATS_COMPONENTS_INFO: Record<string, NatsComponentInfo> = {
     ],
     demoUsage:
       "Publish jobs, stop or pause workers, and inspect the JOBS Stream to demonstrate that persisted messages remain available for later consumption.",
+  },
+
+  "jetstream-engine": {
+    id: "jetstream-engine",
+    title: "Stage 2: NATS View & CLI (Stream Storage & Consumer Cursors)",
+    role: "Central NATS JetStream broker engine managing persistent stream storage and tracking stateful consumer cursors.",
+    diagram: [
+      "Stream Log:      (pruned: 1, 2, 3) [ 4 ] [ 5 ] [ 6 ] [ 7 ] [ 8 ] [ 9 ] [ 10 ]",
+      "First Sequence:  -----------------> ( 4 ) [Oldest Available]",
+      "AckFloor:        -------------------------> ( 5 ) [Safety Watermark]",
+      "Delivered Seq:   ---------------------------------------------> ( 8 ) [Handed to Workers]",
+      "Last Sequence:   ---------------------------------------------------------> ( 10 ) [Latest Appended]",
+      "",
+      "Retained Storage Window: [ First Sequence (4)  to  Last Sequence (10) ] = 7 messages",
+    ].join("\n"),
+    qna: [
+      {
+        question: "1. What messages are currently retained in the stream?",
+        answer: "First Sequence to Last Sequence. Shown in 'nats stream state JOBS' (or stream info). Represents the actual messages physically stored on disk. If older messages (1 to 3) were purged or expired via TTL/MaxAge/MaxMsgs, First Sequence advances. Only messages from First Sequence (4) to Last Sequence (10) are retained.",
+        formula: "Retained Window = [First Sequence ... Last Sequence] (Messages count: 7)",
+      },
+      {
+        question: "2. What is the total count / latest message published to the stream?",
+        answer: "Stream Last Sequence (last_seq = 10). Represents the highest sequence number assigned to a published message in this stream's history.",
+        formula: "Latest Appended = Last Sequence (10)",
+      },
+      {
+        question: "3. What messages are guaranteed to be processed and completed?",
+        answer: "Ack Floor (5). The safety watermark below which every single message is 100% completed and acknowledged. Even if all workers crash, messages up through AckFloor will never be redelivered.",
+        formula: "Guaranteed Safe = 1 to AckFloor (5)",
+      },
+      {
+        question: "4. What messages are buffered in the stream waiting to be pulled?",
+        answer: "Stream Backlog. Messages that have been stored in the stream but have not yet been handed to any worker.",
+        formula: "Stream Backlog = Last Sequence - Delivered Seq = 10 - 8 = 2 messages (9, 10)",
+      },
+      {
+        question: "5. What is the total number of in-flight messages?",
+        answer: "Outstanding ACKs (Ack Pending). Messages actively pulled by workers that have not yet sent an ACK back to the broker. Here, messages 6, 7, and 8 are currently being processed.",
+        formula: "In-Flight = Delivered - Acked = 3 messages (in-flight: 6, 7, 8)",
+      },
+      {
+        question: "6. What happens if ACKs arrive out of order?",
+        answer: "NATS enforces the Contiguous Ack Floor Rule. If message 7 is ACKed before message 6 finishes, AckFloor remains at 5. NATS tracks 7 as an individual bit in its pending bitset. Once 6 is ACKed, the AckFloor leaps directly to 7.",
+        formula: "AckFloor = Highest Contiguous Acknowledged Sequence",
+      },
+    ],
+    concepts: [
+      "Stream Retention: First Sequence marks the oldest available message. Once messages expire or are purged, First Sequence advances.",
+      "Stream Persistence: App-side messages are committed to an immutable append-only log on disk before publishing acknowledges.",
+      "Stateless Workers vs Stateful Cursors: Workers hold zero cluster state; NATS broker tracks cursors (Delivered, AckFloor, and In-Flight bitset).",
+      "Competing Pull Consumers: Multiple workers pull from the shared consumer cursor without partition locking.",
+      "Out-of-Order Safety: The AckFloor only advances when the earliest outstanding message in the sequence is acknowledged.",
+    ],
+    demoUsage:
+      "Run 'nats stream state JOBS' to inspect First Sequence and Last Sequence, and 'nats consumer info JOBS job-processor' to observe Delivered Seq, AckFloor, and Outstanding ACKs in real-time.",
+    trivia:
+      "Unlike partition-bound streaming systems where a slow message stalls an entire partition queue, NATS JetStream tracks individual message ACK timeouts and out-of-order completions per-message with zero rebalance pauses.",
   },
 
   "dead-letter-queue": {

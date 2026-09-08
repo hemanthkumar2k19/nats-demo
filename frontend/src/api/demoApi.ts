@@ -239,6 +239,23 @@ export async function submitJob(job: Job): Promise<JobStatusResponse> {
   return response.json();
 }
 
+/**
+ * Recreates the JOBS stream and job-processor consumer via job-service API (Port 8081).
+ * Deletes any existing JOBS stream, resetting stream sequence to 1 and consumer cursor to 0.
+ */
+export async function resetJobsStream(): Promise<{ status: string; message: string; stream: string }> {
+  const response = await fetch(`${JOB_SERVICE_URL}/stream/reset`, {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`Failed to recreate stream: ${response.status} ${response.statusText}. ${errorText}`);
+  }
+
+  return response.json();
+}
+
 export interface ScheduleJobRequest {
   job_id: string;
   type: string;

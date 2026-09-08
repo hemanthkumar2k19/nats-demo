@@ -5,6 +5,8 @@ interface CoreFlowNatsCliProps {
   jetstreamInfo?: JetStreamInfo | null;
   consumerStatus?: ConsumerStatus | null;
   onRefresh: () => void;
+  onResetStream?: () => Promise<void>;
+  isResettingStream?: boolean;
   onShowInfo?: (key: string) => void;
 }
 
@@ -54,6 +56,11 @@ const OPERATIONAL_COMMANDS: CliCommandSnippet[] = [
     cmd: 'nats stream info JOBS',
   },
   {
+    id: 'view-stream-state',
+    title: 'Stream State (First & Last Sequence)',
+    cmd: 'nats stream state JOBS',
+  },
+  {
     id: 'view-stream-messages',
     title: 'Stream View - Messages in JOBS',
     cmd: 'nats stream view JOBS 5',
@@ -73,12 +80,19 @@ const OPERATIONAL_COMMANDS: CliCommandSnippet[] = [
     title: 'Consumer Processing Report & Backlog',
     cmd: 'nats consumer report JOBS',
   },
+  {
+    id: 'reset-stream-cli',
+    title: 'Delete Stream & Reset Cursors (CLI)',
+    cmd: 'nats stream rm JOBS -f',
+  },
 ];
 
 export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
   jetstreamInfo,
   consumerStatus,
   onRefresh,
+  onResetStream,
+  isResettingStream,
   onShowInfo,
 }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -107,16 +121,37 @@ export const CoreFlowNatsCli: React.FC<CoreFlowNatsCliProps> = ({
           </span>
           <h2 className="panel-title" style={{ margin: 0 }}>NATS View &amp; CLI</h2>
         </div>
-        {onShowInfo && (
-          <button
-            type="button"
-            className="node-info-btn"
-            onClick={() => onShowInfo('jetstream-engine')}
-            title="Learn about NATS Server &amp; JetStream"
-          >
-            (i)
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          {onResetStream && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onResetStream}
+              disabled={isResettingStream}
+              style={{
+                fontSize: '0.68rem',
+                padding: '0.15rem 0.5rem',
+                color: '#F87171',
+                borderColor: 'rgba(239, 68, 68, 0.25)',
+                background: 'rgba(239, 68, 68, 0.08)',
+                cursor: isResettingStream ? 'not-allowed' : 'pointer',
+              }}
+              title="Delete and recreate JOBS stream via job-service (:8081). Resets Seq to 1 & AckFloor to 0."
+            >
+              {isResettingStream ? 'Recreating...' : 'Recreate Stream'}
+            </button>
+          )}
+          {onShowInfo && (
+            <button
+              type="button"
+              className="node-info-btn"
+              onClick={() => onShowInfo('jetstream-engine')}
+              title="Learn about NATS Server &amp; JetStream"
+            >
+              (i)
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Content Area */}

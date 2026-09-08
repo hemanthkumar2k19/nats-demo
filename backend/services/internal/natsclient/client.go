@@ -3,6 +3,7 @@ package natsclient
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -78,6 +79,22 @@ func (c *Client) EnsureJobsStream() error {
 	}
 
 	return nil
+}
+
+// ResetJobsStream deletes the JOBS stream (if it exists) and recreates it fresh with sequence starting at 1.
+func (c *Client) ResetJobsStream() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Delete existing JOBS stream (which also removes attached consumers and resets sequence counter)
+	if err := c.JS.DeleteStream(ctx, "JOBS"); err != nil {
+		log.Printf("[NATS] Notice during stream deletion (may not exist): %v", err)
+	} else {
+		log.Println("[NATS] Successfully deleted existing JOBS stream")
+	}
+
+	// Recreate fresh JOBS stream and durable consumer
+	return c.EnsureJobsStream()
 }
 
 // EnsureDLQStream guarantees that the JOBS_DLQ stream and dlq-inspector consumer exist in NATS.

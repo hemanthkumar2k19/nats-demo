@@ -15,6 +15,8 @@ interface CoreFlowViewProps {
   onClearActivity: () => void;
   onSelectJob: (jobId: string) => void;
   onRefreshNats: () => void;
+  onResetStream?: () => Promise<void>;
+  isResettingStream?: boolean;
   onShowInfo?: (key: string) => void;
 }
 
@@ -29,6 +31,8 @@ export const CoreFlowView: React.FC<CoreFlowViewProps> = ({
   onClearActivity,
   onSelectJob,
   onRefreshNats,
+  onResetStream,
+  isResettingStream,
   onShowInfo,
 }) => {
   return (
@@ -43,7 +47,7 @@ export const CoreFlowView: React.FC<CoreFlowViewProps> = ({
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
-        gap: '0.5rem',
+        gap: '0.75rem',
       }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-bright)' }}>
@@ -54,37 +58,61 @@ export const CoreFlowView: React.FC<CoreFlowViewProps> = ({
           </p>
         </div>
 
-        {/* Step Progression Indicators */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
-          <span style={{ 
-            background: 'rgba(59, 130, 246, 0.15)', 
-            color: '#60A5FA', 
-            padding: '2px 8px', 
-            borderRadius: '4px',
-            border: '1px solid rgba(59, 130, 246, 0.3)'
-          }}>
-            1. Publish Message
-          </span>
-          <span style={{ color: 'var(--text-dim)' }}>-&gt;</span>
-          <span style={{ 
-            background: 'rgba(16, 185, 129, 0.15)', 
-            color: '#34D399', 
-            padding: '2px 8px', 
-            borderRadius: '4px',
-            border: '1px solid rgba(16, 185, 129, 0.3)'
-          }}>
-            2. NATS Broker (Stream/Subject)
-          </span>
-          <span style={{ color: 'var(--text-dim)' }}>-&gt;</span>
-          <span style={{ 
-            background: 'rgba(245, 158, 11, 0.15)', 
-            color: '#FBBF24', 
-            padding: '2px 8px', 
-            borderRadius: '4px',
-            border: '1px solid rgba(245, 158, 11, 0.3)'
-          }}>
-            3. Process Job (Worker)
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {/* Action Button: Recreate JOBS Stream */}
+          {onResetStream && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onResetStream}
+              disabled={isResettingStream}
+              style={{
+                fontSize: '0.75rem',
+                padding: '0.25rem 0.65rem',
+                background: 'rgba(239, 68, 68, 0.08)',
+                color: '#F87171',
+                borderColor: 'rgba(239, 68, 68, 0.25)',
+                fontWeight: 600,
+                cursor: isResettingStream ? 'not-allowed' : 'pointer',
+              }}
+              title="Delete and recreate JOBS stream via job-service (:8081). Resets stream sequence to 1 and consumer cursor to 0."
+            >
+              <span>{isResettingStream ? 'Recreating...' : 'Recreate JOBS Stream (Seq 1)'}</span>
+            </button>
+          )}
+
+          {/* Step Progression Indicators */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
+            <span style={{ 
+              background: 'rgba(59, 130, 246, 0.15)', 
+              color: '#60A5FA', 
+              padding: '2px 8px', 
+              borderRadius: '4px',
+              border: '1px solid rgba(59, 130, 246, 0.3)'
+            }}>
+              1. Publish Message
+            </span>
+            <span style={{ color: 'var(--text-dim)' }}>-&gt;</span>
+            <span style={{ 
+              background: 'rgba(16, 185, 129, 0.15)', 
+              color: '#34D399', 
+              padding: '2px 8px', 
+              borderRadius: '4px',
+              border: '1px solid rgba(16, 185, 129, 0.3)'
+            }}>
+              2. NATS Broker (Stream/Subject)
+            </span>
+            <span style={{ color: 'var(--text-dim)' }}>-&gt;</span>
+            <span style={{ 
+              background: 'rgba(245, 158, 11, 0.15)', 
+              color: '#FBBF24', 
+              padding: '2px 8px', 
+              borderRadius: '4px',
+              border: '1px solid rgba(245, 158, 11, 0.3)'
+            }}>
+              3. Process Job (Worker)
+            </span>
+          </div>
         </div>
       </div>
 
@@ -108,6 +136,8 @@ export const CoreFlowView: React.FC<CoreFlowViewProps> = ({
           jetstreamInfo={jetstreamInfo}
           consumerStatus={consumerStatus}
           onRefresh={onRefreshNats}
+          onResetStream={onResetStream}
+          isResettingStream={isResettingStream}
           onShowInfo={onShowInfo}
         />
 
