@@ -46,7 +46,7 @@ var (
 )
 
 // Init initializes OpenTelemetry MeterProvider and TracerProvider with OTLP gRPC export.
-func Init(ctx context.Context, serviceName, endpoint string, isInsecure bool) (func(context.Context) error, error) {
+func Init(ctx context.Context, serviceName, endpoint string, isInsecure, enableMetrics, enableTraces bool) (func(context.Context) error, error) {
 	var metricOpts []otlpmetricgrpc.Option
 	metricOpts = append(metricOpts, otlpmetricgrpc.WithEndpoint(endpoint))
 
@@ -72,20 +72,25 @@ func Init(ctx context.Context, serviceName, endpoint string, isInsecure bool) (f
 		return nil, fmt.Errorf("failed to create otel resource: %w", err)
 	}
 
-	// 1. Initialize Tracing Provider
+	// 1. Initialize Tracing Provider conditionally based on enableTraces flag
 	var tp *sdktrace.TracerProvider
-	traceExporter, err := otlptracegrpc.New(ctx, traceOpts...)
-	if err != nil {
-		log.Printf("[telemetry] Warning: failed to create OTLP trace exporter: %v. Continuing with no-op tracer.", err)
+	if !enableTraces {
+		log.Printf("[telemetry] ENABLE_OTEL_TRACES=false for %s. Using no-op tracer.", serviceName)
 		tracer = otel.GetTracerProvider().Tracer(serviceName)
 	} else {
-		tp = sdktrace.NewTracerProvider(
-			sdktrace.WithResource(res),
-			sdktrace.WithBatcher(traceExporter),
-			sdktrace.WithSampler(sdktrace.AlwaysSample()),
-		)
-		otel.SetTracerProvider(tp)
-		tracer = tp.Tracer(serviceName)
+		traceExporter, err := otlptracegrpc.New(ctx, traceOpts...)
+		if err != nil {
+			log.Printf("[telemetry] Warning: failed to create OTLP trace exporter: %v. Continuing with no-op tracer.", err)
+			tracer = otel.GetTracerProvider().Tracer(serviceName)
+		} else {
+			tp = sdktrace.NewTracerProvider(
+				sdktrace.WithResource(res),
+				sdktrace.WithBatcher(traceExporter),
+				sdktrace.WithSampler(sdktrace.AlwaysSample()),
+			)
+			otel.SetTracerProvider(tp)
+			tracer = tp.Tracer(serviceName)
+		}
 	}
 
 	// Register global W3C text map propagator for context injection across NATS
@@ -94,27 +99,32 @@ func Init(ctx context.Context, serviceName, endpoint string, isInsecure bool) (f
 		propagation.Baggage{},
 	))
 
-	// 2. Initialize Metrics Provider
+	// 2. Initialize Metrics Provider conditionally based on enableMetrics flag
 	var mp *sdkmetric.MeterProvider
-	metricExporter, err := otlpmetricgrpc.New(ctx, metricOpts...)
-	if err != nil {
-		log.Printf("[telemetry] Warning: failed to create OTLP metric exporter: %v. Continuing with no-op metrics.", err)
+	if !enableMetrics {
+		log.Printf("[telemetry] ENABLE_OTEL_METRICS=false for %s. Using no-op meter.", serviceName)
 		initNoopInstruments()
 	} else {
-		reader := sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(2*time.Second))
-		mp = sdkmetric.NewMeterProvider(
-			sdkmetric.WithResource(res),
-			sdkmetric.WithReader(reader),
-		)
-		otel.SetMeterProvider(mp)
-		meter = mp.Meter(serviceName)
+		metricExporter, err := otlpmetricgrpc.New(ctx, metricOpts...)
+		if err != nil {
+			log.Printf("[telemetry] Warning: failed to create OTLP metric exporter: %v. Continuing with no-op metrics.", err)
+			initNoopInstruments()
+		} else {
+			reader := sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(2*time.Second))
+			mp = sdkmetric.NewMeterProvider(
+				sdkmetric.WithResource(res),
+				sdkmetric.WithReader(reader),
+			)
+			otel.SetMeterProvider(mp)
+			meter = mp.Meter(serviceName)
 
-		if err := registerInstruments(); err != nil {
-			return nil, fmt.Errorf("failed to register metric instruments: %w", err)
+			if err := registerInstruments(); err != nil {
+				return nil, fmt.Errorf("failed to register metric instruments: %w", err)
+			}
 		}
 	}
 
-	log.Printf("[telemetry] OpenTelemetry (Metrics & Traces) initialized for %s -> %s", serviceName, endpoint)
+	log.Printf("[telemetry] OpenTelemetry initialized for %s -> %s (Metrics Enabled: %t, Traces Enabled: %t)", serviceName, endpoint, enableMetrics, enableTraces)
 
 	shutdown := func(shutdownCtx context.Context) error {
 		var firstErr error

@@ -14,10 +14,9 @@ type Config struct {
 	NATSPassword    string `env:"NATS_PASSWORD" envDefault:"app_user_pwd!"`
 	NATSSysUser     string `env:"NATS_SYS_USER" envDefault:"sys_admin"`
 	NATSSysPassword string `env:"NATS_SYS_PASSWORD" envDefault:"sys_admin_pwd!"`
-	Port            string `env:"PORT" envDefault:"8080"`
-	ProcessorPort   string `env:"PROCESSOR_PORT" envDefault:"8082"`
-	OtelEndpoint    string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:4317"`
-	OtelInsecure    bool   `env:"OTEL_EXPORTER_OTLP_INSECURE" envDefault:"true"`
+	Port             string `env:"PORT" envDefault:"8080"`
+	ProcessorPort    string `env:"PROCESSOR_PORT" envDefault:"8082"`
+	EnableNatsEvents bool   `env:"ENABLE_NATS_EVENTS" envDefault:"false"`
 }
 
 

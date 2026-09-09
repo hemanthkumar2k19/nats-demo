@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/) and adheres to [AGENTS.md](AGENTS.md).
 
+## 2026-09-09
+
+### Added
+- Added environment-driven feature flags `ENABLE_OTEL_METRICS` (boolean) and `ENABLE_OTEL_TRACES` (boolean) in `job-service` and `processor-service` to enable or disable OpenTelemetry OTLP metrics and traces export dynamically.
+- Added environment-driven feature flag `ENABLE_NATS_EVENTS` (boolean) in `demo-control-service` to control whether $SYS and JetStream advisory events are forwarded to Loki (`:3100`).
+
+### Changed
+- Commented out `log_file: "/data/nats.log"` in `deploy/nats/nats.conf` to default NATS server output to standard container console (`docker logs nats`).
+- Commented out `nats-log-collector` (Fluent Bit) service in `deploy/docker-compose.yaml` while preserving code for easy future reactivation.
+
+### Removed
+- Removed OpenTelemetry metrics and tracing initialization code from `demo-control-service` (`backend/control`), leaving it focused on UI gateway responsibilities.
+
+### Fixed
+- Fixed unclosed `else` block in `demo-control-service/main.go` that triggered a Go compiler syntax error `expected ';', found error @ line 198`.
+
+
 ## 2026-09-08
 
 ### Added
@@ -16,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/) and adher
 - Lightweight execution toggle `MODE=demo` (and `PROCESSOR_MODE`) to run strictly JetStream pull workers without transient subscriber overhead.
 
 ### Changed
+- Relocated `EnsureJobsStream` and `ResetJobsStream` from `client.go` to dedicated `streams.go` in `backend/services/internal/natsclient/`.
 - Cleaned up Stage 1 Publish Panel in `CoreFlowPublisher.tsx`: defaulted `Nats-Msg-Id:` to empty string to demonstrate it is optional; added dedicated on-demand `Regen` button; removed distracting SDK/code annotations and fixed badges; standardized Job ID, Job Type (with `<select>` options matching PubSub panel), and Payload (JSON); and formatted all fields into a clean, aligned `Field: Value-box` horizontal grid layout.
 - Updated backend publishers (`publisher.go`) to only set `Nats-Msg-Id` when explicitly provided by the caller, without forcing fallback to `job_id`.
 - Rearranged Stage 3 Process Message panel in `CoreFlowProcessor.tsx`: cleanly wrapped the NATS consumer properties (`Stream:`, `Filter Subject:`, `Ack Policy:`, `AckWait:`, `Ack Floor:`, `Delivered Seq:`) into a dedicated framed Consumer Card (`Consumer: job-processor`), wrapped worker controls (`Pull Loop:`, `Worker Pool:`, `Goroutines:`) into a dedicated Worker Daemon Card (`Worker Daemon (processor-service)`), and formatted all fields into an aligned `Field: Value-box` layout matching Stage 1.
@@ -30,6 +48,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/) and adher
 - Filtered JetStream broker duplicate publications from transient subscriber console logs.
 
 ### Removed
+- Removed unused `ListJobs` domain method, HTTP handler, and `GET /jobs` route from `backend/services/`.
+- Removed dead `observer.go` from `backend/services/internal/messaging/`.
+- Removed unused DLQ stream management methods (`EnsureDLQStream`, `DeleteDLQStream`, `IsDLQStreamActive`) from `backend/services/internal/natsclient/client.go`.
 - Removed `X-Message-Id` template preview field from Stage 1 Publish Panel to avoid confusion with `Nats-Msg-Id` (the NATS JetStream deduplication header).
 - Fully pruned legacy Consumer Lab feature from UI, API gateway, and backend services.
 - Removed legacy Saga Orchestration module, worker responders, and HTTP routes.

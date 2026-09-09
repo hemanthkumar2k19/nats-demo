@@ -41,7 +41,7 @@ nats-demo/
 1. **Module: `nats-demo/services` (`backend/services`)**:
    - **Job Service (`cmd/job-service`)**:
      - Pure business microservice listening on `:8081`.
-     - Accepts job submissions (`POST /jobs`), validation requests (`POST /jobs/validate`), and job queries (`GET /jobs`).
+     - Accepts job submissions (`POST /jobs`), validation requests (`POST /jobs/validate`), and single job queries (`GET /jobs/:job_id`).
      - Publishes jobs to NATS (`jobs.submitted`).
      - Injects standard W3C OpenTelemetry trace context into message headers.
      - Contains zero demo harness code and zero in-memory activity ring buffers.

@@ -18,8 +18,10 @@ type Config struct {
 	ProcessorPort   string `env:"PROCESSOR_PORT" envDefault:"8082"`
 	Mode            string `env:"MODE" envDefault:""`
 	ProcessorMode   string `env:"PROCESSOR_MODE" envDefault:"all"`
-	OtelEndpoint    string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:4317"`
-	OtelInsecure    bool   `env:"OTEL_EXPORTER_OTLP_INSECURE" envDefault:"true"`
+	OtelEndpoint     string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:4317"`
+	OtelInsecure     bool   `env:"OTEL_EXPORTER_OTLP_INSECURE" envDefault:"true"`
+	EnableOtelMetrics bool  `env:"ENABLE_OTEL_METRICS" envDefault:"false"`
+	EnableOtelTraces  bool  `env:"ENABLE_OTEL_TRACES" envDefault:"false"`
 }
 
 // GetProcessorMode returns the resolved processor execution mode ("demo", "model", or "all").

@@ -46,13 +46,3 @@ func (s *JobStore) AddJob(job Job, status string) {
 		Timestamp: time.Now(),
 	})
 }
-
-// SetTraceID associates a trace ID with an existing job.
-func (s *JobStore) SetTraceID(jobID, traceID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if job, exists := s.jobs[jobID]; exists {
-		job.TraceID = traceID
-	}
-}

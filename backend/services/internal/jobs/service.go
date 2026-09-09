@@ -122,9 +122,6 @@ func (s *Service) ScheduleJob(ctx context.Context, req ScheduleJobRequest) (*Sch
 
 // ValidateJob validates a job payload by sending a Request/Reply call over NATS.
 func (s *Service) ValidateJob(ctx context.Context, job Job) (*JobValidationResponse, error) {
-	if job.TraceID != "" {
-		s.store.SetTraceID(job.JobID, job.TraceID)
-	}
 
 	resp, err := s.publisher.RequestJobValidation(ctx, job)
 	if err != nil {
@@ -139,18 +136,6 @@ func (s *Service) ValidateJob(ctx context.Context, job Job) (*JobValidationRespo
 	s.store.AddJob(job, status)
 
 	return resp, nil
-}
-
-// ListJobs returns the list of all tracked jobs.
-func (s *Service) ListJobs() []*JobDetailResponse {
-	s.store.mu.RLock()
-	defer s.store.mu.RUnlock()
-
-	list := make([]*JobDetailResponse, 0, len(s.store.jobs))
-	for _, job := range s.store.jobs {
-		list = append(list, job)
-	}
-	return list
 }
 
 // GetJob returns detailed status of a specific job.
@@ -246,4 +231,3 @@ func (s *Service) SubmitStreamJobs(ctx context.Context, req QueuePublishRequest)
 		Jobs:      publishedIDs,
 	}, nil
 }
-

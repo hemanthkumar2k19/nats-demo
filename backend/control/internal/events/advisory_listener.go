@@ -29,16 +29,17 @@ type AdvisoryEvent struct {
 
 // AdvisoryListener listens to NATS $SYS and JetStream advisory subjects and pushes normalized records to Loki.
 type AdvisoryListener struct {
-	nc         *nats.Conn
-	lokiURL    string
-	httpClient *http.Client
-	subs       []*nats.Subscription
-	mu         sync.Mutex
-	closed     bool
+	nc               *nats.Conn
+	lokiURL          string
+	httpClient       *http.Client
+	subs             []*nats.Subscription
+	enableNatsEvents bool
+	mu               sync.Mutex
+	closed           bool
 }
 
 // NewAdvisoryListener initializes an operational event listener.
-func NewAdvisoryListener(nc *nats.Conn) *AdvisoryListener {
+func NewAdvisoryListener(nc *nats.Conn, enableNatsEvents bool) *AdvisoryListener {
 	lokiURL := os.Getenv("LOKI_URL")
 	if lokiURL == "" {
 		lokiURL = "http://localhost:3100"
@@ -46,8 +47,9 @@ func NewAdvisoryListener(nc *nats.Conn) *AdvisoryListener {
 	lokiURL = strings.TrimRight(lokiURL, "/")
 
 	return &AdvisoryListener{
-		nc:      nc,
-		lokiURL: lokiURL,
+		nc:               nc,
+		lokiURL:          lokiURL,
+		enableNatsEvents: enableNatsEvents,
 		httpClient: &http.Client{
 			Timeout: 3 * time.Second,
 		},
@@ -59,6 +61,11 @@ func NewAdvisoryListener(nc *nats.Conn) *AdvisoryListener {
 func (l *AdvisoryListener) Start() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
+	if !l.enableNatsEvents {
+		log.Println("[AdvisoryListener] ENABLE_NATS_EVENTS=false. Advisory listener disabled.")
+		return nil
+	}
 
 	subjects := []string{
 		"$JS.EVENT.ADVISORY.>",

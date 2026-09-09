@@ -23,7 +23,6 @@ type JobServiceDomain interface {
 	SubmitJob(ctx context.Context, job jobs.Job) (*jobs.JobStatusResponse, error)
 	ScheduleJob(ctx context.Context, req jobs.ScheduleJobRequest) (*jobs.ScheduleJobResponse, error)
 	ValidateJob(ctx context.Context, job jobs.Job) (*jobs.JobValidationResponse, error)
-	ListJobs() []*jobs.JobDetailResponse
 	GetJob(jobID string) (*jobs.JobDetailResponse, bool)
 	SubmitQueueJobs(ctx context.Context, req jobs.QueuePublishRequest) (*jobs.QueuePublishResponse, error)
 	SubmitStreamJobs(ctx context.Context, req jobs.QueuePublishRequest) (*jobs.QueuePublishResponse, error)
@@ -201,14 +200,6 @@ func (h *JobHandler) ValidateJob(c *gin.Context) {
 	telemetry.RecordValidationRequest(spanCtx, resultStr, time.Since(start))
 
 	c.JSON(http.StatusOK, resp)
-}
-
-// ListJobs returns the list of all tracked jobs.
-func (h *JobHandler) ListJobs(c *gin.Context) {
-	jobsList := h.jobService.ListJobs()
-	c.JSON(http.StatusOK, gin.H{
-		"jobs": jobsList,
-	})
 }
 
 // GetJob returns detailed status and history of a single job.

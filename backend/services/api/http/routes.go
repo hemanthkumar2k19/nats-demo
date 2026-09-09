@@ -13,7 +13,6 @@ func RegisterJobRoutes(router *gin.Engine, h *JobHandler) {
 	router.POST("/jobs", h.SubmitJob)
 	router.POST("/jobs/schedule", h.ScheduleJob)
 	router.POST("/jobs/validate", h.ValidateJob)
-	router.GET("/jobs", h.ListJobs)
 	router.GET("/jobs/:job_id", h.GetJob)
 	router.POST("/jobs/queue", h.SubmitQueueJobs)
 	router.POST("/jobs/stream", h.SubmitStreamJobs)

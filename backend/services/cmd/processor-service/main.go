@@ -79,7 +79,7 @@ func (a *App) Init() error {
 	a.eventTracker = NewEventTracker(50)
 
 	// Initialize OpenTelemetry metric pipeline for processor-service
-	otelShutdown, err := telemetry.Init(context.Background(), "processor-service", a.cfg.OtelEndpoint, a.cfg.OtelInsecure)
+	otelShutdown, err := telemetry.Init(context.Background(), "processor-service", a.cfg.OtelEndpoint, a.cfg.OtelInsecure, a.cfg.EnableOtelMetrics, a.cfg.EnableOtelTraces)
 	if err != nil {
 		log.Printf("[Init] Telemetry warning: %v", err)
 	}

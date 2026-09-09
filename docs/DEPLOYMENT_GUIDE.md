@@ -19,9 +19,9 @@ The NATS message broker and observability stack are run via Docker.
 
 ### Configuration (`deploy/docker-compose.yaml`)
 The compose configuration starts:
-1. **NATS Server (`nats`)**: Runs official NATS image, exposes port `4222` (client connection), port `8222` (monitoring server), and maps a local volume `nats-data` to `/data` for JetStream persistence and file logging (`/data/nats.log`).
+1. **NATS Server (`nats`)**: Runs official NATS image, exposes port `4222` (client connection), port `8222` (monitoring server), and maps a local volume `nats-data` to `/data` for JetStream persistence. Outputs logs directly to container standard output (`docker logs nats`).
 2. **NATS Prometheus Exporter (`nats-exporter`)**: Exposes the complete NATS monitoring metrics surface on port `7777` (`/metrics`), scraping NATS port `8222` with `-varz`, `-connz`, `-connz_detailed`, `-subz`, `-routez`, `-gatewayz`, `-leafz`, `-accountz`, `-accstatz`, `-healthz`, `-jsz=all`.
-3. **NATS Log Collector (`nats-log-collector`)**: Lightweight Fluent Bit container reading `/data/nats.log` from the shared volume and shipping structured logs to Loki (`:3100`) with standard labels (`service="nats"`, `server="nats"`, `cluster="nats-demo"`).
+3. **NATS Log Collector (`nats-log-collector`)** *(Optional - Commented Out)*: Lightweight Fluent Bit container reading `/data/nats.log` from the shared volume and shipping structured logs to Loki (`:3100`). Can be re-enabled in `docker-compose.yaml` and `nats.conf`.
 4. **Grafana OTEL-LGTM (`otel-lgtm`)**: Unified local observability stack combining OpenTelemetry Collector (`:4317` gRPC / `:4318` HTTP), Prometheus (`:9090`), Loki (`:3100`), Tempo (`:3200` / OTLP `:4317`), and Grafana (`:3000`). Pre-provisioned with the `NATS Platform Demo - Observability (LGTM)` dashboard, Loki log queries, and Tempo distributed trace explorer.
 
 ### Command to Start:

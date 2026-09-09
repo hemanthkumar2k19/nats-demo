@@ -13,11 +13,10 @@ import (
 
 	apihttp "nats-demo/control/api/http"
 	"nats-demo/control/internal/activity"
-	"nats-demo/control/internal/events"
 	"nats-demo/control/internal/config"
+	"nats-demo/control/internal/events"
 	"nats-demo/control/internal/messaging"
 	"nats-demo/control/internal/natsclient"
-	"nats-demo/control/internal/telemetry"
 
 	"github.com/gin-gonic/gin"
 	"github.com/nats-io/nats.go"
@@ -36,7 +35,6 @@ type App struct {
 	advisoryListener *events.AdvisoryListener
 	sysClient        *natsclient.Client
 	jobServiceURL    string
-	otelShutdown     func(context.Context) error
 }
 
 // Init loads configuration, establishes connections, and configures routing.
@@ -53,13 +51,6 @@ func (a *App) Init() error {
 	}
 
 	log.Printf("[Init] Loaded configuration: NATS_URL=%s, USER=%s, PORT=%s, JOB_SERVICE_URL=%s", a.cfg.NATSURL, a.cfg.NATSUser, a.cfg.Port, a.jobServiceURL)
-
-	// Initialize OpenTelemetry metric pipeline for demo-control-service
-	otelShutdown, err := telemetry.Init(context.Background(), "demo-control-service", a.cfg.OtelEndpoint, a.cfg.OtelInsecure)
-	if err != nil {
-		log.Printf("[Init] Telemetry warning: %v", err)
-	}
-	a.otelShutdown = otelShutdown
 
 	client, err := natsclient.ConnectWithAuth(a.cfg.NATSURL, a.cfg.NATSUser, a.cfg.NATSPassword)
 	if err != nil {
@@ -177,11 +168,11 @@ func (a *App) Run() error {
 			log.Printf("[Run] Warning: failed to connect to SYS account: %v", err)
 		}
 	}
-	a.advisoryListener = events.NewAdvisoryListener(advisoryConn)
+	a.advisoryListener = events.NewAdvisoryListener(advisoryConn, a.cfg.EnableNatsEvents)
 	if err := a.advisoryListener.Start(); err != nil {
 		log.Printf("[Run] Warning: failed to start advisory listener: %v", err)
 	} else {
-		log.Println("[Run] Started NATS advisory listener ($SYS and $JS.EVENT.ADVISORY.>)")
+		log.Printf("[Run] Initialized NATS advisory listener ($SYS and $JS.EVENT.ADVISORY.>) | ENABLE_NATS_EVENTS=%t", a.cfg.EnableNatsEvents)
 	}
 
 	serverErrors := make(chan error, 1)
@@ -216,7 +207,7 @@ func (a *App) Stop() error {
 	}
 
 	if a.lifecycleSub != nil {
-		if err := a.lifecycleSub.Unsubscribe(); err != nil && firstErr == nil {
+		if err := a.lifecycleSub.Unsubscribe(); err != nil {
 			firstErr = err
 		}
 	}
@@ -245,12 +236,6 @@ func (a *App) Stop() error {
 
 	if a.sysClient != nil {
 		a.sysClient.Close()
-	}
-
-	if a.otelShutdown != nil {
-		if err := a.otelShutdown(ctx); err != nil && firstErr == nil {
-			firstErr = err
-		}
 	}
 
 	return firstErr

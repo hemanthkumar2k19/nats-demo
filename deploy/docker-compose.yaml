@@ -15,62 +15,62 @@ services:
     networks:
       - nats-net
     
-  nats-exporter:
-    image: docker.io/natsio/prometheus-nats-exporter:latest
-    container_name: nats-exporter
-    command:
-      - "-varz"
-      - "-connz"
-      - "-connz_detailed"
-      - "-subz"
-      - "-routez"
-      - "-gatewayz"
-      - "-leafz"
-      - "-accountz"
-      - "-accstatz"
-      - "-healthz"
-      - "-jsz=all"
-      - "http://nats:8222"
-    ports:
-      - "7777:7777"
-    depends_on:
-      - nats
-    networks:
-      - nats-net
+  # nats-exporter:
+  #   image: docker.io/natsio/prometheus-nats-exporter:latest
+  #   container_name: nats-exporter
+  #   command:
+  #     - "-varz"
+  #     - "-connz"
+  #     - "-connz_detailed"
+  #     - "-subz"
+  #     - "-routez"
+  #     - "-gatewayz"
+  #     - "-leafz"
+  #     - "-accountz"
+  #     - "-accstatz"
+  #     - "-healthz"
+  #     - "-jsz=all"
+  #     - "http://nats:8222"
+  #   ports:
+  #     - "7777:7777"
+  #   depends_on:
+  #     - nats
+  #   networks:
+  #     - nats-net
 
-  nats-log-collector:
-    image: docker.io/fluent/fluent-bit:latest
-    container_name: nats-log-collector
-    volumes:
-      - nats-data:/data:ro
-      - ./lgtm/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
-    depends_on:
-      - nats
-      - otel-lgtm
-    networks:
-      - nats-net
+#  nats-log-collector:
+#    image: docker.io/fluent/fluent-bit:latest
+#    container_name: nats-log-collector
+#    volumes:
+#      - nats-data:/data:ro
+#      - ./lgtm/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+#    depends_on:
+#      - nats
+#      - otel-lgtm
+#    networks:
+#      - nats-net
 
-  otel-lgtm:
-    image: docker.io/grafana/otel-lgtm:latest
-    container_name: otel-lgtm
-    ports:
-      - "3000:3000"
-      - "3100:3100"
-      - "4317:4317"
-      - "4318:4318"
-      - "9090:9090"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - ./lgtm/prometheus.yaml:/otel-lgtm/prometheus.yaml:ro
-      - ./lgtm/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - ./lgtm/grafana/provisioning:/etc/grafana/provisioning:ro
-    depends_on:
-      - nats
-    networks:
-      - nats-net
+  # otel-lgtm:
+  #   image: docker.io/grafana/otel-lgtm:latest
+  #   container_name: otel-lgtm
+  #   ports:
+  #     - "3000:3000"
+  #     - "3100:3100"
+  #     - "4317:4317"
+  #     - "4318:4318"
+  #     - "9090:9090"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_USER=admin
+  #     - GF_SECURITY_ADMIN_PASSWORD=admin
+  #     - GF_USERS_ALLOW_SIGN_UP=false
+  #   volumes:
+  #     - ./lgtm/prometheus.yaml:/otel-lgtm/prometheus.yaml:ro
+  #     - ./lgtm/grafana/dashboards:/var/lib/grafana/dashboards:ro
+  #     - ./lgtm/grafana/provisioning:/etc/grafana/provisioning:ro
+  #   depends_on:
+  #     - nats
+  #   networks:
+  #     - nats-net
 
 volumes:
   nats-data:

@@ -52,7 +52,7 @@ func (a *App) Init() error {
 	log.Printf("[Init] Loaded configuration: NATS_URL=%s, USER=%s, PORT=%s", a.cfg.NATSURL, a.cfg.NATSUser, a.port)
 
 	// Initialize OpenTelemetry metric and trace pipeline for job-service
-	otelShutdown, err := telemetry.Init(context.Background(), "job-service", a.cfg.OtelEndpoint, a.cfg.OtelInsecure)
+	otelShutdown, err := telemetry.Init(context.Background(), "job-service", a.cfg.OtelEndpoint, a.cfg.OtelInsecure, a.cfg.EnableOtelMetrics, a.cfg.EnableOtelTraces)
 	if err != nil {
 		log.Printf("[Init] Telemetry warning: %v", err)
 	}
@@ -123,7 +123,7 @@ func (a *App) Stop() error {
 	var firstErr error
 
 	if a.httpServer != nil {
-		if err := a.httpServer.Shutdown(ctx); err != nil && firstErr == nil {
+		if err := a.httpServer.Shutdown(ctx); err != nil {
 			firstErr = err
 		}
 	}
