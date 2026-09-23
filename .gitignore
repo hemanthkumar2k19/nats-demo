@@ -1,0 +1,31 @@
+# ==========================================
+# NATS & Docker Runtime Data
+# ==========================================
+# Exclude dynamic data mounted into containers
+**/data/
+*.log
+
+# ==========================================
+# Environment & Secret Overrides
+# ==========================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+
+# ==========================================
+# Operating System & IDE Files
+# ==========================================
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
