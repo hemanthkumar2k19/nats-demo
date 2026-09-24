@@ -20,6 +20,15 @@ All notable changes to the NATS reference evaluation platform will be documented
 - **Reason:** Provide a clean, compact, developer-friendly guide focusing on essential connectivity patterns across NATS Conn and JetStream.
 - **Affected Area:** `docs/developer-docs/connectivity.md`
 
+## [2026-09-24] Add Core NATS Usage Patterns Guide
+
+- **Change:** Created `docs/developer-docs/usage-patterns/core-nats.md` structured into 3 distinct parts: 1) Publishing Patterns, 2) Subscribing Patterns & Lifecycle, and 3) Architectural Messaging Patterns.
+- **Reason:** Organize each NATS SDK capability into an independent, scannable guide with point-wise generic descriptions and Go SDK examples.
+- **Affected Area:** `docs/developer-docs/usage-patterns/core-nats.md`
+
+
+
+
 
 
 
