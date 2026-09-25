@@ -4,9 +4,9 @@ This guide details Core NATS features across three core categories: Publishing P
 
 ---
 
-## Part 1: Publishing Patterns
+## 1. Publishing Patterns
 
-### 1. Simple Publish (`Publish`)
+### 1.1 Simple Publish
 - **Fire-and-Forget**: Sends raw byte payload asynchronously to a subject.
 - **At-Most-Once**: Message is delivered to active subscribers; unhandled messages are discarded.
 
@@ -17,7 +17,7 @@ err := nc.Publish("orders.created", []byte(`{"order_id": "ORD-1001"}`))
 
 ---
 
-### 2. Publish with Reply Subject (`PublishRequest`)
+### 1.2 Publish with Reply Subject
 - **Explicit Reply Routing**: Attaches a custom reply subject string to the published message payload.
 - **Custom Response Paths**: Allows consumers to reply to a designated subject specified by publisher.
 
@@ -28,8 +28,8 @@ err := nc.PublishRequest("orders.query", "orders.responses.custom", []byte(`{"or
 
 ---
 
-### 3. Structured Message Publish (`PublishMsg`)
-- **Metadata Support**: Sends a structured `nats.Msg` object containing custom headers (key-value metadata).
+### 1.3 Structured Message Publish
+- **Metadata Support**: Sends a structured message object containing custom headers (key-value metadata).
 - **Control Headers**: Enables tracing, correlation IDs, and content-type metadata.
 
 ```go
@@ -44,7 +44,7 @@ err := nc.PublishMsg(msg)
 
 ---
 
-### 4. Synchronous Request (`Request`)
+### 1.4 Synchronous Request
 - **Synchronous Request-Reply**: Sends request payload and blocks waiting for a single response.
 - **Automatic Inbox**: Automatically handles inbox creation, timeout enforcement, and cleanup.
 
@@ -58,8 +58,8 @@ if err == nil {
 
 ---
 
-### 5. Structured Request (`RequestMsg`)
-- **Headers in Requests**: Sends a structured `nats.Msg` with custom headers as a request.
+### 1.5 Structured Request
+- **Headers in Requests**: Sends a structured message with custom headers as a request.
 - **Response Headers**: Returns response message including headers sent back by responder.
 
 ```go
@@ -74,7 +74,7 @@ replyMsg, err := nc.RequestMsg(reqMsg, 2*time.Second)
 
 ---
 
-### 6. Outbound Buffer Flush (`Flush`)
+### 1.6 Outbound Buffer Flush
 - **Socket Synchronization**: Flushes outbound client message buffer to network socket.
 - **Delivery Verification**: Blocks until server acknowledges receipt of buffered data.
 
@@ -85,10 +85,10 @@ err := nc.FlushTimeout(2 * time.Second)
 
 ---
 
-## Part 2: Subscribing - Patterns and Lifecycle
+## 2. Subscribing - Patterns and Lifecycle
 
-### 1. Asynchronous Callback Subscription (`Subscribe`)
-- **Non-Blocking Callback**: Spawns an internal background goroutine to execute callback for each message.
+### 2.1 Asynchronous Callback Subscription
+- **Non-Blocking Callback**: Spawns an internal background handler to execute callback for each message.
 - **Event-Driven**: Ideal for continuous event processing.
 
 ```go
@@ -100,8 +100,8 @@ sub, err := nc.Subscribe("orders.*", func(msg *nats.Msg) {
 
 ---
 
-### 2. Synchronous Pull Subscription (`SubscribeSync`)
-- **Blocking Pull Model**: Returns a subscription where application manually pulls messages via `NextMsg`.
+### 2.2 Synchronous Pull Subscription
+- **Blocking Pull Model**: Returns a subscription where application manually pulls messages using a timeout parameter.
 - **Flow Control**: Application controls message consumption rate using timeout limits.
 
 ```go
@@ -117,9 +117,9 @@ if err == nil {
 
 ---
 
-### 3. Channel Subscription (`ChanSubscribe`)
-- **Channel Delivery**: Delivers incoming `*nats.Msg` directly into a Go channel.
-- **Concurrency Integration**: Integrates directly with Go worker pools and `select` blocks.
+### 2.3 Channel Subscription
+- **Channel Delivery**: Delivers incoming messages directly into an application message channel.
+- **Concurrency Integration**: Integrates directly with worker queues and concurrent select loops.
 
 ```go
 // Channel-based subscription with buffered channel
@@ -133,12 +133,12 @@ log.Printf("Channel received: %s", string(msg.Data))
 
 ---
 
-### 4. Subscription Lifecycle & Flow Control
+### 2.4 Subscription Lifecycle & Flow Control
 
-- **Auto-Unsubscribe (`AutoUnsubscribe`)**: Automatically unsubscribes after receiving `maxMsgs` messages.
-- **Unsubscribe (`Unsubscribe`)**: Immediately cancels subscription interest on server and client.
-- **Subscription Drain (`Drain`)**: Gracefully processes in-flight buffered messages before closing subscription.
-- **Slow Consumer Protection (`SetPendingLimits`)**: Binds maximum pending message/byte buffers to prevent memory growth.
+- **Auto-Unsubscribe**: Automatically unsubscribes after receiving a maximum message limit.
+- **Unsubscribe**: Immediately cancels subscription interest on server and client.
+- **Subscription Drain**: Gracefully processes in-flight buffered messages before closing subscription.
+- **Slow Consumer Protection**: Binds maximum pending message and byte buffers to prevent memory growth.
 
 ```go
 sub, _ := nc.Subscribe("telemetry.*", func(msg *nats.Msg) {})
@@ -158,9 +158,9 @@ sub.Unsubscribe()
 
 ---
 
-## Part 3: Architectural Messaging Patterns
+## 3. Architectural Messaging Patterns
 
-### 1. Publish / Subscribe (PubSub)
+### 3.1 Publish / Subscribe (PubSub)
 - **Asynchronous 1-to-N Pattern**: Publishers send messages to subject names without knowing active subscribers.
 - **Real-Time Delivery**: Active subscribers receive messages published to matching subjects in real time.
 - **At-Most-Once Delivery**: Messages published without active subscribers are not stored or replayed.
@@ -196,9 +196,9 @@ func main() {
 
 ---
 
-### 2. Request / Response
+### 3.2 Request / Response
 - **Point-to-Point Pattern**: Requester sends a message and waits for a response from a service.
-- **Inbox Routing**: Requester attaches a unique reply subject (`_INBOX.<id>`) to the request.
+- **Inbox Routing**: Requester attaches a unique reply subject to the request.
 - **Direct Reply**: Responders publish replies directly to the inbox subject for delivery back to requester.
 
 ```go
@@ -236,7 +236,7 @@ func main() {
 
 ---
 
-### 3. Scatter and Gather
+### 3.3 Scatter and Gather
 - **1-to-N Query Pattern**: Requester broadcasts a request to multiple worker services simultaneously.
 - **Inbox Aggregation**: Requester attaches a single reply inbox to aggregate incoming responses.
 - **Bounded Response Collection**: Requester gathers responses until expected count or timeout deadline is reached.
@@ -301,7 +301,7 @@ func main() {
 
 ---
 
-### 4. Queue Groups (Load Balancing)
+### 3.4 Queue Groups (Load Balancing)
 - **Load Balanced Delivery**: Subscribers sharing a Queue Group Name form a competing consumer pool.
 - **1-of-N Distribution**: NATS server routes each message on the subject to exactly one group member.
 - **Coexistence**: Non-queue subscribers on the same subject still receive their own copy of every message.
@@ -337,7 +337,7 @@ func main() {
 
 	// 2. Publish 6 tasks (balanced across workers)
 	for t := 1; t <= 6; t++ {
-		nc.Publish(subject, []byte(fmt.Sprintf(`{"task_id": "TASK-%d"}`, t)))
+		nc.Publish(subject, []byte(fmt.Sprintf(`{"task_id": "TASK-%d"}`)))
 	}
 
 	nc.Flush()

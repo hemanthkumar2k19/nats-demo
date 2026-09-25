@@ -4,7 +4,7 @@ This guide covers establishing NATS server connections, configuring connection o
 
 ---
 
-## Part 1: Core NATS Connection (`nats.Conn`)
+## Part 1: Core NATS Connection
 
 ### 1. Basic Connection and Graceful Closing
 
@@ -178,7 +178,7 @@ func TestConnectivity(nc *nats.Conn) {
 
 ---
 
-## Part 2: JetStream Connection (`jetstream.JetStream`)
+## Part 2: JetStream Connection
 
 ### 1. Connection and Graceful Closing
 

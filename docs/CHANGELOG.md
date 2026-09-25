@@ -22,9 +22,22 @@ All notable changes to the NATS reference evaluation platform will be documented
 
 ## [2026-09-24] Add Core NATS Usage Patterns Guide
 
-- **Change:** Created `docs/developer-docs/usage-patterns/core-nats.md` structured into 3 distinct parts: 1) Publishing Patterns, 2) Subscribing Patterns & Lifecycle, and 3) Architectural Messaging Patterns.
-- **Reason:** Organize each NATS SDK capability into an independent, scannable guide with point-wise generic descriptions and Go SDK examples.
+- **Change:** Created `docs/developer-docs/usage-patterns/core-nats.md` structured into 3 distinct parts with language-agnostic headings and descriptions alongside Go SDK code implementations.
+- **Reason:** Maintain consistent language-agnostic documentation standards across all usage pattern guides.
 - **Affected Area:** `docs/developer-docs/usage-patterns/core-nats.md`
+
+
+## [2026-09-25] Add Advanced Key-Value and Object Store Features to Store Guide
+
+- **Change:** Updated `docs/developer-docs/usage-patterns/store.md` with Key Expiration (TTL), Tombstone Cleanup, and Object Symbolic Links with language-agnostic headings/descriptions and Go SDK code examples.
+- **Reason:** Expand JetStream Store developer guide to cover transient state TTL, tombstone storage reclamation, and zero-byte object aliases.
+- **Affected Area:** `docs/developer-docs/usage-patterns/store.md`
+
+
+
+
+
+
 
 
 
