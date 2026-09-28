@@ -2,6 +2,30 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-09-28] Add NATS Metrics Architecture & Strategy Guide
+
+- **Change:** Created `docs/developer-guide/observability/metrics.md` establishing the 3-tier enterprise metrics selection mental model (visualized via Mermaid flowchart: Native HTTP Endpoints = Master Catalogue -> NATS Surveyor = Primary Cluster Metrics -> Prometheus NATS Exporter = Per-Node Coverage Fallback), illustrating infrastructure and application metrics telemetry flow via a topological Mermaid diagram (distinguishing per-node Prometheus Exporters from the centralized per-cluster NATS Surveyor), and providing language-agnostic conceptual guidelines alongside Go OpenTelemetry metrics code examples.
+- **Reason:** Provide developer documentation for evaluating NATS metrics collection strategies and OpenTelemetry application metrics instrumentation.
+- **Affected Area:** `docs/developer-guide/observability/metrics.md`
+
+## [2026-09-28] Add NATS Event Observability & Advisory Guide
+
+- **Change:** Created `docs/developer-guide/observability/events.md` detailing event observability concepts, differentiating application domain events from NATS advisories (`$SYS.>` and `$JS.EVENT.ADVISORY.>`), illustrating telemetry flow via FluentBit `nats` input plugin subscribing to `$JS.EVENT.ADVISORY.STREAM.>` on port 4222 (including a link to official [Fluent Bit NATS Input Plugin Documentation](https://docs.fluentbit.io/manual/pipeline/inputs/nats)), and providing language-agnostic guidelines and Go SDK code examples for ingesting NATS advisories.
+- **Reason:** Provide developer documentation for evaluating NATS event observability and JetStream system advisories.
+- **Affected Area:** `docs/developer-guide/observability/events.md`
+
+## [2026-09-28] Refactor NATS Logging Guide & Section Layout
+
+- **Change:** Updated `docs/developer-guide/observability/logs.md` to relocate NATS Server Logging Configuration (`nats.conf`) to the start of Section 4 ("Establishing Correlation Between NATS Logs and Trace Context"), establishing a logical progression from general server log settings to header-based protocol tracing mechanics.
+- **Reason:** Align server logging configuration with log-to-trace correlation setup.
+- **Affected Area:** `docs/developer-guide/observability/logs.md`
+
+## [2026-09-28] Add NATS Logging Architecture & Strategy Guide
+
+- **Change:** Created `docs/developer-guide/observability/logs.md` detailing NATS Server log export options (stdout/stderr container log harvesting, dedicated file log rotation, native syslog output), evaluating the enterprise recommended stdout/filelog pattern, detailing application-side OTLP log instrumentation, and demonstrating trace-to-log correlation via Go `slog` OpenTelemetry context extraction.
+- **Reason:** Provide reference documentation for NATS server logging strategies and application trace-log correlation.
+- **Affected Area:** `docs/developer-guide/observability/logs.md`
+
 ## [2026-09-28] Add Unified Tracing Execution Lifecycle to Tracing Guide
 
 - **Change:** Refactored `docs/developer-guide/observability/tracing.md` to center around the **Two Universal Tracing Operations** (`InstrumentOutboundMessage` for outbound context injection on publisher side and `InstrumentInboundMessage` for inbound context extraction on subscriber side), eliminating redundant code blocks across individual Core NATS and JetStream transport patterns while maintaining concise workflow applications and refining Section 7 matrix to map patterns directly to universal operations and OpenTelemetry `SpanKind` definitions.
