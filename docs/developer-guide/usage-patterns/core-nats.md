@@ -6,13 +6,22 @@ This guide details Core NATS features across three core categories: Publishing P
 
 ## 1. Publishing Patterns
 
-### 1.1 Simple Publish
-- **Fire-and-Forget**: Sends raw byte payload asynchronously to a subject.
+### 1.1 Publish
+- **Fire-and-Forget**: Sends raw byte payload or structured message asynchronously to a subject.
 - **At-Most-Once**: Message is delivered to active subscribers; unhandled messages are discarded.
+- **Simple vs Structured**: Simple publish accepts a byte payload directly (`nc.Publish`), while structured publish accepts a `nats.Msg` struct allowing headers and reply subjects (`nc.PublishMsg`). Functionally both perform an asynchronous publish.
 
 ```go
-// Simple Publish (fire-and-forget)
+// 1. Simple Publish (fire-and-forget raw payload)
 err := nc.Publish("orders.created", []byte(`{"order_id": "ORD-1001"}`))
+
+// 2. Structured Publish (with custom headers metadata)
+msg := &nats.Msg{
+	Subject: "orders.created",
+	Header:  nats.Header{"Correlation-ID": []string{"CORR-9988"}},
+	Data:    []byte(`{"order_id": "ORD-1001"}`),
+}
+err = nc.PublishMsg(msg)
 ```
 
 ---
@@ -28,53 +37,32 @@ err := nc.PublishRequest("orders.query", "orders.responses.custom", []byte(`{"or
 
 ---
 
-### 1.3 Structured Message Publish
-- **Metadata Support**: Sends a structured message object containing custom headers (key-value metadata).
-- **Control Headers**: Enables tracing, correlation IDs, and content-type metadata.
+### 1.3 Request (Synchronous)
+- **Synchronous Request-Reply**: Sends request payload and blocks waiting for a single response up to a specified timeout.
+- **Automatic Inbox & Reply Headers**: `nc.Request` handles inbox creation and timeout enforcement for raw byte payloads. `nc.RequestMsg` allows sending structured headers with the request and receiving headers back in the reply message.
 
 ```go
-// Publish structured message with headers
-msg := &nats.Msg{
-	Subject: "orders.created",
-	Header:  nats.Header{"Correlation-ID": []string{"CORR-9988"}},
-	Data:    []byte(`{"order_id": "ORD-1001"}`),
-}
-err := nc.PublishMsg(msg)
-```
-
----
-
-### 1.4 Synchronous Request
-- **Synchronous Request-Reply**: Sends request payload and blocks waiting for a single response.
-- **Automatic Inbox**: Automatically handles inbox creation, timeout enforcement, and cleanup.
-
-```go
-// Send request and block for response up to 2 seconds
+// 1. Normal Request (raw payload and reply)
 reply, err := nc.Request("service.inventory.check", []byte(`{"item_id": "ITEM-42"}`), 2*time.Second)
 if err == nil {
 	log.Printf("Received reply: %s", string(reply.Data))
 }
-```
 
----
-
-### 1.5 Structured Request
-- **Headers in Requests**: Sends a structured message with custom headers as a request.
-- **Response Headers**: Returns response message including headers sent back by responder.
-
-```go
-// Send request with headers and wait for response
+// 2. Structured Request (with request headers and response headers)
 reqMsg := &nats.Msg{
 	Subject: "service.inventory.check",
 	Header:  nats.Header{"Trace-ID": []string{"TRACE-1234"}},
 	Data:    []byte(`{"item_id": "ITEM-42"}`),
 }
 replyMsg, err := nc.RequestMsg(reqMsg, 2*time.Second)
+if err == nil {
+	log.Printf("Received structured reply: %s", string(replyMsg.Data))
+}
 ```
 
 ---
 
-### 1.6 Outbound Buffer Flush
+### 1.4 Outbound Buffer Flush
 - **Socket Synchronization**: Flushes outbound client message buffer to network socket.
 - **Delivery Verification**: Blocks until server acknowledges receipt of buffered data.
 
@@ -87,15 +75,26 @@ err := nc.FlushTimeout(2 * time.Second)
 
 ## 2. Subscribing - Patterns and Lifecycle
 
-### 2.1 Asynchronous Callback Subscription
-- **Non-Blocking Callback**: Spawns an internal background handler to execute callback for each message.
-- **Event-Driven**: Ideal for continuous event processing.
+### 2.1 Subscription Lifecycle & Flow Control
+- **Auto-Unsubscribe**: Automatically unsubscribes after receiving a maximum message limit.
+- **Slow Consumer Protection**: Binds maximum pending message and byte buffers (`SetPendingLimits`) to prevent memory growth.
+- **Subscription Drain**: Gracefully processes in-flight buffered messages before closing subscription.
+- **Immediate Unsubscribe**: Immediately cancels subscription interest on server and client.
 
 ```go
-// Asynchronous subscription using callback
-sub, err := nc.Subscribe("orders.*", func(msg *nats.Msg) {
-	log.Printf("Received on [%s]: %s", msg.Subject, string(msg.Data))
-})
+sub, _ := nc.Subscribe("telemetry.*", func(msg *nats.Msg) {})
+
+// 1. Auto-unsubscribe after receiving 100 messages
+sub.AutoUnsubscribe(100)
+
+// 2. Set slow consumer buffer limits (max 1000 msgs, 8MB)
+sub.SetPendingLimits(1000, 8*1024*1024)
+
+// 3. Graceful subscription drain
+sub.Drain()
+
+// 4. Immediate unsubscribe
+sub.Unsubscribe()
 ```
 
 ---
@@ -117,7 +116,20 @@ if err == nil {
 
 ---
 
-### 2.3 Channel Subscription
+### 2.3 Asynchronous Callback Subscription
+- **Non-Blocking Callback**: Spawns an internal background handler to execute callback for each message.
+- **Event-Driven**: Ideal for continuous event processing.
+
+```go
+// Asynchronous subscription using callback
+sub, err := nc.Subscribe("orders.*", func(msg *nats.Msg) {
+	log.Printf("Received on [%s]: %s", msg.Subject, string(msg.Data))
+})
+```
+
+---
+
+### 2.4 Channel Subscription
 - **Channel Delivery**: Delivers incoming messages directly into an application message channel.
 - **Concurrency Integration**: Integrates directly with worker queues and concurrent select loops.
 
@@ -129,31 +141,6 @@ sub, err := nc.ChanSubscribe("orders.*", msgChan)
 // Consume from channel
 msg := <-msgChan
 log.Printf("Channel received: %s", string(msg.Data))
-```
-
----
-
-### 2.4 Subscription Lifecycle & Flow Control
-
-- **Auto-Unsubscribe**: Automatically unsubscribes after receiving a maximum message limit.
-- **Unsubscribe**: Immediately cancels subscription interest on server and client.
-- **Subscription Drain**: Gracefully processes in-flight buffered messages before closing subscription.
-- **Slow Consumer Protection**: Binds maximum pending message and byte buffers to prevent memory growth.
-
-```go
-sub, _ := nc.Subscribe("telemetry.*", func(msg *nats.Msg) {})
-
-// 1. Auto-unsubscribe after receiving 100 messages
-sub.AutoUnsubscribe(100)
-
-// 2. Set slow consumer buffer limits (max 1000 msgs, 8MB)
-sub.SetPendingLimits(1000, 8*1024*1024)
-
-// 3. Graceful subscription drain
-sub.Drain()
-
-// 4. Immediate unsubscribe
-sub.Unsubscribe()
 ```
 
 ---

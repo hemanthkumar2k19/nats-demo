@@ -9,7 +9,8 @@ import (
 )
 
 func main() {
-	nc, err := natsclient.ConnectWithOptions()
+	// nc, err := natsclient.AuthUsernamePasswordConnect("admin", "pwd", "localhost:4222")
+	nc, err := natsclient.AuthTokenConnect("88eab73c32486334dbad5bad67f1a6adabdc5e8eecbf38c4b9e3b6dc3cda6fe0", "nats://localhost:4222")
 	if err != nil {
 		log.Fatalf("Failed to initialize NATS Client: %v", err)
 	}

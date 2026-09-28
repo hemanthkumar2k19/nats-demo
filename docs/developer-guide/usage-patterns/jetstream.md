@@ -7,41 +7,45 @@ This guide details JetStream operations across three core categories: Publishing
 ## 1. Publishing Patterns
 
 ### 1.1 Synchronous Publish
-- **Stream Persistence**: Sends a message payload to a JetStream subject and blocks for server stream acknowledgment.
-- **Publish Acknowledgment**: Returns metadata containing target stream name, sequence number, and duplicate status.
+- **Stream Persistence**: Sends a message payload to a JetStream subject and blocks for server stream acknowledgment (`*jetstream.PubAck`).
+- **Raw vs Structured Payload**: Supports publishing raw byte payloads (`js.Publish`) or structured messages (`js.PublishMsg`) carrying custom headers and metadata.
+- **Message Deduplication (Optional)**: Attaches a unique message ID header (`Nats-Msg-Id`) to eliminate duplicate message processing during retries or network failures. Deduplication is optional and only functions when the `Nats-Msg-Id` header key is explicitly provided on the message payload.
+- **Optimistic Concurrency Assertions**: Supports sequence and stream assertions (`ExpectStream`, `ExpectLastMsgID`, `ExpectLastSequence`).
 
 ```go
-// Synchronous publish to JetStream stream
+// 1. Simple Synchronous Publish (raw payload)
 ack, err := js.Publish(ctx, "orders.created", []byte(`{"order_id": "ORD-1001"}`))
 if err == nil {
 	log.Printf("Published to stream %s [seq=%d]", ack.Stream, ack.Sequence)
 }
-```
 
----
-
-### 1.2 Publish with Headers & Deduplication
-- **Deduplication**: Attaches a unique message ID header (`Nats-Msg-Id`) to eliminate duplicate message processing during retries or network failures.
-- **Expectation Assertions**: Supports sequence and stream assertions (`ExpectStream`, `ExpectLastMsgID`, `ExpectLastSequence`) for optimistic concurrency.
-
-```go
-// Publish with deduplication ID and custom headers
+// 2. Structured Publish with Headers
 msg := &nats.Msg{
 	Subject: "orders.created",
 	Header: nats.Header{
-		"Nats-Msg-Id":    []string{"MSG-UNIQUE-1001"},
 		"Correlation-ID": []string{"CORR-9988"},
 	},
 	Data: []byte(`{"order_id": "ORD-1001"}`),
 }
-ack, err := js.PublishMsg(ctx, msg)
+ack, err = js.PublishMsg(ctx, msg)
+
+// 3. Publish with Message Deduplication (Optional: enabled by Nats-Msg-Id header)
+dedupMsg := &nats.Msg{
+	Subject: "orders.created",
+	Header: nats.Header{
+		"Nats-Msg-Id":    []string{"MSG-UNIQUE-1001"}, // Enables server deduplication window
+		"Correlation-ID": []string{"CORR-9988"},
+	},
+	Data: []byte(`{"order_id": "ORD-1001"}`),
+}
+ack, err = js.PublishMsg(ctx, dedupMsg)
 ```
 
 ---
 
-### 1.3 Asynchronous Publish
-- **High Throughput**: Non-blocking publish returning an asynchronous promise/future for high-concurrency publishing.
-- **Background Acknowledgment**: Allows the application to continue work while the JetStream server processes acknowledgments in the background.
+### 1.2 Asynchronous Publish
+- **High Throughput**: Non-blocking publish returning an asynchronous promise/future (`jetstream.PubAckFuture`) for high-concurrency publishing.
+- **Background Acknowledgment**: Allows application code to continue execution while the JetStream server processes acknowledgments asynchronously in the background.
 
 ```go
 // Non-blocking async publish
@@ -58,7 +62,7 @@ case err := <-futureAck.Err():
 
 ---
 
-### 1.4 Async Publish Completion
+### 1.3 Async Publish Completion
 - **Buffer Flushing**: Blocks until all in-flight asynchronous publishes are processed and acknowledged by the server.
 - **Zero Data Loss**: Ensures all pending async publishes complete before application shutdown.
 
@@ -110,20 +114,30 @@ cons, err := js.OrderedConsumer(ctx, "ORDERS", jetstream.OrderedConsumerConfig{
 ---
 
 #### 2.1.3 Consumer Lifecycle Management
-- **State Query**: Inspects consumer state, pending message count, and redelivery stats.
-- **Pause & Resume**: Temporarily halts message delivery to consumer.
-- **Deletion**: Deletes consumer state from server.
+- **State Query**: Inspects consumer state, pending message count, and redelivery stats (`cons.Info`).
+- **Pause & Resume**: Halts message delivery to consumer temporarily. Can be configured for automatic time-based resumption or logic-driven manual resumption.
+  - **Time-Based Pause**: Passes a future timestamp (`until time.Time`). Delivery automatically resumes when the timestamp is reached.
+  - **Logic-Driven Pause & Resume**: Pauses delivery during custom application conditions (e.g. downstream system degradation or maintenance) and calls `js.ResumeConsumer` when business logic conditions trigger recovery.
+- **Deletion**: Deletes consumer state permanently from the stream (`js.DeleteConsumer`).
 
 ```go
-// Query consumer status
+// 1. Query consumer status
 info, _ := cons.Info(ctx)
 log.Printf("Pending msgs: %d", info.NumPending)
 
-// Pause consumer delivery for 5 minutes
-_ = cons.Pause(ctx, time.Now().Add(5*time.Minute))
+// 2. Time-based Pause: delivery pauses automatically after 5 minutes
+_, _ = js.PauseConsumer(ctx, "ORDERS", "order-processor", time.Now().Add(5*time.Minute))
 
-// Delete consumer from stream
-_ = js.RemoveConsumer(ctx, "ORDERS", "order-processor")
+// 3. Logic-driven Pause: pause during custom logic condition and resume explicitly
+_, _ = js.PauseConsumer(ctx, "ORDERS", "order-processor", time.Now().Add(24*time.Hour))
+
+// ... When business logic condition triggers recovery ...
+
+// Resume consumer delivery explicitly via code logic
+_, _ = js.ResumeConsumer(ctx, "ORDERS", "order-processor")
+
+// 4. Delete consumer from stream
+_ = js.DeleteConsumer(ctx, "ORDERS", "order-processor")
 ```
 
 ---
