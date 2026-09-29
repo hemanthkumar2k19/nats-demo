@@ -2,6 +2,24 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-09-29] Convert Guides List to Matrix Table
+
+- **Change:** Converted the Guides list in `docs/temp.md` into a single consolidated Markdown table formatted with `Category`, `Guide`, `Status`, and `Owner` columns.
+- **Reason:** Improve document readability and tracking for NATS onboarding guides.
+- **Affected Area:** `docs/temp.md`
+
+## [2026-09-29] Add Distributed Tracing REST API and Service Layer
+
+- **Change:** Implemented W3C distributed trace propagation across HTTP REST API Layer (`services/api`), Publisher Service Layer (`services/publisher`), Consumer Subscriber (`services/consumer`), and core messaging operations (`services/messaging`). Encapsulated `InstrumentOutboundMessage` inside `messaging.PublishMsg` and `InstrumentInboundMessage` inside `messaging.Subscribe`. Configured OpenTelemetry `resource.WithAttributes` for `service.name` (`SERVICE_NAME` / `nats-tracing-demo`) in `services/telemetry/tracer.go`, and modularized runtime environment management into `services/config`.
+- **Reason:** Provide reference implementation demonstrating end-to-end distributed tracing across HTTP and Core NATS messaging layers with modular environment configuration.
+- **Affected Area:** `services/api`, `services/publisher`, `services/consumer`, `services/messaging`, `services/telemetry`, `services/config`, `services/main.go`, `services/go.mod`
+
+## [2026-09-29] Add NATS Security Overview Guide
+
+- **Change:** Refined `docs/developer-guide/security/overview.md` with architectural foundations covering the three core capabilities of NATS Security: Authentication (AuthN), Authorization (AuthZ), and Encryption. Grouped AuthN methods (Token, Username/Password, mTLS, NKey, JWT, Auth Callout), positioned Account Isolation under AuthZ alongside subject permissions, imports/exports, resource limits, and JetStream API permissions, and simplified Encryption to core mental boundaries (TLS/mTLS for data in transit and JetStream storage encryption for data at rest).
+- **Reason:** Provide clear, high-level reference documentation for evaluating NATS security capabilities without implementation clutter.
+- **Affected Area:** `docs/developer-guide/security/overview.md`
+
 ## [2026-09-28] Add NATS Metrics Architecture & Strategy Guide
 
 - **Change:** Created `docs/developer-guide/observability/metrics.md` establishing the 3-tier enterprise metrics selection mental model (visualized via Mermaid flowchart: Native HTTP Endpoints = Master Catalogue -> NATS Surveyor = Primary Cluster Metrics -> Prometheus NATS Exporter = Per-Node Coverage Fallback), illustrating infrastructure and application metrics telemetry flow via a topological Mermaid diagram (distinguishing per-node Prometheus Exporters from the centralized per-cluster NATS Surveyor), and providing language-agnostic conceptual guidelines alongside Go OpenTelemetry metrics code examples.

@@ -1,6 +1,8 @@
 package messaging
 
 import (
+	"context"
+	"services/telemetry"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -14,8 +16,20 @@ func PublishRequest(nc *nats.Conn, subject string, reply string, data []byte) er
 	return nc.PublishRequest(subject, reply, data)
 }
 
-func PublishMsg(nc *nats.Conn, msg *nats.Msg) error {
-	return nc.PublishMsg(msg)
+// PublishMsg instruments outbound trace context on nats.Msg and publishes via NATS.
+func PublishMsg(ctx context.Context, nc *nats.Conn, msg *nats.Msg) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	_, span := telemetry.InstrumentOutboundMessage(ctx, "nats.publish "+msg.Subject, msg)
+	defer span.End()
+
+	if err := nc.PublishMsg(msg); err != nil {
+		span.RecordError(err)
+		return err
+	}
+	return nil
 }
 
 func Request(nc *nats.Conn, subject string, data []byte, timeout time.Duration) (*nats.Msg, error) {
@@ -30,8 +44,21 @@ func FlushTimeout(nc *nats.Conn, timeout time.Duration) error {
 	return nc.FlushTimeout(timeout)
 }
 
-func Subscribe(nc *nats.Conn, subject string, handler nats.MsgHandler) (*nats.Subscription, error) {
-	return nc.Subscribe(subject, handler)
+// Subscribe wraps the handler with inbound trace context extraction.
+func Subscribe(ctx context.Context, nc *nats.Conn, subject string, handler nats.MsgHandler) (*nats.Subscription, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	tracedHandler := func(msg *nats.Msg) {
+		msgCtx, span := telemetry.InstrumentInboundMessage(ctx, "nats.process "+msg.Subject, msg.Header)
+		defer span.End()
+
+		_ = msgCtx
+		handler(msg)
+	}
+
+	return nc.Subscribe(subject, tracedHandler)
 }
 
 func SubscribeSync(nc *nats.Conn, subject string) (*nats.Subscription, error) {

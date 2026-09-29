@@ -97,37 +97,28 @@ Reference:
 
 # Guides
 
-## SRE Guides
-
-- NATS Fundamentals Guide
-- NATS Platform Architecture Guide
-- Deployment Architecture Guide
-- Observability Guide
-- Security Guide
-- Connectivity and Troubleshooting Guide
-
-## Developer Guides
-
-- NATS Fundamentals Guide
-- Local Setup Guide
-- Usage Patterns Guide
-- Application Messaging Requirements Guide
-
-## Enablement Guides
-
-- Application Onboarding / Request Guide
-- NATS Resource Provisioning Guide
-- Account Provisioning Guide
-- Application Identity & Access Guide
-- Subject Management Guide
-- Persistence / Stream Management Guide
-- Observability Enablement Guide
-- NATS Connectivity Details Guide
-
-## Application / Business Guides
-
-- NATS Adoption / Onboarding Guide
-- NATS Usage & Capability Guide
-- Application Security & Compliance Guide
-- Application Observability Expectations Guide
-- Application Lifecycle / Promotion Guide
+| Category | Guide | Status | Owner |
+|---|---|---|---|
+| SRE Guides | NATS Fundamentals Guide | Planned | SRE Team |
+| SRE Guides | NATS Platform Architecture Guide | Planned | SRE Team |
+| SRE Guides | Deployment Architecture Guide | Planned | SRE Team |
+| SRE Guides | Observability Guide | Planned | SRE Team |
+| SRE Guides | Security Guide | Planned | SRE Team |
+| SRE Guides | Connectivity and Troubleshooting Guide | Planned | SRE Team |
+| Developer Guides | NATS Fundamentals Guide | Planned | Dev Team / SRE |
+| Developer Guides | Local Setup Guide | Planned | Dev Team / SRE |
+| Developer Guides | Usage Patterns Guide | Planned | Dev Team / SRE |
+| Developer Guides | Application Messaging Requirements Guide | Planned | Dev Team |
+| Enablement Guides | Application Onboarding / Request Guide | Planned | Enablement Team |
+| Enablement Guides | NATS Resource Provisioning Guide | Planned | Enablement Team |
+| Enablement Guides | Account Provisioning Guide | Planned | Enablement Team |
+| Enablement Guides | Application Identity & Access Guide | Planned | Enablement Team |
+| Enablement Guides | Subject Management Guide | Planned | Enablement Team |
+| Enablement Guides | Persistence / Stream Management Guide | Planned | Enablement Team |
+| Enablement Guides | Observability Enablement Guide | Planned | Enablement Team |
+| Enablement Guides | NATS Connectivity Details Guide | Planned | Enablement Team |
+| Application / Business Guides | NATS Adoption / Onboarding Guide | Planned | App Team |
+| Application / Business Guides | NATS Usage & Capability Guide | Planned | App Team |
+| Application / Business Guides | Application Security & Compliance Guide | Planned | App Team |
+| Application / Business Guides | Application Observability Expectations Guide | Planned | App Team |
+| Application / Business Guides | Application Lifecycle / Promotion Guide | Planned | App Team |
