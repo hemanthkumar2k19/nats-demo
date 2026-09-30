@@ -467,265 +467,126 @@ Therefore, a timeout does **not necessarily mean that the message was not stored
 
 Where the SDK exposes a specific semantic error, applications should classify the error accordingly. Where the outcome cannot be determined, applications should treat it as an **unknown publish outcome** rather than assuming failure.
 
-#### Inspecting Errors in Go
-
-The Go client exposes standard NATS errors and JetStream-specific errors. Applications should prefer SDK-level semantic errors over interpreting raw JetStream API error codes.
-
-```go
-package main
-
-import (
-	"context"
-	"errors"
-	"fmt"
-	"log"
-
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
-)
-
-func handlePublishError(err error) {
-	if err == nil {
-		return
-	}
-
-	// Core NATS client errors
-	if errors.Is(err, nats.ErrMaxPayload) {
-		log.Println("Permanent: message exceeds the server max_payload limit")
-		return
-	}
-
-	if errors.Is(err, nats.ErrReconnectBufExceeded) {
-		log.Println("Client buffer limit exceeded while reconnecting")
-		return
-	}
-
-	// Request-Reply specific error
-	if errors.Is(err, nats.ErrNoResponders) {
-		log.Println("No active responder for the request subject")
-		return
-	}
-
-	// A timeout may represent an unknown outcome for a
-	// synchronous JetStream publish.
-	if errors.Is(err, nats.ErrTimeout) ||
-		errors.Is(err, context.DeadlineExceeded) {
-		log.Println("Publish acknowledgement was not received; outcome may be unknown")
-		return
-	}
-
-	// JetStream semantic errors
-	if errors.Is(err, jetstream.ErrStreamNotFound) {
-		log.Println("Permanent: target stream does not exist or is unavailable")
-		return
-	}
-
-	// Other JetStream or client errors
-	var jsErr jetstream.JetStreamError
-	if errors.As(err, &jsErr) {
-		if apiErr := jsErr.APIError(); apiErr != nil {
-			fmt.Printf(
-				"JetStream API error: code=%d status=%d description=%s\n",
-				apiErr.ErrorCode,
-				apiErr.Status,
-				apiErr.Description,
-			)
-		}
-
-		return
-	}
-
-	log.Printf("Unhandled NATS publish error: %v\n", err)
-}
-```
-
-> Raw JetStream API error codes may be useful when troubleshooting server responses, but application code should prefer SDK-provided semantic errors and publish results where available.
-
 #### Common NATS Error Reference
 
-| Error / Outcome                       | Source                | Classification      | Root Cause & Guidance                                                                                                                                                             |
-| :------------------------------------ | :-------------------- | :------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `nats.ErrNoResponders`                | Core Request-Reply    | No Responder        | No active responder exists for the request subject. Verify that the target service is running and subscribed.                                                                     |
-| `nats.ErrTimeout`                     | Core NATS / JetStream | Operation Timeout   | The operation did not complete within the applicable timeout. For a JetStream publish, the server-side outcome may be unknown.                                                    |
-| `nats.ErrMaxPayload`                  | Core NATS             | Permanent           | Message exceeds the configured `max_payload`. Reduce the message size or use an appropriate large-payload pattern.                                                                |
-| `nats.ErrReconnectBufExceeded`        | Core NATS             | Client Buffer Limit | The client reconnect buffer limit was exceeded while disconnected. The application should handle the rejected publish according to its delivery requirements.                     |
-| JetStream Publish Expectation Failure | JetStream             | State Conflict      | An expected stream state, such as the last sequence or last message ID, was not satisfied. Do not blindly retry; re-evaluate the expected stream state.                           |
-| `jetstream.ErrStreamNotFound`         | JetStream             | Configuration       | The target stream does not exist or is not available to the publishing account. Verify stream configuration and subject-to-stream mapping.                                        |
-| `ack.Duplicate == true`               | JetStream             | Duplicate Outcome   | JetStream detected that the `Nats-Msg-Id` was already processed within the applicable duplicate-detection window. This is a publish acknowledgement outcome, not a publish error. |
+The table below provides a comprehensive reference of Core NATS client errors and JetStream API error codes encountered during publishing, along with their status codes, classifications, and recommended remediation:
+
+| Error / Symbol | Source / API | Error / Status Code | Classification | Root Cause & Remediation Guidance |
+| :--- | :--- | :--- | :--- | :--- |
+| `nats.ErrNoResponders` | Core Request-Reply | Err 503 | Transient / App | No active subscribers are listening on the request subject. Ensure the service is running and subscribed. |
+| `nats.ErrTimeout` / `context.DeadlineExceeded` | Core / JetStream | Client Timeout | Unknown Outcome | Request or publish Ack was not received before deadline. For JetStream, outcome is unknown (message MAY be stored). |
+| `nats.ErrMaxPayload` | Core NATS | Err 400 | Permanent | Message payload size exceeds the server `max_payload` limit. Reduce payload size or use Object Store. |
+| `nats.ErrAuthorization` | Core NATS | Err 403 | Permanent | Client credentials lack publish permission for the subject. Correct account ACLs or subject permissions. |
+| `nats.ErrConnectionClosed` | Core NATS | Client State | Permanent | The client connection was explicitly closed or unrecoverable. Re-establish NATS connection. |
+| `nats.ErrReconnectBufExceeded` | Core NATS | Client Buffer | Transient Limit | Outbound client buffer (`ReconnectBufSize`) filled while disconnected. Increase buffer or slow publishing. |
+| `jetstream.ErrStreamNotFound` | JetStream | Code `10005` (HTTP 404) | Configuration | Target stream does not exist or subject is not bound to a stream. Verify stream config and subject mapping. |
+| `ErrStreamLimits` | JetStream | Code `10054` (HTTP 400) | Resource Limit | Stream limits (`max_msgs`, `max_bytes`, `max_msg_size`) exceeded. Increase stream limits or purge expired data. |
+| `ErrStreamWrongLastSequence` | JetStream | Code `10071` (HTTP 400) | State Conflict | `WithExpectLastSequence` assertion failed (OCC failure). Re-read stream head sequence before publishing. |
+| `ErrStreamWrongLastSubjectSequence` | JetStream | Code `10072` (HTTP 400) | State Conflict | `WithExpectLastSubjectSequence` assertion failed for subject. Re-evaluate subject event history before retry. |
+| `ErrStreamWrongLastMsgID` | JetStream | Code `10073` (HTTP 400) | State Conflict | `WithExpectLastMsgID` assertion failed. Verify logical message ordering. |
+| `ErrStreamWrongStream` | JetStream | Code `10075` (HTTP 400) | Configuration | Subject maps to a stream name different from `WithExpectStream`. Check stream subject bindings. |
+| `ack.Duplicate == true` (`ErrDuplicate`) | JetStream | Code `10077` (HTTP 200) | Duplicate | Message `Nats-Msg-Id` was already accepted within `duplicate_window`. Success outcome; message not duplicated. |
+| `ErrNoStreamResponse` | JetStream | Code `10014` (HTTP 503) | Cluster Transient | Server timed out waiting for Raft quorum consensus across stream replicas. Retry publish. |
+| `ErrClusterUnavail` | JetStream | Code `10023` (HTTP 503) | Cluster Transient | JetStream cluster is unavailable or undergoing leader re-election. Retry publish after short backoff. |
 
 ---
 
 ### 5.2 Retry Policy
 
-The NATS client SDK provides transport-level resilience such as automatic reconnection and, for Core NATS, an outbound reconnect buffer. These mechanisms are different from application-level retry of a publish operation.
+The NATS Client SDK (`nats.go`) and JetStream package (`jetstream`) provide built-in transport resilience and configurable client-side retry options. 
 
-For JetStream synchronous publishing, the application controls whether an operation should be retried, particularly when the publish outcome is unknown.
+Developers should leverage SDK client options to configure connection retries, backoff strategies, reconnect buffers, and async publish error handling directly through the NATS driver.
 
-#### Built-in SDK Resilience Features
+#### SDK Connection Retry & Reconnect Options
 
-The NATS SDK provides the following mechanisms for connection and publish resilience:
+When establishing a connection, the NATS client SDK provides built-in reconnect options that handle network disruptions automatically:
 
-1. **Automatic Connection Reconnects**
+| SDK Option | Purpose | Default Value | Usage / Behavior |
+| :--- | :--- | :--- | :--- |
+| `nats.RetryOnFailedConnect(true)` | Initial Connection Retry | `false` | Enables SDK to retry connection on startup if initial server dial fails. |
+| `nats.MaxReconnects(n)` | Reconnect Attempts Limit | `60` (`-1` = infinite) | Maximum number of reconnect attempts before client closes connection. |
+| `nats.ReconnectWait(d)` | Fixed Reconnect Delay | `2s` | Fixed wait duration between reconnect attempts. |
+| `nats.CustomReconnectDelay(fn)` | SDK-Managed Backoff | `nil` | Function hook executed by SDK on each reconnect attempt to apply custom exponential backoff/jitter. |
+| `nats.ReconnectJitter(j, tlsJ)` | Reconnect Jitter | `100ms` / `1s` | Random duration added to reconnect delay to prevent thundering herd. |
+| `nats.ReconnectBufSize(bytes)` | Outbound Reconnect Buffer | `8MB` (`8 * 1024 * 1024`) | Outbound memory buffer storing publications while disconnected, flushed on reconnect. |
 
-   * `nats.MaxReconnects(n)`: Configures the maximum number of reconnect attempts before the client gives up.
-   * `nats.ReconnectWait(duration)`: Configures the base delay between reconnect attempts.
-   * `nats.CustomReconnectDelay(fn)`: Allows a custom reconnect-delay strategy, including application-defined backoff.
+#### JetStream Publisher Resilience Options
 
-2. **Client Outbound Reconnect Buffer**
+JetStream provides client-level options for managing asynchronous publish buffering, error callbacks, and server-side deduplication:
 
-   * During temporary disconnections, the client can buffer outbound data up to the configured `nats.ReconnectBufSize`.
-   * Buffered data can be flushed after a successful reconnection.
-   * This is a client-side resilience mechanism and **does not provide durable message storage**.
+| JetStream Mechanism | Config / API | Description |
+| :--- | :--- | :--- |
+| **Pending Buffer Limit** | `jetstream.WithPublishAsyncMaxPending(n)` | Sets maximum unacknowledged async publish count to enforce backpressure. |
+| **Async Error Handler** | `jetstream.WithPublishAsyncErrHandler(cb)` | Configures SDK callback invoked when an async publish fails or times out. |
+| **Async Completion Signal** | `js.PublishAsyncComplete()` | Returns channel signaling when all in-flight async publications receive Acks or fail. |
+| **Server Deduplication** | Header `Nats-Msg-Id` | Enables server-side duplicate suppression within `duplicate_window`. |
 
-3. **JetStream Asynchronous Publish Control**
+#### Configuring NATS SDK Retry & Resilience Options in Go
 
-   * `jetstream.WithPublishAsyncMaxPending(n)`: Limits the number of outstanding asynchronous publishes.
-   * `js.PublishAsyncComplete()`: Allows the application to wait for outstanding asynchronous publishes to complete with server acknowledgements or errors.
-
-4. **JetStream Publish Deduplication**
-
-   * JetStream supports the `Nats-Msg-Id` header for duplicate detection.
-   * The server uses the configured duplicate-detection window to identify repeated publishes with the same message ID.
-   * This can be used when retrying the same logical message after an ambiguous publish outcome.
-
-#### Why JetStream `js.Publish` Does Not Automatically Retry the Publish Operation
-
-A synchronous JetStream publish waits for a server-side `PubAck`. If the client times out while waiting for that acknowledgement, the client cannot necessarily determine whether the server stored the message.
-
-For example:
-
-```text
-Publisher
-   │
-   │ Publish
-   ▼
-NATS / JetStream
-   │
-   │ Message stored
-   │
-   X  PubAck lost
-   │
-Publisher → Timeout
-```
-
-At this point, automatically retrying the publish could create a duplicate if the original publish succeeded.
-
-Therefore, when an application chooses to retry an ambiguous JetStream publish, it should explicitly consider:
-
-* whether the failure is retryable;
-* whether the publish outcome is known;
-* message idempotency;
-* message ordering requirements;
-* the application's retry/deadline policy.
-
-#### Developer Retry Pattern
-
-When an application needs bounded retries for the same logical JetStream message, it can combine:
-
-* bounded retry attempts;
-* an overall operation deadline;
-* per-attempt timeouts;
-* error classification;
-* appropriate backoff;
-* a stable `Nats-Msg-Id` for duplicate detection.
+The example below demonstrates how to configure NATS client SDK options for automated connection reconnect backoff, buffer management, and JetStream async error handling:
 
 ```go
 package main
 
 import (
-	"context"
-	"errors"
 	"fmt"
+	"log"
+	"math/rand"
 	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-func BoundedPublishRetry(
-	ctx context.Context,
-	js jetstream.JetStream,
-	subject string,
-	msgID string,
-	payload []byte,
-	maxAttempts int,
-) (*jetstream.PubAck, error) {
-
-	msg := &nats.Msg{
-		Subject: subject,
-		Data:    payload,
-		Header:  make(nats.Header),
-	}
-
-	// Keep the same message ID across retries of the same
-	// logical message.
-	if msgID != "" {
-		msg.Header.Set("Nats-Msg-Id", msgID)
-	}
-
-	backoff := 100 * time.Millisecond
-	var lastErr error
-
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-
-		attemptCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-
-		ack, err := js.PublishMsg(attemptCtx, msg)
-
-		cancel()
-
-		if err == nil {
-			return ack, nil
-		}
-
-		lastErr = err
-
-		// Fail fast for clearly non-retryable client errors.
-		if errors.Is(err, nats.ErrMaxPayload) ||
-			errors.Is(err, jetstream.ErrStreamNotFound) {
-			return nil, fmt.Errorf(
-				"non-retryable publish failure: %w",
-				err,
-			)
-		}
-
-		// A timeout can represent an unknown publish outcome.
-		// If retrying, retain the same Nats-Msg-Id.
-		if errors.Is(err, nats.ErrTimeout) ||
-			errors.Is(err, context.DeadlineExceeded) {
-			// Continue according to the application's retry policy.
-		}
-
-		if attempt == maxAttempts {
-			break
-		}
-
-		timer := time.NewTimer(backoff)
-
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, fmt.Errorf(
-				"publish operation canceled: %w",
-				ctx.Err(),
-			)
-
-		case <-timer.C:
-		}
-
-		// Example bounded backoff.
-		backoff *= 2
-	}
-
-	return nil, fmt.Errorf(
-		"publish failed after %d attempts: %w",
-		maxAttempts,
-		lastErr,
+func ConnectWithSDKRetry(serverURL string) (jetstream.JetStream, error) {
+	// Configure NATS Client SDK options for automated connection reconnect & backoff
+	nc, err := nats.Connect(
+		serverURL,
+		// Retry connection on initial startup dial
+		nats.RetryOnFailedConnect(true),
+		// Unlimited reconnect attempts during network outages
+		nats.MaxReconnects(-1),
+		// SDK-managed exponential backoff with jitter
+		nats.CustomReconnectDelay(func(attempts int) time.Duration {
+			base := 100 * time.Millisecond
+			max := 10 * time.Second
+			delay := base * time.Duration(1<<uint(attempts))
+			if delay > max {
+				delay = max
+			}
+			// Add randomized jitter
+			jitter := time.Duration(rand.Int63n(int64(delay / 2)))
+			return delay + jitter
+		}),
+		// Increase client outbound buffer for publications while disconnected
+		nats.ReconnectBufSize(16*1024*1024), // 16MB
+		// Event handlers for logging connection state changes
+		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
+			log.Printf("NATS disconnected: %v. Reconnecting in background...", err)
+		}),
+		nats.ReconnectHandler(func(nc *nats.Conn) {
+			log.Printf("NATS reconnected successfully to %s", nc.ConnectedUrl())
+		}),
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
+	}
+
+	// Initialize JetStream context with async publish error handling options
+	js, err := jetstream.New(nc,
+		jetstream.WithPublishAsyncMaxPending(256),
+		jetstream.WithPublishAsyncErrHandler(func(js jetstream.JetStream, msg *nats.Msg, err error) {
+			log.Printf("Async publish failed for subject %s (Msg-ID: %s): %v",
+				msg.Subject, msg.Header.Get("Nats-Msg-Id"), err)
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize JetStream: %w", err)
+	}
+
+	return js, nil
 }
 ```
-
-> **Important:** Retrying a timed-out publish does not guarantee that the original publish failed. For JetStream, use a stable `Nats-Msg-Id` when retrying the same logical message if duplicate detection is appropriate for the application's semantics. Also consider ordering when multiple publishes are concurrently in flight.
 
 
 ## 6. Graceful Shutdown

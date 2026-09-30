@@ -2,6 +2,18 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-09-30] Expand Common NATS Error Reference Table in Publisher Guide
+
+- **Change:** Removed the verbose Go error inspection code snippet from section `5.1 Publish Errors` in [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md). Expanded `#### Common NATS Error Reference` into a rich, comprehensive table covering Core NATS errors (`ErrNoResponders`, `ErrTimeout`, `ErrMaxPayload`, `ErrAuthorization`, `ErrConnectionClosed`, `ErrReconnectBufExceeded`) and JetStream API error codes (`10005` `ErrStreamNotFound`, `10054` `ErrStreamLimits`, `10071` `ErrStreamWrongLastSequence`, `10072` `ErrStreamWrongLastSubjectSequence`, `10073` `ErrStreamWrongLastMsgID`, `10075` `ErrStreamWrongStream`, `10077` `ErrDuplicate`, `10014` `ErrNoStreamResponse`, `10023` `ErrClusterUnavail`), complete with HTTP status codes, classifications, and remediation steps.
+- **Reason:** Provide exhaustive, accurate reference documentation for NATS publish errors while eliminating redundant code blocks.
+- **Affected Area:** [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md)
+
+## [2026-09-30] Refine Section 5.2 (SDK Retry Policy & Client Options) in Publisher Guide
+
+- **Change:** Refactored Section `5.2 Retry Policy` in [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) to document native NATS SDK and Client options for retries, backoff, and buffering instead of custom application-level loop logic. Documented connection options (`RetryOnFailedConnect`, `MaxReconnects`, `ReconnectWait`, `CustomReconnectDelay`, `ReconnectJitter`, `ReconnectBufSize`), JetStream options (`WithPublishAsyncMaxPending`, `WithPublishAsyncErrHandler`, `PublishAsyncComplete`), and provided a Go code snippet showing how to configure these driver options.
+- **Reason:** Align developer guide with NATS SDK driver capabilities for connection reconnects, backoff strategies, and async publish error callbacks.
+- **Affected Area:** [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md)
+
 ## [2026-09-30] Refine Section 5 (Publish Errors & Retry Policy) in Publisher Guide
 
 - **Change:** Added section `## 5. Failure Handling & Retry` to [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) structured into `### 5.1 Publish Errors` and `### 5.2 Retry Policy`. Guided developers on error manifestation across Core NATS and JetStream, explained error code ambiguity/inspection methods (`jetstream.JetStreamError`, `APIError().ErrorCode`), detailed built-in SDK resilience vs developer-owned retry responsibilities, and provided a production Go retry pattern implementation (`BoundedPublishRetry`).
