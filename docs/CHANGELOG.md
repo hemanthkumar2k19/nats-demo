@@ -4,8 +4,8 @@ All notable changes to the NATS reference evaluation platform will be documented
 
 ## [2026-09-30] Create NATS Publisher Guide
 
-- **Change:** Completed `docs/nats-publisher-guide.md` covering common publisher concerns and transport-specific publishing semantics using Go SDK (`github.com/nats-io/nats.go`) and JetStream package (`github.com/nats-io/nats.go/jetstream`). Covers 11 core sections: Message Construction, Payload & Serialization, Connection Reuse & Multiplexing, Publish Concurrency, Buffer Management, Publish Error Handling, Retry & Duplicate Handling (`Nats-Msg-Id`), Graceful Shutdown (`nc.Drain()`), Publisher Observability (W3C trace propagation), Core NATS Publishing (`nc.Publish`/`nc.RequestWithContext`), and JetStream Publishing (`js.Publish`/`js.PublishAsync`).
-- **Reason:** Provide developer reference guide for Core NATS and JetStream publishing patterns, backpressure, deduplication, and trace context propagation in Go services.
+- **Change:** Refined `docs/nats-publisher-guide.md` into a language-agnostic reference document with Go code blocks (`github.com/nats-io/nats.go` and `github.com/nats-io/nats.go/jetstream`). Standardized document heading hierarchy by reserving H1 (`#`) for the document title, H2 (`##`) for primary sections (1. Publisher Initialization through 9. Official References), and H3 (`###`) for subsections. Strictly enforced repository ASCII-only standards across diagrams and tables.
+- **Reason:** Standardize document typography and heading hierarchy across developer guides.
 - **Affected Area:** `docs/nats-publisher-guide.md`
 
 ## [2026-09-30] Create NATS Client & SDK Developer Guide
