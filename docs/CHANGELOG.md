@@ -2,10 +2,16 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-09-30] Expand JetStream Publish Expectations Section
+
+- **Change:** Expanded section `4.5 Publish Expectations` in [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md). Added a comprehensive breakdown of Optimistic Concurrency Control (OCC), an ASCII sequence diagram showing evaluation workflow, a breakdown of expectation options (`WithExpectStream`, `WithExpectLastSequence`, `WithExpectLastSubjectSequence`, `WithExpectLastMsgID`), a Go SDK `jetstream` example asserting stream sequence and catching expectation mismatch error code 10071, and practical use cases.
+- **Reason:** Provide clear conceptual and practical understanding of how JetStream prevents concurrent race conditions and out-of-order writes without distributed locks.
+- **Affected Area:** [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md)
+
 ## [2026-09-30] Create NATS Publisher Guide
 
-- **Change:** Refined `docs/nats-publisher-guide.md` into a language-agnostic reference document with Go code blocks (`github.com/nats-io/nats.go` and `github.com/nats-io/nats.go/jetstream`). Standardized document heading hierarchy (H1 title, H2 main sections, H3 subsections). Added explicit code snippets demonstrating how optional reply subjects (`msg.Reply`) are populated on structured messages and used in `PublishMsg` and `PublishRequest`. Strictly enforced repository ASCII-only standards across diagrams and tables.
-- **Reason:** Clarify optional reply subject usage in message construction and request-reply publishing.
+- **Change:** Refined `docs/nats-publisher-guide.md` into a language-agnostic reference document with Go code blocks (`github.com/nats-io/nats.go` and `github.com/nats-io/nats.go/jetstream`). Standardized Section 2 with `###` subsections (`2.1 Subject`, `2.2 Payload`, `2.3 Headers`, `2.4 Reply Subject`) matching Section 1, 3, and 4. Fixed JetStream async publish channel handling in Go (`select { case ack := <-future.Ok(): ... case err := <-future.Err(): ... }`), and differentiated `PublishRequest` from synchronous `Request` / `RequestMsg` queries. Strictly enforced repository ASCII-only standards across diagrams and tables.
+- **Reason:** Resolve logical code bugs and presentation inconsistencies across section headings.
 - **Affected Area:** `docs/nats-publisher-guide.md`
 
 ## [2026-09-30] Create NATS Client & SDK Developer Guide

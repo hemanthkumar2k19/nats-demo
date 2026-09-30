@@ -55,27 +55,52 @@ NATS Connection
 
 ## 2. Message Construction
 
-A publisher constructs a message using:
+A NATS message consists of a destination subject, binary payload data, optional headers, and an optional reply subject.
 
-* Subject
-* Payload
-* Optional headers
-* Optional reply subject (`msg.Reply`)
+### 2.1 Subject & Target Namespace
+
+Every published message must have a destination subject that complies with subject naming standards (`<domain>.<entity>.<action>`).
 
 ```go
 msg := nats.NewMsg("orders.created")
-msg.Data = []byte(`{"orderId":"12345"}`)
+```
 
-// Optional headers
+### 2.2 Payload & Serialization
+
+Application domain objects must be serialized into a binary byte slice (e.g., JSON) before being set on `msg.Data`.
+
+```go
+type OrderEvent struct {
+    OrderID string `json:"order_id"`
+}
+
+event := OrderEvent{OrderID: "12345"}
+payload, err := json.Marshal(event)
+if err != nil {
+    return err
+}
+
+msg.Data = payload
+```
+
+### 2.3 Headers & Metadata
+
+Use NATS headers (`msg.Header`) for metadata such as content types, correlation IDs, or JetStream deduplication keys (`Nats-Msg-Id`).
+
+```go
 msg.Header.Set("Content-Type", "application/json")
+msg.Header.Set("X-Correlation-ID", correlationID)
+```
 
-// Optional reply subject (used by responders to send responses back)
+### 2.4 Optional Reply Subject
+
+A message can specify an optional reply subject (`msg.Reply`) indicating where a responder can publish a response.
+
+```go
 msg.Reply = "orders.reply.inbox"
 ```
 
 The message structure is independent of whether it is subsequently published through Core NATS or JetStream.
-
-Publisher-specific metadata such as a JetStream message ID (`Nats-Msg-Id`) or a Core NATS reply subject (`msg.Reply`) should be added according to the publishing pattern being used.
 
 ---
 
@@ -123,14 +148,14 @@ if err != nil {
 
 ---
 
-### 3.3 Request-Reply Publish
+### 3.3 Publishing with Reply Subject (`PublishRequest`)
 
-A publisher can create a request message containing an explicitly supplied reply subject using `PublishRequest`.
+A publisher can send a message with an explicitly attached reply subject using `PublishRequest`.
 
 ```go
 err := nc.PublishRequest(
     "orders.validate",
-    "_INBOX.response",
+    "orders.reply.inbox",
     []byte(`{"orderId":"12345"}`),
 )
 if err != nil {
@@ -138,13 +163,58 @@ if err != nil {
 }
 ```
 
-`PublishRequest` publishes the request with the specified reply subject (`_INBOX.response`). It does **not** wait for the response.
-
-Response subscription and response handling belong to the request/reply interaction rather than the publishing operation itself.
+> **Important Distinction:** `PublishRequest` is an asynchronous publish operation that simply attaches the reply subject to the message. It does **NOT** wait for a response or create a response subscription.
 
 ---
 
-### 3.4 Flush
+### 3.4 Synchronous Request-Reply Pattern (`Request` / `RequestMsg`)
+
+Unlike `PublishRequest`, the true **Request-Reply pattern** (`nc.Request` / `nc.RequestMsg`) is a synchronous, blocking query:
+
+```text
+Publisher                                       NATS Server                                      Responder
+    |                                                |                                               |
+    |-- 1. Creates ephemeral Inbox (_INBOX.xxx) ---->|                                               |
+    |-- 2. Publishes Request msg (Reply=_INBOX.xxx)->|---------------- 3. Delivers Request --------->|
+    |                                                |                                               |
+    |                                                |<--------------- 4. Responds to _INBOX.xxx ----|
+    |<-- 5. Receives Response (or timeout) ----------|                                               |
+```
+
+1. The client SDK automatically creates an ephemeral inbox subscription (`_INBOX.xxx`).
+2. The client attaches `_INBOX.xxx` as `msg.Reply` and publishes the request.
+3. The client **blocks** waiting for a responder to publish a response to `_INBOX.xxx` until the specified timeout expires.
+
+```go
+// Synchronous Request-Reply: publishes request AND waits for response
+resp, err := nc.Request(
+    "orders.validate",
+    []byte(`{"orderId":"12345"}`),
+    2*time.Second,
+)
+if err != nil {
+    return fmt.Errorf("request-reply failed or timed out: %w", err)
+}
+
+log.Printf("Response received: %s", string(resp.Data))
+```
+
+For structured request messages with headers:
+
+```go
+msg := nats.NewMsg("orders.validate")
+msg.Data = []byte(`{"orderId":"12345"}`)
+msg.Header.Set("Content-Type", "application/json")
+
+resp, err := nc.RequestMsg(msg, 2*time.Second)
+if err != nil {
+    return err
+}
+```
+
+---
+
+### 3.5 Flush
 
 Use `Flush` when the application needs confirmation that pending client operations have been processed by the server.
 
@@ -164,7 +234,7 @@ if err := nc.Flush(); err != nil {
 
 ---
 
-### 3.5 Concurrent Publishing
+### 3.6 Concurrent Publishing
 
 A shared NATS connection can be used by concurrent publisher routines.
 
@@ -205,7 +275,7 @@ fmt.Println(ack.Stream, ack.Sequence)
 
 The publish operation waits for the JetStream publish acknowledgement.
 
-The acknowledgement can provide information such as:
+The acknowledgement provides information such as:
 
 * Stream
 * Sequence
@@ -226,9 +296,11 @@ if err != nil {
     return err
 }
 
-ack, err := future.Ok()
-if err != nil {
-    return err
+select {
+case ack := <-future.Ok():
+    log.Printf("Published to stream=%s sequence=%d", ack.Stream, ack.Sequence)
+case err := <-future.Err():
+    return fmt.Errorf("async publish failed: %w", err)
 }
 ```
 
@@ -279,23 +351,88 @@ The server can then detect a duplicate publish within the applicable duplicate-d
 
 ### 4.5 Publish Expectations
 
-JetStream allows publishers to specify expectations about the stream state before accepting a publish.
+Publish Expectations provide **Optimistic Concurrency Control (OCC)** and atomic conditional publishing in JetStream.
 
-Examples include:
+When multiple publisher workers or microservices attempt to append updates concurrently, publish expectations prevent out-of-order writes, lost updates, and state corruption without requiring distributed locks.
 
-* Expected last sequence
-* Expected last message ID
+#### How Expectations Work
 
-```go
-ack, err := js.Publish(
-    context.Background(),
-    "orders.created",
-    payload,
-    jetstream.WithExpectLastSequence(100),
-)
+Before appending a message to a stream, the JetStream server evaluates the requested expectations against current stream metadata:
+
+1. **Assertion Match**: If the stream state matches all expectations, JetStream appends the message atomically and returns an `Ack`.
+2. **Assertion Mismatch**: If any expectation fails (for example, another worker wrote to the stream first), JetStream rejects the message, appends nothing, and returns a JetStream expectation error to the client.
+
+```text
+Publisher                       JetStream Server                   Stream State
+    |                                   |                                |
+    |-- Publish (Expect Seq 100) ------>| Check Last Seq = 100?          |
+    |                                   |   |                            |
+    |                                   |   +-- MATCH ------------------>| Append Msg (Seq 101)
+    |<-- ACK (Seq 101) -----------------|                                |
+    |                                   |                                |
+    |-- Publish (Expect Seq 100) ------>| Check Last Seq = 100?          |
+    |                                   |   |                            |
+    |                                   |   +-- MISMATCH (Current 101) --| Reject Msg (No Store)
+    |<-- ERR (Wrong Last Sequence) -----|                                |
 ```
 
-These expectations can be used when publishing depends on a known stream state.
+#### Available Expectation Options
+
+JetStream supports several expectation options passed as `jetstream.PublishOpt`:
+
+* **`WithExpectStream(name)`**: Guarantees that the target subject maps to the specified stream name, preventing misrouted messages if subject configurations shift.
+* **`WithExpectLastSequence(seq)`**: Asserts that the stream's absolute last sequence number exactly equals `seq`. Useful when strict single-stream linear sequence is required.
+* **`WithExpectLastSubjectSequence(seq)`**: Asserts the last sequence number recorded specifically for the message subject. Useful for per-entity ordering (e.g. order `ORD-123`) across a shared multi-entity stream.
+* **`WithExpectLastMsgID(id)`**: Asserts that the last message appended to the stream had the specific `Nats-Msg-Id`. Useful when chain-linking transactions.
+
+#### Example: Conditional Publish with Sequence Assertion
+
+The following example demonstrates publishing an event only if the stream sequence matches the caller's expected last sequence. If another process modified the stream concurrently, the publish is safely rejected.
+
+```go
+package main
+
+import (
+    "context"
+    "errors"
+    "fmt"
+    "log"
+
+    "github.com/nats-io/nats.go/jetstream"
+)
+
+func publishWithExpectation(js jetstream.JetStream, expectedSeq uint64, payload []byte) error {
+    ctx := context.Background()
+
+    // Assert that the stream's last sequence is exactly expectedSeq
+    ack, err := js.Publish(
+        ctx,
+        "orders.updated",
+        payload,
+        jetstream.WithExpectLastSequence(expectedSeq),
+        jetstream.WithExpectStream("ORDERS"),
+    )
+    if err != nil {
+        var jsErr jetstream.JetStreamError
+        if errors.As(err, &jsErr) && jsErr.APIError() != nil {
+            // Check for expectation mismatch (NATS JetStream ErrCode 10071)
+            if jsErr.APIError().ErrorCode == 10071 {
+                return fmt.Errorf("concurrency conflict: stream sequence moved beyond %d: %w", expectedSeq, err)
+            }
+        }
+        return fmt.Errorf("publish failed: %w", err)
+    }
+
+    log.Printf("Published message to stream %s at sequence %d", ack.Stream, ack.Sequence)
+    return nil
+}
+```
+
+#### Use Cases for Publish Expectations
+
+* **State Machine Transitions**: Ensure state events (`ORDER_SUBMITTED` -> `ORDER_PAID`) are only stored if the predecessor event sequence is intact.
+* **Optimistic Locking**: Multi-tenant or partitioned applications can write updates to dedicated subjects (`orders.ORD-123.events`) using `WithExpectLastSubjectSequence` without locking the global stream.
+* **Preventing Race Conditions**: Multiple workers reading work from a stream can commit updates back only if no competing worker committed first.
 
 ---
 
