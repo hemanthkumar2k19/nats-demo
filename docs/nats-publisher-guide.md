@@ -60,18 +60,22 @@ A publisher constructs a message using:
 * Subject
 * Payload
 * Optional headers
-* Optional reply subject
+* Optional reply subject (`msg.Reply`)
 
 ```go
 msg := nats.NewMsg("orders.created")
 msg.Data = []byte(`{"orderId":"12345"}`)
 
+// Optional headers
 msg.Header.Set("Content-Type", "application/json")
+
+// Optional reply subject (used by responders to send responses back)
+msg.Reply = "orders.reply.inbox"
 ```
 
 The message structure is independent of whether it is subsequently published through Core NATS or JetStream.
 
-Publisher-specific metadata such as a JetStream message ID or a Core NATS reply subject should be added according to the publishing pattern being used.
+Publisher-specific metadata such as a JetStream message ID (`Nats-Msg-Id`) or a Core NATS reply subject (`msg.Reply`) should be added according to the publishing pattern being used.
 
 ---
 
@@ -101,12 +105,15 @@ Core NATS does not provide JetStream-style publish acknowledgements or persisten
 
 ### 3.2 Structured Message Publish
 
-Use `PublishMsg` when headers or a reply subject are required.
+Use `PublishMsg` when headers or an optional reply subject are required on the message.
 
 ```go
 msg := nats.NewMsg("orders.created")
 msg.Data = []byte(`{"orderId":"12345"}`)
 msg.Header.Set("Content-Type", "application/json")
+
+// Optional reply subject attached to the structured message
+msg.Reply = "orders.reply.inbox"
 
 err := nc.PublishMsg(msg)
 if err != nil {
@@ -118,7 +125,7 @@ if err != nil {
 
 ### 3.3 Request-Reply Publish
 
-A publisher can create a request message containing a reply subject using `PublishRequest`.
+A publisher can create a request message containing an explicitly supplied reply subject using `PublishRequest`.
 
 ```go
 err := nc.PublishRequest(
@@ -131,7 +138,7 @@ if err != nil {
 }
 ```
 
-`PublishRequest` publishes the request with the specified reply subject. It does **not** wait for the response.
+`PublishRequest` publishes the request with the specified reply subject (`_INBOX.response`). It does **not** wait for the response.
 
 Response subscription and response handling belong to the request/reply interaction rather than the publishing operation itself.
 

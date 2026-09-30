@@ -4,8 +4,8 @@ All notable changes to the NATS reference evaluation platform will be documented
 
 ## [2026-09-30] Create NATS Publisher Guide
 
-- **Change:** Refined `docs/nats-publisher-guide.md` into a language-agnostic reference document with Go code blocks (`github.com/nats-io/nats.go` and `github.com/nats-io/nats.go/jetstream`). Standardized document heading hierarchy by reserving H1 (`#`) for the document title, H2 (`##`) for primary sections (1. Publisher Initialization through 9. Official References), and H3 (`###`) for subsections. Strictly enforced repository ASCII-only standards across diagrams and tables.
-- **Reason:** Standardize document typography and heading hierarchy across developer guides.
+- **Change:** Refined `docs/nats-publisher-guide.md` into a language-agnostic reference document with Go code blocks (`github.com/nats-io/nats.go` and `github.com/nats-io/nats.go/jetstream`). Standardized document heading hierarchy (H1 title, H2 main sections, H3 subsections). Added explicit code snippets demonstrating how optional reply subjects (`msg.Reply`) are populated on structured messages and used in `PublishMsg` and `PublishRequest`. Strictly enforced repository ASCII-only standards across diagrams and tables.
+- **Reason:** Clarify optional reply subject usage in message construction and request-reply publishing.
 - **Affected Area:** `docs/nats-publisher-guide.md`
 
 ## [2026-09-30] Create NATS Client & SDK Developer Guide
