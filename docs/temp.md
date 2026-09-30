@@ -1,36 +1,3 @@
-# Application Onboarding Journey
-
-## Pre Dev
-1. Prerequistes - NATS Knowledge
-2. Local Setup
-3. Usage Patterns
-4. Migration Guide
-
-## Dev
-1. Cluster Provisioning 
-2. Connectivity – endpoint and connection configuration
-3. Account Provisioning – identify or provision the required account
-4. Subject Naming and Validation
-5. Message Contract and Schema
-6. Identity and Access Provisioning – authentication and authorization
-7. Stream Provisioning – where JetStream is required
-8. Connectivity and Messaging Validation
-9. Observability Enablement
-10. Application Onboarding Complete
-
-
-
-Reference:
-1. Prerequisites
-1. Local Setup
-2. Connectivity Guide
-3. Usage Patterns
-4. Message Envelope - Schema Management
-5. Dev Enablement
-6. Observability Enablement
-7. Secuirty Enablement
-
-
 # NATS Application Onboarding Flow
 
 ## SRE Track
@@ -95,24 +62,28 @@ Reference:
 - Promote
 
 
-|  # | Document / Artifact                        | Primary Audience                    | Purpose                                                |
-| -: | ------------------------------------------ | ----------------------------------- | ------------------------------------------------------ |
-|  1 | **NATS Platform Architecture**             | SRE                                 | Enterprise NATS architecture and platform model        |
-|  2 | **NATS Deployment Architecture**           | SRE                                 | Deployment topology and architecture                   |
-|  3 | **Observability Guide**                    | SRE                                 | Platform monitoring and observability                  |
-|  4 | **Security Guide**                         | SRE                                 | NATS security model and SRE security practices         |
-|  5 | **Connectivity and Troubleshooting Guide** | SRE                                 | Platform connectivity and troubleshooting              |
-|  6 | **NATS Local Setup Guide**                 | Developers                          | Local NATS development setup                           |
-|  7 | **NATS Usage Patterns**                    | Developers                          | Supported application messaging patterns               |
-|  8 | **Application Onboarding Guide**           | Application Team / Developers / SRE | Overall onboarding journey and responsibilities        |
-|  9 | **Subject Naming Guide**                   | Developers / SRE                    | Subject naming and namespace expectations              |
-| 10 | **Cluster and Account Management Guide**   | SRE                                 | Cluster and account provisioning/management            |
-| 11 | **Identity and Access Management Guide**   | SRE                                 | Application identity, authentication and authorization |
-| 12 | **Subject Management Guidelines**          | SRE                                 | Subject validation, creation and management            |
-| 13 | **Stream Management Guidelines**           | SRE                                 | Persistence, stream creation and stream management     |
-| 14 | **SDK Connectivity and Testing Guide**     | Developers                          | SDK-based connectivity and application testing         |
-| 15 | **Message Envelope and Schema Management** | Developers                          | Message envelope, schema and contract management       |
-| 16 | **Security Enablement Guide**              | Developers                          | Application-side security enablement                   |
-| 17 | **Observability Enablement Guide**         | Developers                          | Application-side observability enablement              |
+## New List of Documents
 
-
+|  # | Document / Artifact                             | Primary Audience                    | Covers / Data Points                                                                                | Priority |
+| -: | ----------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------- | :------: |
+|  1 | **NATS Solution Architecture**                  | SRE / Platform                      | Overall solution architecture and NATS role                                                         |    P1    |
+|  2 | **NATS Platform Architecture**                  | SRE / Platform                      | NATS platform architecture, platform components and boundaries                                      |    P1    |
+|  3 | **NATS Deployment Architecture**                | SRE                                 | Local Setup, Edge, HA                                                                               |    P1    |
+|  4 | **NATS Connectivity Guide**                     | Developers / SRE                    | Edge connectivity, Server connectivity                                                              |    P1    |
+|  5 | **NATS Publisher Guide**                        | Developers                          | Registration, Pooling, Retry Policies, Buffer Management, Trace Propagation                         |    P1    |
+|  6 | **NATS Consumer Guide**                         | Developers                          | Registration, Pooling, At-least-Once Delivery, Cursor Management, Retry Policies, Trace Propagation |    P1    |
+|  7 | **NATS Usage Patterns**                         | Developers / Application Teams      | Saga, Inter-Service Calls, supported usage patterns                                                 |    P1    |
+|  8 | **NATS Security Guide**                         | SRE / Developers                    | TLS, Server RBAC, Encryption at Rest, Encryption in Transit, Client RBAC                            |    P1    |
+|  9 | **NATS Semantics & Naming Guidelines**          | SRE / Developers                    | Cluster & Node Naming, Account Naming, Stream Naming, Subject Naming                                |    P1    |
+| 10 | **NATS Local Setup Guide**                      | Developers                          | Local NATS setup and development environment                                                        |    P1    |
+| 11 | **NATS Application Onboarding Guide**           | Application Team / Developers / SRE | End-to-end onboarding journey, responsibilities and process                                         |    P1    |
+| 12 | **Application Messaging Requirements Template** | Application Team / Developers       | Use case, usage pattern, volume, persistence, capacity, resiliency and subject requirements         |    P1    |
+| 13 | **Message Envelope & Schema Management**        | Developers                          | Message envelope, schema, contract, versioning and compatibility                                    |    P1    |
+| 14 | **NATS Security Enablement Guide**              | Developers                          | Application-side security enablement and required configuration                                     |    P1    |
+| 15 | **NATS Scale & Capacity Guide**                 | SRE / Platform                      | Server, Storage, Network scaling and capacity considerations                                        |    P2    |
+| 16 | **NATS Governance Guide**                       | SRE / Platform                      | Server, Account, Policies, Streams, Subjects                                                        |    P2    |
+| 17 | **NATS Observability Guide**                    | SRE / Developers                    | System MELT, Application MELT                                                                       |    P2    |
+| 18 | **NATS Message Flow Tracing Guide**             | SRE / Developers                    | Message flow tracing, trace propagation                                                             |    P2    |
+| 19 | **NATS Gating Guidelines**                      | Platform / SRE / Application Owners | Use case, Usage, Volume                                                                             |    P2    |
+| 20 | **NATS Disaster Recovery Guide**                | SRE / Platform                      | DR strategy, recovery considerations                                                                |    P2    |
+| 21 | **NATS Observability Enablement Guide**         | Developers                          | Application-side observability and instrumentation expectations                                     |    P2    |
