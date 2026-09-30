@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-09-30] Refine Section 5 (Publish Errors & Retry Policy) in Publisher Guide
+
+- **Change:** Added section `## 5. Failure Handling & Retry` to [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) structured into `### 5.1 Publish Errors` and `### 5.2 Retry Policy`. Guided developers on error manifestation across Core NATS and JetStream, explained error code ambiguity/inspection methods (`jetstream.JetStreamError`, `APIError().ErrorCode`), detailed built-in SDK resilience vs developer-owned retry responsibilities, and provided a production Go retry pattern implementation (`BoundedPublishRetry`).
+- **Reason:** Provide practical developer guidance on diagnosing NATS publish error codes and structuring production-grade SDK retry loops.
+- **Affected Area:** [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md)
+
 ## [2026-09-30] Consolidate Failure Handling & Retry Sections in Publisher Guide
 
 - **Change:** Restructured Sections 5 & 6 in [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) into a single consolidated section `## 5. Failure Handling & Retry` with 5 standardized subsections (`5.1 Classify the Failure`, `5.2 Retryable Failures`, `5.3 Non-Retryable Failures`, `5.4 Unknown Publish Outcome`, `5.5 Retry Strategy`). Renumbered subsequent top-level sections: Graceful Shutdown (`6`), Publisher Capability Summary (`7`), and Official References (`8`).
