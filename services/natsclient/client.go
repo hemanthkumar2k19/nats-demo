@@ -13,6 +13,11 @@ func ConnectAndDiscover() (*nats.Conn, error) {
 
 	nc, err := nats.Connect(server,
 
+		nats.ErrorHandler(
+			func(c *nats.Conn, s *nats.Subscription, err error) {
+				log.Printf("[NATS] Async error on subject %s: %v", s.Subject, err)
+			}),
+
 		nats.DisconnectErrHandler(
 			func(nc *nats.Conn, err error) {
 				log.Printf("Disconnected: %v. Swapping to next cluster node...", err)

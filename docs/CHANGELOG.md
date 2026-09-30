@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-09-30] Create NATS Publisher Guide
+
+- **Change:** Completed `docs/nats-publisher-guide.md` covering common publisher concerns and transport-specific publishing semantics using Go SDK (`github.com/nats-io/nats.go`) and JetStream package (`github.com/nats-io/nats.go/jetstream`). Covers 11 core sections: Message Construction, Payload & Serialization, Connection Reuse & Multiplexing, Publish Concurrency, Buffer Management, Publish Error Handling, Retry & Duplicate Handling (`Nats-Msg-Id`), Graceful Shutdown (`nc.Drain()`), Publisher Observability (W3C trace propagation), Core NATS Publishing (`nc.Publish`/`nc.RequestWithContext`), and JetStream Publishing (`js.Publish`/`js.PublishAsync`).
+- **Reason:** Provide developer reference guide for Core NATS and JetStream publishing patterns, backpressure, deduplication, and trace context propagation in Go services.
+- **Affected Area:** `docs/nats-publisher-guide.md`
+
 ## [2026-09-30] Create NATS Client & SDK Developer Guide
 
 - **Change:** Completed `docs/developer-guide/client-guide.md` providing production Go SDK (`github.com/nats-io/nats.go`) and modern JetStream package (`github.com/nats-io/nats.go/jetstream`) reference code and best practices. Covers 8 core developer sections: Client Initialization, Connection Lifecycle, Connection Configuration, Connection Validation, JetStream API Context, Client Resource Management, Client Error Handling, and Client Testing.
