@@ -2,6 +2,18 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-09-30] Create NATS Client & SDK Developer Guide
+
+- **Change:** Completed `docs/developer-guide/client-guide.md` providing production Go SDK (`github.com/nats-io/nats.go`) and modern JetStream package (`github.com/nats-io/nats.go/jetstream`) reference code and best practices. Covers 8 core developer sections: Client Initialization, Connection Lifecycle, Connection Configuration, Connection Validation, JetStream API Context, Client Resource Management, Client Error Handling, and Client Testing.
+- **Reason:** Provide developer reference documentation detailing Go SDK connectivity, connection pooling/reuse patterns, exponential backoff, and modern JetStream API context initialization.
+- **Affected Area:** `docs/developer-guide/client-guide.md`
+
+## [2026-09-30] Create SRE NATS Connectivity & Troubleshooting Guide
+
+- **Change:** Refined `docs/nats-connectivity-guide.md` specifically for SRE teams. Formatted all document headings with hierarchical numerical notation (e.g., `1. Server Connectivity Check`, `1.1 DNS Resolution`, `5.3.1 Step 1 - Network`). Removed deployment startup instructions (designated as a prerequisite) and local internal document cross-references. Cleaned ChatGPT UTM tracking parameters from all official NATS reference URLs. Updated operational workflow using strict ASCII-only flow diagrams.
+- **Reason:** Standardize document section hierarchy for improved readability, align SRE guide with post-deployment troubleshooting responsibilities, clean external links, and enforce repository ASCII standards.
+- **Affected Area:** `docs/nats-connectivity-guide.md`
+
 ## [2026-09-29] Convert Guides List to Matrix Table
 
 - **Change:** Converted the Guides list in `docs/temp.md` into a single consolidated Markdown table formatted with `Category`, `Guide`, `Status`, and `Owner` columns.
