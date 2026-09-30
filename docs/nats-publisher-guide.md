@@ -436,77 +436,7 @@ func publishWithExpectation(js jetstream.JetStream, expectedSeq uint64, payload 
 
 ---
 
-## 5. Failure Handling
-
-Publish failures should be classified before deciding whether to retry.
-
-```text
-Publish
-   |
-   +-- Success
-   |
-   +-- Failure
-        |
-        +-- Permanent -> Fail
-        |
-        +-- Transient -> Retry
-        |
-        +-- Unknown Outcome -> Apply Duplicate Strategy
-```
-
-Typical failure categories include:
-
-| Failure | Typical Handling |
-| :--- | :--- |
-| Invalid subject / request | Fail |
-| Authentication / authorization failure | Fail and correct configuration |
-| Connection unavailable | Allow reconnect / retry where appropriate |
-| JetStream API timeout | Evaluate and retry if operation outcome is safe |
-| Stream or publish expectation failure | Re-evaluate application state |
-| Storage/server failure | Retry according to operational policy |
-
-For JetStream publishing, an error does not always mean that the server definitely did not process the logical message. Retry design should therefore consider duplicate handling.
-
----
-
-## 6. Retry Handling
-
-Retries should be used for failures that are potentially transient.
-
-The retry policy should define:
-
-* Maximum retry attempts
-* Retry delay / backoff
-* Retryable errors
-* Maximum retry duration
-* Duplicate handling
-
-Use bounded retries rather than retrying indefinitely.
-
-```text
-Publish
-   |
-   v
-Failure
-   |
-   v
-Is failure retryable?
-   +-- No -> Fail
-   |
-   +-- Yes
-        |
-        v
-     Wait / Backoff
-        |
-        v
-      Retry
-```
-
-For JetStream, when retrying the same logical message, retain the same `Nats-Msg-Id` where duplicate detection is part of the retry strategy.
-
----
-
-## 7. Graceful Shutdown
+## 5. Graceful Shutdown
 
 Publishers should stop accepting new work before shutting down the NATS connection.
 
@@ -563,7 +493,7 @@ Applications should use a bounded shutdown timeout rather than waiting indefinit
 
 ---
 
-## 8. Publisher Capability Summary
+## 6. Publisher Capability Summary
 
 | Capability | Core NATS | JetStream |
 | :--- | :--- | :--- |
@@ -583,7 +513,7 @@ Applications should use a bounded shutdown timeout rather than waiting indefinit
 
 ---
 
-## 9. Official References
+## 7. Official References
 
 * [Official NATS Go Client Repository](https://github.com/nats-io/nats.go)
 * [NATS Go Client API Documentation (pkg.go.dev)](https://pkg.go.dev/github.com/nats-io/nats.go)

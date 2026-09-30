@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-09-30] Consolidate Failure Handling & Retry Sections in Publisher Guide
+
+- **Change:** Restructured Sections 5 & 6 in [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) into a single consolidated section `## 5. Failure Handling & Retry` with 5 standardized subsections (`5.1 Classify the Failure`, `5.2 Retryable Failures`, `5.3 Non-Retryable Failures`, `5.4 Unknown Publish Outcome`, `5.5 Retry Strategy`). Renumbered subsequent top-level sections: Graceful Shutdown (`6`), Publisher Capability Summary (`7`), and Official References (`8`).
+- **Reason:** Simplify document navigation, eliminate redundant sections, and present a unified failure handling framework for NATS publishers.
+- **Affected Area:** [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md)
+
 ## [2026-09-30] Expand JetStream Publish Expectations Section
 
 - **Change:** Expanded section `4.5 Publish Expectations` in [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md). Added a comprehensive breakdown of Optimistic Concurrency Control (OCC), an ASCII sequence diagram showing evaluation workflow, a breakdown of expectation options (`WithExpectStream`, `WithExpectLastSequence`, `WithExpectLastSubjectSequence`, `WithExpectLastMsgID`), a Go SDK `jetstream` example asserting stream sequence and catching expectation mismatch error code 10071, and practical use cases.

@@ -13,7 +13,8 @@ func PublishJS(ctx context.Context, js jetstream.JetStream, subject string, data
 }
 
 func PublishMsgJS(ctx context.Context, js jetstream.JetStream, msg *nats.Msg) (*jetstream.PubAck, error) {
-	return js.PublishMsg(ctx, msg)
+	ack, err := js.PublishMsg(ctx, msg)
+	return ack, err
 }
 
 func PublishAsyncJS(js jetstream.JetStream, subject string, data []byte) (jetstream.PubAckFuture, error) {
