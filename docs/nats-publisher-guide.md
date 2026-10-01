@@ -59,7 +59,10 @@ Subscribers and JetStream streams use wildcards to listen to or capture groups o
 | `*` | Single-Token Wildcard | Matches **exactly one token** at a specific level in the hierarchy. | `orders.*.created` | `orders.eu.created`, `orders.us.created` | `orders.created`, `orders.eu.123.created` |
 | `>` | Multi-Token Wildcard | Matches **one or more tokens** at the end of a subject (must be final token). | `orders.>` | `orders.created`, `orders.eu.created`, `orders.eu.123.created` | `audit.orders.created` |
 
-> **Publisher Rule:** Wildcards (`*` and `>`) are used **only by subscribers and JetStream stream filter subjects**. Publishers MUST always publish to a single, concrete subject string (e.g., `orders.eu.created`).
+> **Publisher Rule:** Wildcards (`*` and `>`) are evaluated **only during subscriber matching**, not during message publishing.
+> * If you execute `nats pub "order.*" "Hello"`, NATS publishes the message to the **literal 7-character string subject `"order.*"`**.
+> * It will **NOT** expand or deliver the message to subscribers listening on `order.created` or `order.123`.
+> * Therefore, publishers MUST always publish to explicit, concrete subject strings (e.g., `order.created`).
 
 ---
 
