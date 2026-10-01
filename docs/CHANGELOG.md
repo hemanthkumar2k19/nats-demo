@@ -2,6 +2,24 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-01] Add NATS Subject Architecture Brief to Publisher Guide
+
+- **Change:** Refactored Section 1 of [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) to replace initialization code snippets with compact prerequisites, and added Section `1.2 NATS Subjects Brief & Naming Architecture` detailing Subject concepts, enterprise hierarchy conventions (`<domain>.<entity>.<action>`), validation rules (case sensitivity, dot-separated tokens, concrete publish requirement), and wildcard matching semantics (`*` single-token vs `>` multi-token).
+- **Reason:** Provide a concise, signal-oriented reference for NATS subject naming architecture and wildcard rules within the Publisher Guide.
+- **Affected Area:** [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md)
+
+## [2026-10-01] Structured Zerolog Logging for JetStream PubAck Objects
+
+- **Change:** Refactored JetStream publish logging in [services/messaging/js.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/js.go) (`JSPublishMsg` and `JSPublishAsync`) to log `*jetstream.PubAck` parameters using explicit Zerolog structured key-value attributes (`stream`, `sequence`, `duplicate`, `domain`, `subject`) instead of raw Go struct pointer dumps (`%v`).
+- **Reason:** Improve log readability and structure by logging native JetStream `PubAck` fields individually for development console inspection and production JSON log processing.
+- **Affected Area:** [services/messaging/js.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/js.go)
+
+## [2026-10-01] Add JetStream Publish REST APIs returning Native PubAck Objects
+
+- **Change:** Added REST endpoints for JetStream publishing in [services/api/publisher_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/publisher_handler.go): `POST /api/v1/publish/js` (or `/api/v1/js/publish`), `POST /api/v1/js/publish/async`, and `GET /api/v1/js/publish/pending`. Integrated JetStream context handling in [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go) and refactored [services/messaging/js.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/js.go) to return complete native `*jetstream.PubAck` objects (`stream`, `sequence`, `domain`, `duplicate`).
+- **Reason:** Provide full REST API access for JetStream synchronous and asynchronous publishing while returning native NATS `PubAck` objects directly to callers.
+- **Affected Area:** [services/api/publisher_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/publisher_handler.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [services/messaging/js.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/js.go)
+
 ## [2026-10-01] Create NATS JetStream Consumer Guide
 
 - **Change:** Created [docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-consumer-guide.md) defining persistent JetStream consumer practices. Refined Stream vs Consumer relationship into a signal-oriented parent-child resource hierarchy (`Server -> Account -> Stream -> Consumer`). Added a dedicated `Default Value (If Omitted)` column to `ConsumerConfig` parameters. Documented Message Replay Mechanisms (`ReplayInstant`, `ReplayOriginal`, `DeliverPolicy` offsets), SDK Inspection APIs (`msg.Metadata()`, `NumDelivered`, `cons.Info()`), and Consumer Pointer Manipulation Usecases (time travel/bugfix reprocessing, skipping poison sequences, DB resyncing, Go SDK `ResetConsumerPointer` code example). Updated Queue Group code example to demonstrate a concurrent pool of 3 load-balanced worker routines.

@@ -3,11 +3,11 @@ package messaging
 import (
 	"context"
 	"fmt"
-	"log"
 	"services/model"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/rs/zerolog/log"
 )
 
 // Publish Msg
@@ -24,13 +24,19 @@ func JSPublishMsg(ctx context.Context, js jetstream.JetStream, msg *model.Messag
 		return nil, fmt.Errorf("failed to publish message: %v", err)
 	}
 
-	log.Printf("Successfully published message, ack: %v", ack)
+	log.Info().
+		Str("subject", msg.Subject).
+		Str("stream", ack.Stream).
+		Uint64("sequence", ack.Sequence).
+		Bool("duplicate", ack.Duplicate).
+		Str("domain", ack.Domain).
+		Msg("Successfully published message to JetStream")
 
 	return ack, nil
 }
 
 // Publish Msg Async
-func JSPublishAsync(ctx context.Context, js jetstream.JetStream, msg *model.Message) (*jetstream.PubAckFuture, error) {
+func JSPublishAsync(ctx context.Context, js jetstream.JetStream, msg *model.Message) (*jetstream.PubAck, error) {
 
 	natsMsg := &nats.Msg{
 		Subject: msg.Subject,
@@ -45,10 +51,26 @@ func JSPublishAsync(ctx context.Context, js jetstream.JetStream, msg *model.Mess
 
 	select {
 	case ack := <-future.Ok():
-		log.Printf("Published to stream=%s sequence=%d", ack.Stream, ack.Sequence)
+		log.Info().
+			Str("subject", msg.Subject).
+			Str("stream", ack.Stream).
+			Uint64("sequence", ack.Sequence).
+			Bool("duplicate", ack.Duplicate).
+			Str("domain", ack.Domain).
+			Msg("Successfully published async message to JetStream")
+		return ack, nil
 	case err := <-future.Err():
 		return nil, fmt.Errorf("async publish failed: %w", err)
 	}
-
-	return &future, nil
 }
+
+// Publish Async Pending
+func JSPublishAsyncPending(js jetstream.JetStream) map[string]any {
+	pending := js.PublishAsyncPending()
+	log.Info().Msgf("Pending messages: %d", pending)
+
+	return map[string]any{
+		"pending": pending,
+	}
+}
+

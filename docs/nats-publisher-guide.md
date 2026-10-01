@@ -8,48 +8,58 @@ It covers the publisher lifecycle from initialization through message constructi
 
 ---
 
-## 1. Publisher Initialization
+## 1. Prerequisites & NATS Subject Architecture
 
-### 1.1 NATS Connection
+### 1.1 Prerequisites
 
-A publisher should use an active, reusable NATS connection.
-
-The connection is responsible for communication with the NATS server and can be safely reused by concurrent publishing operations.
-
-```go
-nc, err := nats.Connect(
-    "nats://localhost:4222",
-    nats.Name("my-service"),
-)
-if err != nil {
-    return err
-}
-```
-
-### 1.2 JetStream Context
-
-A JetStream context is created from an existing NATS connection when the application requires JetStream publishing.
-
-Creating the JetStream context does not create another network connection.
-
-```go
-js, err := jetstream.New(nc)
-if err != nil {
-    return err
-}
-```
+Publishing to NATS requires an active NATS connection (`*nats.Conn`). For JetStream publishing, a JetStream API context (`jetstream.JetStream`) initialized from the connection is required (refer to the NATS Client Connectivity Guide).
 
 Conceptually:
 
 ```text
-NATS Connection
+Active NATS Connection (TCP Socket)
       |
-      +-- Core NATS Publisher
+      +-- Core NATS Publisher (Ephemeral Publish / Request)
       |
-      +-- JetStream Context
-               |
-               +-- JetStream Publisher
+      +-- JetStream Context (Server Ack & Persistent Stream Publish)
 ```
+
+---
+
+### 1.2 NATS Subjects Brief & Naming Architecture
+
+#### What is a NATS Subject?
+
+A **Subject** is a lightweight, case-sensitive ASCII string used by NATS to route messages between publishers and subscribers/streams. Subjects act as destination addresses and do not require prior creation or registration in Core NATS.
+
+#### Subject Naming Hierarchy
+
+Enterprise NATS subjects follow a dot-separated hierarchical naming convention:
+
+`<domain>.<entity>.<action>` or `<region>.<service>.<resource>.<event>`
+
+Examples:
+* `orders.eu.created`
+* `payments.us.processed`
+* `telemetry.sensors.temp.reading`
+
+#### Rules for Valid NATS Subjects
+
+* **Characters**: Alphanumeric ASCII characters (`a-z`, `A-Z`, `0-9`), dots (`.`), hyphens (`-`), and underscores (`_`). Spaces and special characters are forbidden.
+* **Tokens**: Substrings separated by dots (`.`). Empty tokens are invalid (e.g., `orders..created` is invalid).
+* **Case Sensitivity**: Subjects are strictly case-sensitive (`ORDERS.created` and `orders.created` are separate subjects).
+* **Concrete Publish Requirement**: Messages MUST be published to **concrete subjects** (wildcards are forbidden when publishing).
+
+#### NATS Wildcards (Subscriber & Stream Filtering)
+
+Subscribers and JetStream streams use wildcards to listen to or capture groups of subjects:
+
+| Wildcard Symbol | Name | Scope & Behavior | Example Pattern | Matching Subjects | Non-Matching Subjects |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `*` | Single-Token Wildcard | Matches **exactly one token** at a specific level in the hierarchy. | `orders.*.created` | `orders.eu.created`, `orders.us.created` | `orders.created`, `orders.eu.123.created` |
+| `>` | Multi-Token Wildcard | Matches **one or more tokens** at the end of a subject (must be final token). | `orders.>` | `orders.created`, `orders.eu.created`, `orders.eu.123.created` | `audit.orders.created` |
+
+> **Publisher Rule:** Wildcards (`*` and `>`) are used **only by subscribers and JetStream stream filter subjects**. Publishers MUST always publish to a single, concrete subject string (e.g., `orders.eu.created`).
 
 ---
 
