@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-01] Create NATS JetStream Consumer Guide
+
+- **Change:** Created [docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-consumer-guide.md) defining persistent JetStream consumer practices. Covers Stream vs Consumer relationship, Durable vs Ephemeral lifecycle (`CreateOrUpdateConsumer`, `Info`, `PauseConsumer`, `ResumeConsumer`, `DeleteConsumer`), Consumption models (`Consume`, `Fetch`, `OrderedConsumer`, Worker Pools), ACK signals (`Ack`, `Nak`, `NakWithDelay`, `Term`, `InProgress`), `MaxDeliver` and `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>` DLQ advisories, and Graceful Shutdown (`consCtx.Stop()`).
+- **Reason:** Provide reference developer guide for JetStream persistent message consumers matching the structure of the Publisher and Subscription guides.
+- **Affected Area:** [docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-consumer-guide.md)
+
 ## [2026-10-01] Create NATS Core Subscription Guide
 
 - **Change:** Created [docs/nats-subscription-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-subscription-guide.md) defining application-level Core NATS subscription practices. Converted headings to language-agnostic concepts, expanded explanations for callback threading, slow consumer buffer risks, `msg.Respond` request-reply mechanics, and multi-language dispatch constructs (Go `chan`, Java `Dispatcher`/`BlockingQueue`, Python `asyncio.Queue`). Updated Queue Group code example to demonstrate a concurrent pool of 3 load-balanced worker routines. Removed DLQ references to maintain strict Core NATS focus.

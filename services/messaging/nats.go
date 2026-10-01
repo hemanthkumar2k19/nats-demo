@@ -3,7 +3,6 @@ package messaging
 import (
 	"fmt"
 	"services/model"
-	"sync"
 
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
@@ -93,25 +92,4 @@ func Flush(nc *nats.Conn) error {
 
 	log.Info().Msg("Successfully flushed NATS connection")
 	return nil
-}
-
-// Sub Handler
-func Subscribe(nc *nats.Conn, subject string, handler nats.MsgHandler) (*nats.Subscription, error) {
-	sub, err := nc.Subscribe(subject, handler)
-
-	if err != nil {
-		log.Error().Err(err).Str("subject", subject).Msg("Failed to subscribe on NATS")
-		return nil, fmt.Errorf("error while subscribing on NATS: %w", err)
-	}
-
-	log.Info().Str("subject", subject).Msg("Successfully subscribed on NATS")
-	return sub, nil
-}
-
-// Queue Group
-func QueueGroup(nc *nats.Conn, subject string, queueName string, workers int) {
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-
 }
