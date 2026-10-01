@@ -36,6 +36,13 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to initialize NATS Client")
 	}
 
+	// RTT
+	rtt, err := nc.RTT()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to get RTT")
+	}
+	log.Info().Msgf("NATS RTT: %v", rtt)
+
 	// 3. Initialize Publisher Service & API Handler
 	svc := service.NewService(nc, nil)
 	pubHandler := api.NewPublisherHandler(svc)

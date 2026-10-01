@@ -41,6 +41,14 @@ func (s *Service) JSPublish(ctx context.Context, msg *model.Message) (*jetstream
 			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
 		}
 	}
+
+	info, err := s.js.AccountInfo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get account info: %w", err)
+	}
+
+	log.Info().Any("Account Info: ", info).Msg("")
+
 	return messaging.JSPublishMsg(ctx, s.js, msg)
 }
 
@@ -155,4 +163,3 @@ func (s *Service) DrainAllSubscriptions() {
 		s.subManager.DrainAll()
 	}
 }
-
