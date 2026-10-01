@@ -13,7 +13,8 @@ type Config struct {
 	OtelExporterType         string `env:"OTEL_EXPORTER_TYPE" envDefault:"otlp-grpc"`
 	OtelExporterOTLPEndpoint string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:4317"`
 	ServiceName              string `env:"SERVICE_NAME" envDefault:"nats-tracing-demo"`
-	HTTPPort                 string `env:"HTTP_PORT" envDefault:":8080"`
+	OrderServicePort         string `env:"ORDER_SERVICE_PORT" envDefault:":8080"`
+	ProcessingServicePort    string `env:"PROCESSING_SERVICE_PORT" envDefault:":8081"`
 }
 
 // Load loads configuration from a local .env file (if present) and the environment.

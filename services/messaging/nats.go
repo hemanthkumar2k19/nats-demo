@@ -1,102 +1,117 @@
 package messaging
 
 import (
-	"context"
-	"services/telemetry"
-	"time"
+	"fmt"
+	"services/model"
+	"sync"
 
 	"github.com/nats-io/nats.go"
+	"github.com/rs/zerolog/log"
 )
 
-func Publish(nc *nats.Conn, subject string, data []byte) error {
-	return nc.Publish(subject, data)
-}
-
-func PublishRequest(nc *nats.Conn, subject string, reply string, data []byte) error {
-	return nc.PublishRequest(subject, reply, data)
-}
-
-// PublishMsg instruments outbound trace context on nats.Msg and publishes via NATS.
-func PublishMsg(ctx context.Context, nc *nats.Conn, msg *nats.Msg) error {
-	if ctx == nil {
-		ctx = context.Background()
+// Publish on NATS
+func PublishMsg(nc *nats.Conn, msg *model.Message) error {
+	natsMsg := &nats.Msg{
+		Subject: msg.Subject,
+		Header:  toNatsHeader(msg.Headers),
+		Data:    []byte(msg.Data),
 	}
 
-	_, span := telemetry.InstrumentOutboundMessage(ctx, "nats.publish "+msg.Subject, msg)
-	defer span.End()
-
-	if err := nc.PublishMsg(msg); err != nil {
-		span.RecordError(err)
-		return err
+	err := nc.PublishMsg(natsMsg)
+	if err != nil {
+		log.Error().Err(err).Str("subject", msg.Subject).Msg("Failed to publish message on NATS")
+		return fmt.Errorf("error while publishing on NATS: %w", err)
 	}
+
+	log.Info().
+		Str("subject", msg.Subject).
+		Interface("headers", msg.Headers).
+		Str("data", msg.Data).
+		Msg("Successfully published message on NATS")
 	return nil
 }
 
-func Request(nc *nats.Conn, subject string, data []byte, timeout time.Duration) (*nats.Msg, error) {
-	return nc.Request(subject, data, timeout)
-}
-
-func RequestMsg(nc *nats.Conn, msg *nats.Msg, timeout time.Duration) (*nats.Msg, error) {
-	return nc.RequestMsg(msg, timeout)
-}
-
-func FlushTimeout(nc *nats.Conn, timeout time.Duration) error {
-	return nc.FlushTimeout(timeout)
-}
-
-// Subscribe wraps the handler with inbound trace context extraction.
-func Subscribe(ctx context.Context, nc *nats.Conn, subject string, handler nats.MsgHandler) (*nats.Subscription, error) {
-	if ctx == nil {
-		ctx = context.Background()
+// Publish with Reply Subject
+func PublishMsgWithReply(nc *nats.Conn, msg *model.Message) error {
+	natsMsg := &nats.Msg{
+		Subject: msg.Subject,
+		Reply:   msg.Reply,
+		Header:  toNatsHeader(msg.Headers),
+		Data:    []byte(msg.Data),
 	}
 
-	tracedHandler := func(msg *nats.Msg) {
-		msgCtx, span := telemetry.InstrumentInboundMessage(ctx, "nats.process "+msg.Subject, msg.Header)
-		defer span.End()
-
-		_ = msgCtx
-		handler(msg)
+	err := nc.PublishMsg(natsMsg)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("subject", msg.Subject).
+			Str("reply", msg.Reply).
+			Msg("Failed to publish message with reply on NATS")
+		return fmt.Errorf("error while publishing on NATS: %w", err)
 	}
 
-	return nc.Subscribe(subject, tracedHandler)
+	log.Info().
+		Str("subject", msg.Subject).
+		Str("reply", msg.Reply).
+		Interface("headers", msg.Headers).
+		Str("data", msg.Data).
+		Msg("Successfully published message with reply subject on NATS")
+	return nil
 }
 
-func SubscribeSync(nc *nats.Conn, subject string) (*nats.Subscription, error) {
-	return nc.SubscribeSync(subject)
+// Publish Request
+func PublishRequest(nc *nats.Conn, msg *model.Message) (*nats.Msg, error) {
+
+	natsMsg := &nats.Msg{
+		Subject: msg.Subject,
+		Header:  toNatsHeader(msg.Headers),
+		Data:    []byte(msg.Data),
+	}
+
+	resp, err := nc.RequestMsg(natsMsg, msg.Timeout)
+	if err != nil {
+		log.Error().Err(err).Str("subject", msg.Subject).Msg("Failed to publish request on NATS")
+		return nil, fmt.Errorf("error while publishing request on NATS: %w", err)
+	}
+
+	log.Info().
+		Str("subject", msg.Subject).
+		Interface("headers", msg.Headers).
+		Str("data", msg.Data).
+		Str("response", string(resp.Data)).
+		Msg("Successfully published request on NATS")
+	return resp, nil
 }
 
-func NextMsg(sub *nats.Subscription, timeout time.Duration) (*nats.Msg, error) {
-	return sub.NextMsg(timeout)
+// Flush
+func Flush(nc *nats.Conn) error {
+	err := nc.Flush()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to flush NATS connection")
+		return fmt.Errorf("error while flushing on NATS: %w", err)
+	}
+
+	log.Info().Msg("Successfully flushed NATS connection")
+	return nil
 }
 
-func ChanSubscribe(nc *nats.Conn, subject string, ch chan *nats.Msg) (*nats.Subscription, error) {
-	return nc.ChanSubscribe(subject, ch)
+// Sub Handler
+func Subscribe(nc *nats.Conn, subject string, handler nats.MsgHandler) (*nats.Subscription, error) {
+	sub, err := nc.Subscribe(subject, handler)
+
+	if err != nil {
+		log.Error().Err(err).Str("subject", subject).Msg("Failed to subscribe on NATS")
+		return nil, fmt.Errorf("error while subscribing on NATS: %w", err)
+	}
+
+	log.Info().Str("subject", subject).Msg("Successfully subscribed on NATS")
+	return sub, nil
 }
 
-func QueueSubscribe(nc *nats.Conn, subject string, queue string, handler nats.MsgHandler) (*nats.Subscription, error) {
-	return nc.QueueSubscribe(subject, queue, handler)
-}
+// Queue Group
+func QueueGroup(nc *nats.Conn, subject string, queueName string, workers int) {
+	var wg sync.WaitGroup
 
-func AutoUnsubscribe(sub *nats.Subscription, max int) error {
-	return sub.AutoUnsubscribe(max)
-}
+	wg.Add(1)
 
-func SetPendingLimits(sub *nats.Subscription, msgLimit int, bytesLimit int) error {
-	return sub.SetPendingLimits(msgLimit, bytesLimit)
-}
-
-func DrainSubscription(sub *nats.Subscription) error {
-	return sub.Drain()
-}
-
-func Unsubscribe(sub *nats.Subscription) error {
-	return sub.Unsubscribe()
-}
-
-func Respond(msg *nats.Msg, data []byte) error {
-	return msg.Respond(data)
-}
-
-func NewRespInbox(nc *nats.Conn) string {
-	return nc.NewRespInbox()
 }
