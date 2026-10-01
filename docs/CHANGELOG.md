@@ -4,8 +4,8 @@ All notable changes to the NATS reference evaluation platform will be documented
 
 ## [2026-10-01] Create NATS JetStream Consumer Guide
 
-- **Change:** Created [docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-consumer-guide.md) defining persistent JetStream consumer practices. Covers Stream vs Consumer relationship, Durable vs Ephemeral lifecycle (`CreateOrUpdateConsumer`, `Info`, `PauseConsumer`, `ResumeConsumer`, `DeleteConsumer`), Consumption models (`Consume`, `Fetch`, `OrderedConsumer`, Worker Pools), ACK signals (`Ack`, `Nak`, `NakWithDelay`, `Term`, `InProgress`), `MaxDeliver` and `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>` DLQ advisories, and Graceful Shutdown (`consCtx.Stop()`).
-- **Reason:** Provide reference developer guide for JetStream persistent message consumers matching the structure of the Publisher and Subscription guides.
+- **Change:** Created [docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-consumer-guide.md) defining persistent JetStream consumer practices. Refined Stream vs Consumer relationship into a signal-oriented parent-child resource hierarchy (`Server -> Account -> Stream -> Consumer`). Added a dedicated `Default Value (If Omitted)` column to `ConsumerConfig` parameters. Documented Message Replay Mechanisms (`ReplayInstant`, `ReplayOriginal`, `DeliverPolicy` offsets), SDK Inspection APIs (`msg.Metadata()`, `NumDelivered`, `cons.Info()`), and Consumer Pointer Manipulation Usecases (time travel/bugfix reprocessing, skipping poison sequences, DB resyncing, Go SDK `ResetConsumerPointer` code example). Updated Queue Group code example to demonstrate a concurrent pool of 3 load-balanced worker routines.
+- **Reason:** Provide an exhaustive, signal-oriented enterprise reference guide for JetStream persistent message consumers.
 - **Affected Area:** [docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-consumer-guide.md)
 
 ## [2026-10-01] Create NATS Core Subscription Guide
