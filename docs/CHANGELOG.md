@@ -4,8 +4,8 @@ All notable changes to the NATS reference evaluation platform will be documented
 
 ## [2026-10-01] Create NATS Core Subscription Guide
 
-- **Change:** Created [docs/nats-subscription-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-subscription-guide.md) defining application-level Core NATS subscription practices. Converted section headings and descriptions to be language-agnostic for future multi-language SDK additions (Java, Python). Integrated Request-Reply Responder (`msg.Respond` / `msg.RespondMsg`) directly under Asynchronous Callback Subscriptions, and covered Buffer Options (`SetPendingLimits`), Failure & Error Semantics (`ErrSlowConsumer`, DLQ pattern, exception recovery), and Graceful Shutdown (`sub.Drain()`, `nc.Drain()`).
-- **Reason:** Standardize developer documentation with language-agnostic conceptual headings while embedding specific Go SDK code blocks and comments for multi-language extensibility.
+- **Change:** Created [docs/nats-subscription-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-subscription-guide.md) defining application-level Core NATS subscription practices. Converted headings to language-agnostic concepts, expanded explanations for callback threading, slow consumer buffer risks, `msg.Respond` request-reply mechanics, and multi-language dispatch constructs (Go `chan`, Java `Dispatcher`/`BlockingQueue`, Python `asyncio.Queue`). Updated Queue Group code example to demonstrate a concurrent pool of 3 load-balanced worker routines. Removed DLQ references to maintain strict Core NATS focus.
+- **Reason:** Focus Core NATS guide strictly on native Core NATS subscription mechanics without introducing out-of-scope DLQ patterns.
 - **Affected Area:** [docs/nats-subscription-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-subscription-guide.md)
 
 ## [2026-10-01] Wire Subscription Lifecycle through Service Layer

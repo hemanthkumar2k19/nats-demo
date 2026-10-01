@@ -19,11 +19,11 @@ Conceptually:
 ```text
 Active NATS Connection (TCP Socket)
       |
-      +-- Core NATS Async Subscription (Callback / Event Handler)
+      +-- Core NATS Async Subscription (Callback / Event Dispatcher)
       |
       +-- Core NATS Sync Subscription (Polling Loop / Iterator)
       |
-      +-- Core NATS Queue Group Subscription (Load-Balanced Worker)
+      +-- Core NATS Queue Group Subscription (Load-Balanced Worker Pool)
       |
       +-- Core NATS Channel / Dispatch Subscription (Buffered Pipeline)
 ```
@@ -78,21 +78,23 @@ if err != nil {
 
 #### Callback Execution & Threading Considerations
 
-* The SDK creates a dedicated internal processing queue per subscription.
-* Callbacks for a single subscription instance execute **sequentially** by default in most SDK drivers.
-* If handler execution performs heavy synchronous blocking work, message delivery for that specific subscription will stall, causing client buffer growth.
-* For heavy workloads, dispatch processing to a worker pool or separate thread while preserving thread safety.
+* **Sequential Execution**: By default, the SDK creates a single background processing routine per subscription queue. Messages delivered to that subscription invoke the callback function **one at a time sequentially**.
+* **Impact of Heavy Blocking Work**: If a callback performs slow synchronous operations (e.g. 5-second database queries or HTTP calls), the single subscription thread blocks. Incoming messages sent by the server accumulate in the client's internal ring buffer (`sub.Pending()`).
+* **Slow Consumer Risk**: If incoming messages arrive faster than the blocked callback can return, the client buffer fills up and eventually triggers a **Slow Consumer Error** (`nats.ErrSlowConsumer`), dropping subsequent messages.
+* **Remediation**: For heavy workloads, hand off message processing to a background worker pool or dispatch execution to a separate thread (`go process(msg)` in Go) so the subscription callback returns immediately and keeps reading incoming messages from the client queue.
 
 #### Handling Requests & Replying to Request Subjects
 
-When subscribing to a request-reply subject, the incoming message contains a reply subject populated by the requester. The subscriber acts as a **Responder** by publishing a response back to the reply subject.
+When a client sends a request (e.g. via `nc.Request`), NATS attaches a unique inbox reply subject (`msg.Reply`). The subscriber acts as a **Responder** by processing the request and publishing a response back to `msg.Reply`.
+
+The SDK provides helper methods (`msg.Respond` for raw payloads and `msg.RespondMsg` for structured messages with headers) which automatically use `msg.Reply` as the target subject, eliminating the need to manually format or publish to the inbox subject.
 
 ```text
 Requester                                 NATS Server                              Responder
     |                                          |                                       |
     |-- 1. Request (Reply="_INBOX.123") ------>|-- 2. Delivers Request --------------->|
     |                                          |                                       |
-    |                                          |<-- 3. Respond to "_INBOX.123" --------|
+    |                                          |<-- 3. msg.Respond() to "_INBOX.123" --|
     |<-- 4. Receives Response -----------------|                                       |
 ```
 
@@ -101,25 +103,26 @@ Requester                                 NATS Server                           
 sub, err := nc.Subscribe("orders.validate", func(msg *nats.Msg) {
     log.Printf("Received validation request: %s", string(msg.Data))
 
+    // Verify requester provided a reply subject
     if len(msg.Reply) == 0 {
         log.Printf("Warning: received message without reply subject")
         return
     }
 
-    // Basic payload response
+    // Basic payload response using msg.Respond
     if string(msg.Data) == "ping" {
-        _ = msg.Respond([]byte("pong"))
+        _ = msg.Respond([]byte("pong")) // Publishes "pong" directly to msg.Reply
         return
     }
 
-    // Structured response with headers using RespondMsg
+    // Structured response with headers using msg.RespondMsg
     replyMsg := nats.NewMsg(msg.Reply)
     replyMsg.Data = []byte(`{"valid": true, "reason": "Order approved"}`)
     replyMsg.Header.Set("Status-Code", "200")
     replyMsg.Header.Set("Content-Type", "application/json")
 
     if err := msg.RespondMsg(replyMsg); err != nil {
-        log.Printf("Failed to send response: %v", err)
+        log.Printf("Failed to send structured response: %v", err)
     }
 })
 ```
@@ -128,16 +131,25 @@ sub, err := nc.Subscribe("orders.validate", func(msg *nats.Msg) {
 
 ### 2.2 Synchronous Pull / Polling Subscriptions
 
-A synchronous subscription allows an application thread to explicitly fetch messages using a polling method with a timeout parameter. Like asynchronous subscriptions, synchronous subscriptions receive messages in **Fan-Out (Broadcast)** mode unless configured as a Queue Group.
+A synchronous subscription allows an application thread to explicitly pull messages using a polling method with a timeout parameter. 
+
+#### Differences Between Asynchronous and Synchronous Subscriptions
+
+| Dimension | Asynchronous Callback (`Subscribe`) | Synchronous Pull (`SubscribeSync`) |
+| :--- | :--- | :--- |
+| **Control Model** | **Push (SDK-Driven)**: SDK background thread automatically invokes callback as messages arrive. | **Pull (Application-Driven)**: Application explicitly calls `sub.NextMsg(timeout)` when ready to process. |
+| **Threading** | Managed internally by NATS client SDK. | Managed entirely by application threads. |
+| **Rate Control** | Rate determined by inbound server arrival rate. | Rate controlled by application polling loop, avoiding callback buffer overflows. |
+| **Use Cases** | Real-time event handling, instant responders. | Controlled polling loops, batching, custom worker thread pools. |
 
 ```go
-// Go SDK Example
+// Go SDK Example: Synchronous Polling Loop
 sub, err := nc.SubscribeSync("orders.created")
 if err != nil {
     return err
 }
 
-// Processing loop
+// Processing loop owned by application thread
 for {
     msg, err := sub.NextMsg(1 * time.Second)
     if err != nil {
@@ -163,10 +175,16 @@ for {
 
 ### 2.3 Channel / Dispatch Subscriptions
 
-Channel or queue dispatch subscriptions deliver incoming messages into an application-owned thread-safe buffer or channel. Channel subscriptions also operate in **Fan-Out** mode.
+Channel or queue dispatch subscriptions deliver incoming messages into an application-owned thread-safe queue or channel. Channel subscriptions operate in **Fan-Out** mode.
+
+#### Multi-Language Pipeline Concepts
+
+* **Go SDK**: Uses native Go CSP channels (`chan *nats.Msg`).
+* **Java SDK**: Uses `Dispatcher` managing an internal thread-safe `BlockingQueue<Message>`.
+* **Python SDK**: Uses `asyncio.Queue` or asynchronous coroutine iterators (`async for msg in sub:`).
 
 ```go
-// Go SDK Example
+// Go SDK Example: Channel Subscription Pipeline
 msgChan := make(chan *nats.Msg, 64)
 
 sub, err := nc.ChanSubscribe("orders.created", msgChan)
@@ -189,7 +207,7 @@ go func() {
 
 Core NATS provides distributed work-queue semantics using **Queue Groups**.
 
-Unlike standard Pub/Sub subscriptions which broadcast every message to all active subscribers (fan-out), a Queue Group operates in **Point-to-Point (Load-Balanced)** mode. When multiple service instances subscribe to the same subject with the same queue group name, the NATS server distributes each published message to **exactly one** worker instance in the group.
+Unlike standard Pub/Sub subscriptions which broadcast every message to all active subscribers (fan-out), a Queue Group operates in **Point-to-Point (Load-Balanced)** mode. When multiple service instances or worker threads subscribe to the same subject with the same queue group name, the NATS server distributes each published message to **exactly one** worker instance in the group.
 
 ```text
                                                  +--> Worker 1 (Queue Group "order-workers")
@@ -199,22 +217,47 @@ Publisher --------> NATS Server (Load Balancer) -+--> Worker 2 (Queue Group "ord
                                                  +--> Worker 3 (Queue Group "order-workers")
 ```
 
-#### Asynchronous Queue Group
+#### Worker Pool Example (Multiple Concurrent Queue Group Workers)
+
+To demonstrate true queue group load balancing, the example below spins up a **pool of 3 worker routines** sharing the same queue group `"order-workers"`. When messages are published to `"orders.created"`, the NATS server load-balances messages across the 3 workers.
 
 ```go
-// Go SDK Example
-sub, err := nc.QueueSubscribe("orders.created", "order-workers", func(msg *nats.Msg) {
-    log.Printf("Worker handling order: %s", string(msg.Data))
-})
-if err != nil {
-    return err
+// Go SDK Example: Queue Group Worker Pool (3 Concurrent Workers)
+package main
+
+import (
+	"fmt"
+	"log"
+	"sync"
+	"time"
+
+	"github.com/nats-io/nats.go"
+)
+
+func StartWorkerPool(nc *nats.Conn, workerCount int) ([]*nats.Subscription, error) {
+	subs := make([]*nats.Subscription, 0, workerCount)
+
+	for i := 1; i <= workerCount; i++ {
+		workerID := i
+		// Each worker subscribes to "orders.created" under the SAME queue group name "order-workers"
+		sub, err := nc.QueueSubscribe("orders.created", "order-workers", func(msg *nats.Msg) {
+			log.Printf("[Worker-%d] Handling load-balanced order: %s", workerID, string(msg.Data))
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to start worker %d: %w", workerID, err)
+		}
+		subs = append(subs, sub)
+	}
+
+	log.Printf("Successfully started worker pool with %d workers on queue group 'order-workers'", workerCount)
+	return subs, nil
 }
 ```
 
-#### Synchronous Queue Group
+#### Synchronous Queue Group Worker Loop
 
 ```go
-// Go SDK Example
+// Go SDK Example: Synchronous Worker Pulling from Queue Group
 sub, err := nc.QueueSubscribeSync("orders.created", "order-workers")
 if err != nil {
     return err
@@ -222,7 +265,7 @@ if err != nil {
 
 msg, err := sub.NextMsg(2 * time.Second)
 if err == nil {
-    log.Printf("Worker pulled message: %s", string(msg.Data))
+    log.Printf("Worker pulled load-balanced message: %s", string(msg.Data))
 }
 ```
 
@@ -340,28 +383,6 @@ sub, err := nc.Subscribe("orders.created", func(msg *nats.Msg) {
     processOrder(msg.Data)
 })
 ```
-
-#### Dead-Letter / Error Publishing Pattern
-
-Because Core NATS lacks built-in message re-delivery, applications handling unprocessable messages can publish error events to an explicit Dead-Letter / Error subject for audit and manual inspection:
-
-```go
-// Go SDK Example
-func handleOrderMsg(nc *nats.Conn, msg *nats.Msg) {
-    if err := processOrder(msg.Data); err != nil {
-        log.Printf("Failed to process order message: %v. Routing to DLQ.", err)
-
-        // Publish to dead-letter subject with error headers
-        dlqMsg := nats.NewMsg("orders.dlq")
-        dlqMsg.Data = msg.Data
-        dlqMsg.Header.Set("X-Original-Subject", msg.Subject)
-        dlqMsg.Header.Set("X-Error-Reason", err.Error())
-
-        _ = nc.PublishMsg(dlqMsg)
-    }
-}
-```
-
 ---
 
 ## 4. Graceful Shutdown
