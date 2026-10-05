@@ -83,7 +83,7 @@ func (s *Service) Publish(msg *model.Message) error {
 // PublishWithReply delegates message publishing with a reply subject to the messaging layer.
 func (s *Service) PublishWithReply(msg *model.Message) error {
 
-	sub, err := messaging.Subscribe(s.nc, msg.Reply, messaging.ReplyHandler)
+	sub, err := messaging.Subscribe(s.nc, msg.Reply)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to reply subject %s: %w", msg.Reply, err)
 	}
@@ -114,9 +114,9 @@ func (s *Service) CreateSubscription(subject string, handlerType string) (*subsc
 
 	switch handlerType {
 	case "order":
-		sub, err = messaging.Subscribe(s.nc, subject, messaging.OrderHandler)
+		sub, err = messaging.Subscribe(s.nc, subject)
 	case "reply":
-		sub, err = messaging.Subscribe(s.nc, subject, messaging.ReplyHandler)
+		sub, err = messaging.Subscribe(s.nc, subject)
 	default:
 		return nil, fmt.Errorf("invalid handler type: %s", handlerType)
 	}

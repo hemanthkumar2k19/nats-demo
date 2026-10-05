@@ -55,9 +55,20 @@ func OrderHandler(msg *nats.Msg) {
 }
 
 func ReplyHandler(msg *nats.Msg) {
-	log.Info().
-		Str("replay_subject", msg.Subject).
-		Any("headers", toMap(msg.Header)).
-		Str("payload", string(msg.Data)).
-		Msg("Replay: Order processed successfully")
+
+	// Verify requester provided a reply subject
+	if len(msg.Reply) == 0 {
+		log.Error().Msg("Error: received message without reply subject")
+		return
+	}
+
+	// Structured response with headers using msg.RespondMsg
+	replyMsg := nats.NewMsg(msg.Reply)
+	replyMsg.Data = []byte(`{"valid": true, "reason": "Order approved"}`)
+	replyMsg.Header.Set("Status-Code", "200")
+	replyMsg.Header.Set("Content-Type", "application/json")
+
+	if err := msg.RespondMsg(replyMsg); err != nil {
+		log.Error().Msg("Failed to send structured response")
+	}
 }
