@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-05] Clean References in NATS Subject Design Document
+
+- **Change:** Updated `## References` section in [docs/subject-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/subject-design.md) to a clean list of hyperlinked reference titles, removing description subtext, stripping `utm_source=chatgpt.com` parameters, eliminating raw URL blocks, and enforcing ASCII-only formatting.
+- **Reason:** Simplify reference section to direct hyperlinked list for maximum clarity.
+- **Affected Area:** [docs/subject-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/subject-design.md)
+
 ## [2026-10-01] Add NATS Subject Architecture Brief to Publisher Guide
 
 - **Change:** Refactored Section 1 of [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) to replace initialization code snippets with compact prerequisites, and added Section `1.2 NATS Subjects Brief & Naming Architecture` detailing Subject concepts, enterprise hierarchy conventions (`<domain>.<entity>.<action>`), validation rules (case sensitivity, dot-separated tokens, concrete publish requirement), and wildcard matching semantics (`*` single-token vs `>` multi-token). Clarified literal string behavior when publishing to subjects containing wildcard characters.

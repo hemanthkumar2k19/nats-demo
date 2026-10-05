@@ -188,3 +188,12 @@ Subject versioning is appropriate for:
 - Each version **MUST** represent a distinct messaging contract; a version **MUST NOT** be reused for a different contract.
 - Breaking contract changes **MUST NOT** be published to an existing subject without an approved migration strategy.
 - Old and new versions **MUST** remain available during the approved migration period and **SHOULD** be retired after migration completes.
+
+
+## References
+
+- [Synadia - Designing NATS Subject Hierarchies](https://www.synadia.com/blog/designing-nats-subject-hierarchies)
+- [NATS Documentation - Core NATS Deep Dive](https://docs.nats.io/learn/core-nats/)
+- [NATS Documentation - Authorization](https://docs.nats.io/learn/security/authorization)
+- [NATS Documentation - JetStream Deep Dive](https://docs.nats.io/learn/jetstream/)
+- [NATS Documentation - JetStream Reference](https://docs.nats.io/reference/2.12/jetstream)
