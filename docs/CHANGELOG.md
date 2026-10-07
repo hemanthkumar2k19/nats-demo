@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-07] Refactor NATS Triaging Guide to MELT Observability Framework
+
+- **Change:** Refactored [docs/developer-guide/observability/triaging.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/observability/triaging.md) to adopt the MELT (Metrics, Events, Logs, Traces) observability sequence: starting with Distributed Traces as the primary entry point to locate failing execution spans, correlating structured Application & NATS Broker Logs by `trace_id` for deep execution context, and verifying NATS System Events/Advisories (`$JS.EVENT.ADVISORY.>`) & Metrics (`nats consumer info`, lag stats) for broker state inspection. Replaced Mermaid chart with an ASCII text-based diagram.
+- **Reason:** Provide a holistic, multi-pillar telemetry triaging guide centered around distributed tracing and event advisories with clean ASCII diagram formatting.
+- **Affected Area:** [docs/developer-guide/observability/triaging.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/observability/triaging.md)
+
 ## [2026-10-07] Refactor Heading Hierarchy & Code Block Formatting in Resource Semantics Document
 
 - **Change:** Updated [docs/resource-semantics.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/resource-semantics.md) heading levels and numbering (`## Resource Semantic Model`, `## 6. Cross-Resource Naming Principles`, `### 6.1` to `### 6.5`), converted all diagram text blocks from `text` to `bash` code blocks, added `### Naming Format` to Consumer section for structural consistency, and replaced non-ASCII box/arrow characters with standard ASCII equivalents.
