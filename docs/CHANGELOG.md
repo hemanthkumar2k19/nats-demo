@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-07] Refactor Heading Hierarchy & Code Block Formatting in Resource Semantics Document
+
+- **Change:** Updated [docs/resource-semantics.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/resource-semantics.md) heading levels and numbering (`## Resource Semantic Model`, `## 6. Cross-Resource Naming Principles`, `### 6.1` to `### 6.5`), converted all diagram text blocks from `text` to `bash` code blocks, added `### Naming Format` to Consumer section for structural consistency, and replaced non-ASCII box/arrow characters with standard ASCII equivalents.
+- **Reason:** Ensure consistent markdown heading structure, standardized code block identifiers, and ASCII-only documentation compliance.
+- **Affected Area:** [docs/resource-semantics.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/resource-semantics.md)
+
 ## [2026-10-07] Refactor Heading Hierarchy & Clean References in Stream Design Document
 
 - **Change:** Refactored markdown heading levels in [docs/stream-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/stream-design.md) so that section `1. Relationship Between Subjects and Streams` uses H2 (`##`), subsections `1.1` through `1.8` use H3 (`###`), and `Standard Principle` uses H4 (`####`). Cleaned `## References` section by attaching hyperlinked URLs to descriptive title headings, stripping `utm_source=chatgpt.com` query parameters, and replacing non-ASCII arrow symbols with standard ASCII (`->`).
