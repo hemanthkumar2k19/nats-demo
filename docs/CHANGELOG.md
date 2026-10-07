@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-07] Refactor Heading Hierarchy & Clean References in Stream Design Document
+
+- **Change:** Refactored markdown heading levels in [docs/stream-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/stream-design.md) so that section `1. Relationship Between Subjects and Streams` uses H2 (`##`), subsections `1.1` through `1.8` use H3 (`###`), and `Standard Principle` uses H4 (`####`). Cleaned `## References` section by attaching hyperlinked URLs to descriptive title headings, stripping `utm_source=chatgpt.com` query parameters, and replacing non-ASCII arrow symbols with standard ASCII (`->`).
+- **Reason:** Ensure consistent markdown heading hierarchy and enforce clean, ASCII-compliant documentation formatting standards.
+- **Affected Area:** [docs/stream-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/stream-design.md)
+
 ## [2026-10-05] Clean References in NATS Subject Design Document
 
 - **Change:** Updated `## References` section in [docs/subject-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/subject-design.md) to a clean list of hyperlinked reference titles, removing description subtext, stripping `utm_source=chatgpt.com` parameters, eliminating raw URL blocks, and enforcing ASCII-only formatting.
