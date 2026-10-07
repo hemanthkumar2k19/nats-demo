@@ -53,17 +53,9 @@ A Stream represents persisted data; Consumers represent application-specific con
 > **Subjects define the messaging namespace, Streams define the persistence boundary, and Consumers define the consumption state.**
 
 
-# Stream Design
-
 ## 2. Guide to Decide When to Create a New Stream
 
-When an application requests persistence for one or more subjects, our primary decision is whether those subjects can be accommodated by an **existing Stream** or require a **new Stream**.
-
-We should capture the usage and persistence requirements and evaluate them against the existing Stream configuration to determine the appropriate Stream boundary.
-
-Our objective is to establish a Stream boundary where the subjects have sufficiently compatible **persistence, workload, storage, lifecycle, and consumption requirements**.
-
-### 2.1 Decision Flow
+When persistence is required for a subject or set of subjects, we should determine whether an **existing Stream can accommodate the workload** or whether an **independent Stream boundary** is required.
 
 ```text
 Proposed Subject(s)
@@ -84,64 +76,51 @@ Core NATS      ▼
   Reuse Stream       New Stream
 ```
 
-Before making the decision, we should understand both the **subject requirements** and the **expected consumption behaviour**.
+The Application Team provides the usage requirements; whoever owns the Stream design uses those requirements to determine the appropriate topology.
 
----
+### 2.1 Information We Should Capture
 
-### 2.2 Information Required
+Before making the decision, we should understand:
 
-Before designing the Stream, we should capture the requirements that influence persistence and consumption.
-
-| Area | Information Required |
+| Area | What we need to know |
 |---|---|
-| **Purpose** | What business or technical purpose does the subject serve? |
+| **Purpose** | What does the subject represent? |
 | **Persistence** | Why must the messages be persisted? |
+| **Retention** | How long must they remain available? |
 | **Replay / Recovery** | Is historical replay or recovery required? |
-| **Retention** | How long must messages remain available? |
 | **Volume** | Expected average and peak message rate / data volume |
 | **Message Size** | Expected message size and variation |
-| **Subject Cardinality** | Expected number and growth of unique subjects |
-| **Consumers** | Who consumes the data and how many independent consumers are expected? |
+| **Subject Cardinality** | Expected number of distinct subjects and their growth |
+| **Consumers** | Number and type of expected consumers |
 | **Consumption Pattern** | Continuous processing, fan-out, replay, batch, snapshot, etc. |
-| **Consumer Lifecycle** | Long-lived, temporary, or dynamically created consumers |
-| **Recovery Behaviour** | What should happen when consumers are unavailable or restart? |
+| **Consumer Lifecycle** | Long-lived, temporary, or dynamically created |
 | **Isolation** | Any requirement for independent capacity, lifecycle, or failure isolation? |
 
-The application provides the business and usage requirements; the Stream design should be derived from those requirements rather than from application ownership alone.
+### 2.2 Stream Compatibility
 
----
+We should evaluate whether the proposed subjects are compatible with the existing Stream across the following dimensions.
 
-### 2.3 Persistence and Retention
-
-We should first determine whether the proposed subjects require a persistence model compatible with the existing Stream.
+#### Persistence and Retention
 
 We should evaluate:
 
-- Retention duration
-- Retention policy
-- Maximum message / byte limits
-- Whether historical replay is required
-- Whether only recent state is required
-- Whether messages need to remain available independently of consumer acknowledgement
+- Retention policy and duration
+- Message / byte limits
+- Replay and recovery requirements
+- Message lifecycle
 
-#### Example
-
-Consider two proposed subjects:
+**Example:**
 
 ```text
 customer.profile.updated
 customer.notification.requested
 ```
 
-If profile updates need to remain available for 7 days for recovery, while notification requests need to be removed after successful processing, they have materially different persistence requirements.
-
-**Decision:** We should evaluate them as separate persistence workloads rather than assuming they should share a Stream because both belong to the same application.
+If one requires seven days of recovery while the other is removed after successful processing, they have materially different persistence requirements.
 
 ---
 
-### 2.4 Workload and Capacity
-
-Subjects sharing a Stream contribute to the same Stream-level workload.
+#### Workload and Capacity
 
 We should evaluate:
 
@@ -151,20 +130,15 @@ We should evaluate:
 - Aggregate retained data
 - Storage growth
 - Subject cardinality
-- Expected growth over time
 
-A large number of subjects does not automatically require multiple Streams. The concern is whether their combined workload creates an undesirable operational or capacity boundary.
-
-#### Example
+For example:
 
 ```text
 inventory.stock.updated
 inventory.reservation.updated
 ```
 
-may generate moderate and predictable traffic.
-
-Another proposed subject:
+may have a predictable workload, while:
 
 ```text
 device.telemetry.status.<device-id>
@@ -172,667 +146,226 @@ device.telemetry.status.<device-id>
 
 may generate substantially higher and continuously growing traffic.
 
-If both are placed in one Stream, the telemetry workload can dominate the Stream's storage and operational characteristics.
-
-**Decision:** We should evaluate whether these workloads require independent Stream boundaries.
+We should determine whether these workloads require independent Stream boundaries.
 
 ---
 
-### 2.5 Subject Cardinality
+#### Storage and Availability
 
-We should consider both the **number of subjects** and the **rate at which new subjects are introduced**.
+We should evaluate compatibility of:
 
-We should determine whether subjects are:
+- Storage characteristics
+- Durability
+- Replication
+- Failure tolerance
+- Recovery requirements
 
-- Fixed and well-defined
-- Dynamically generated
-- Created per tenant, device, user, session, or other entity
-- Potentially unbounded
-- Frequently created and retired
-
-High cardinality is not itself a reason to create one Stream per subject.
-
-Instead, we should ask:
-
-> **Does the subject population create a workload that should be independently managed?**
-
-#### Example
-
-```text
-shipment.status
-shipment.location
-shipment.exception
-```
-
-has a relatively predictable subject model.
-
-A subject structure such as:
-
-```text
-device.<device-id>.diagnostics
-```
-
-can grow with the number of devices.
-
-The latter requires explicit capacity and lifecycle consideration before deciding how it should be mapped to Streams.
+Materially different requirements may justify independent Streams.
 
 ---
 
-### 2.6 Storage and Replication
+#### Lifecycle and Operational Isolation
 
-We should evaluate whether the proposed subjects are compatible with the existing Stream's storage and availability requirements.
+We should determine whether the subjects need to be independently:
+
+- Created or decommissioned
+- Purged
+- Scaled
+- Configured
+- Operated
+- Isolated from failures in other workloads
+
+---
+
+#### Consumer Requirements
+
+Different Consumer requirements **do not automatically require different Streams**.
 
 We should consider:
 
-- Storage type
-- Durability requirements
-- Replication factor
-- Failure tolerance
-- Recovery requirements
-- Expected storage growth
+- Number of Consumers
+- Durable vs ephemeral
+- Long-lived vs short-lived
+- Filter requirements
+- Replay behaviour
+- Consumer creation rate
+- Expected lag
+- Acknowledgement and redelivery behaviour
 
-#### Example
-
-Suppose an application has:
-
-```text
-payment.transaction.completed
-```
-
-requiring durable replicated storage for business recovery, while:
-
-```text
-application.debug.snapshot
-```
-
-is retained only temporarily for operational troubleshooting.
-
-Although both originate from the same application, their storage and durability requirements may justify different Stream boundaries.
-
----
-
-### 2.7 Consumer Requirements
-
-Consumer requirements must be evaluated as part of Stream design, but **a different Consumer requirement does not automatically mean a different Stream**.
-
-A single Stream can support multiple independent Consumers:
+For example:
 
 ```text
                 CUSTOMER_EVENTS
                  /      |      \
-                /       |       \
           Consumer A Consumer B Consumer C
-              │          │          │
-          Service A  Service B  Service C
 ```
 
-We should evaluate:
+Three independent services consuming the same persisted workload normally require three Consumers, not three Streams.
 
-- Number of Consumers
-- Durable vs ephemeral Consumers
-- Long-lived vs short-lived Consumers
-- Consumer filter requirements
-- Replay requirements
-- Consumer creation rate
-- Expected consumer lag
-- Acknowledgement and redelivery behaviour
-- Whether consumers access the same workload or substantially different workloads
+A separate Stream should be considered only when Consumer behaviour creates a **materially different workload or operational requirement**.
 
-Consumer-specific behaviour should normally remain at the **Consumer level**.
+### 2.3 Reuse or Create?
 
-A separate Stream should be considered only when consumer behaviour creates a **materially different workload or operational requirement**.
+We should ask:
 
-#### Example
+> **Can the proposed subjects and their expected Consumers operate within the existing Stream without introducing incompatible persistence, workload, storage, lifecycle, or operational requirements?**
 
-A Stream contains:
+**Yes → Reuse the existing Stream.**
 
-```text
-order.created
-order.shipped
-order.cancelled
-```
+**No → Identify the requirement that justifies a new Stream.**
 
-and is consumed by:
-
-- Order Processing
-- Customer Notification
-- Reporting
-
-These consumers have different acknowledgement and delivery requirements but consume the same persisted event workload.
-
-**Decision:** Multiple Consumers on the same Stream are appropriate.
-
-Conversely, if another application requires large-scale historical replay of the data for batch processing, we should evaluate the additional storage, replay, and I/O workload before deciding whether that workload should share the same Stream.
-
----
-
-### 2.8 Lifecycle and Operational Isolation
-
-We should determine whether the proposed subjects need to be managed independently.
-
-We should consider:
-
-- Independent ownership
-- Different creation/decommissioning lifecycle
-- Independent purge requirements
-- Independent capacity growth
-- Different operational criticality
-- Failure isolation
-- Independent configuration changes
-
-#### Example
-
-An application may have:
-
-```text
-fraud.alert.created
-```
-
-as a business-critical event and:
-
-```text
-fraud.model.debug
-```
-
-as temporary diagnostic data.
-
-If the diagnostic workload is regularly purged, recreated, or scaled independently, coupling it with the business-critical workload may create unnecessary operational dependency.
-
----
-
-### 2.9 Reuse Existing Stream vs Create New Stream
-
-After evaluating the above factors, we should ask:
-
-> **Can the proposed subjects operate within the existing Stream without introducing incompatible persistence, workload, consumer, storage, or lifecycle requirements?**
-
-If **yes**, the existing Stream should normally be reused.
-
-If **no**, we should identify the requirement that justifies an independent Stream.
-
-A new Stream should therefore have a **documented reason**, such as:
+Possible justifications include:
 
 ```text
 New Stream
    │
-   └── Reason
-        ├── Retention isolation
-        ├── Workload isolation
-        ├── Storage / replication isolation
-        ├── Consumer workload isolation
-        ├── Lifecycle isolation
-        └── Failure / operational isolation
-```
-
----
-
-### 2.10 Enterprise Standard
-
-Based on the above evaluation, the following standards apply to Stream management:
-
-1. **Existing compatible Streams must be reused by default.**
-
-2. **A new Stream must have a specific persistence or operational justification.**
-
-3. **A new subject does not by itself justify a new Stream.**
-
-4. **Application ownership does not determine Stream boundaries.** Subjects from the same application may require separate Streams, while compatible subjects from different applications may share a Stream.
-
-5. **Subjects with compatible persistence, workload, storage, lifecycle, and consumption requirements should be grouped into the same Stream where practical.**
-
-6. **Materially incompatible requirements must be isolated into separate Streams.**
-
-7. **Consumer differences alone must not be used as a reason to create a new Stream.** Consumer-level requirements should be handled through Consumers unless they create a materially different workload or operational boundary.
-
-8. **High subject cardinality must be explicitly evaluated but must not automatically result in one Stream per subject.**
-
-9. **The number of Streams should be minimised without creating inappropriate coupling between workloads.**
-
-10. **Every new Stream must have an explicit justification recorded as part of the Maker–Checker approval.**
-
-### 2.11 Core Decision Principle
-
-> **Create the minimum number of Streams necessary to maintain appropriate persistence, workload, consumer, storage, and operational boundaries.**
-
-The objective is therefore neither:
-
-```text
-One Subject -> One Stream
-```
-
-nor:
-
-```text
-One Application -> One Stream
-```
-
-but rather:
-
-```text
-Compatible Requirements -> Shared Stream
-
-Materially Different Requirements -> Separate Streams
+   ├── Retention isolation
+   ├── Workload / capacity isolation
+   ├── Storage / replication isolation
+   ├── Consumer workload isolation
+   ├── Lifecycle isolation
+   └── Failure / operational isolation
 ```
 
 ## 3. Impact of Subjects and Consumers on Stream Design
 
-The way we group subjects into Streams, and the way we create Consumers against those Streams, directly affects **storage, retention, resource utilisation, workload isolation, operational complexity, and scalability**.
+Stream boundaries should account for both **subject-side workload** and **consumer-side workload**.
 
-The following anti-patterns should be considered when designing a Stream.
+Poor boundaries create two opposite problems:
 
-### 3.1 Anti-Pattern: One Stream for Unrelated Subjects
+- **Too Broad** → unrelated workloads become operationally coupled.
+- **Too Narrow** → excessive Stream count creates operational fragmentation.
 
-A Stream should not become a catch-all persistence boundary for subjects with materially different requirements.
+### 3.1 Subject-Side Anti-Patterns
 
-```text id="4f0d3d"
-APPLICATION_STREAM
- ├── payment.completed
- ├── audit.security
- ├── device.telemetry
- ├── user.notification
- └── debug.event
-```
+| Anti-Pattern | Impact |
+|---|---|
+| **Catch-All Stream** | Unrelated workloads share retention, storage, capacity, and operational changes. |
+| **One Stream per Subject** | Stream proliferation, repeated configuration, and increased operational overhead. |
+| **Group by Subject Prefix Only** | Similar naming does not guarantee compatible persistence or workload requirements. |
+| **Group by Application Only** | Application ownership can create unnecessary retention, capacity, and lifecycle coupling. |
+| **Ignore Subject Cardinality** | Large or continuously growing subject populations can increase resource and operational complexity. |
+| **Mix Very Different Volumes** | High-volume workloads can dominate shared Stream capacity and affect other subjects. |
+| **Mix Incompatible Retention** | A common retention policy may over-retain one workload or under-retain another. |
 
-These subjects may have different:
+### 3.2 Consumer-Side Anti-Patterns
 
-- Message volumes
-- Retention requirements
-- Message sizes
-- Subject cardinality
-- Consumer behaviour
-- Lifecycle
-- Operational criticality
+| Anti-Pattern | Impact |
+|---|---|
+| **Consumer per Application Without Need** | Unnecessary consumer state and operational overhead. |
+| **Treat Every Consumer as a Stream Requirement** | Unnecessary Stream proliferation and persistence fragmentation. |
+| **Ignore Consumer Scale** | Large Consumer populations can increase server-side state and delivery workload. |
+| **Ignore Replay Workload** | Large replay operations can introduce additional I/O and delivery load. |
+| **Ignore Dynamic Consumer Lifecycle** | Frequent Consumer creation and deletion can increase operational overhead. |
+| **Use Stream Separation for a Consumer-Level Problem** | Persistence becomes fragmented when Consumer configuration would have been sufficient. |
 
-**Impact:**
+### 3.3 Combined Impact
 
-- Retention and storage become coupled.
-- One workload can dominate Stream resource consumption.
-- Capacity planning becomes difficult.
-- Troubleshooting becomes harder.
-- Changes to the Stream can affect unrelated workloads.
-- Operational blast radius increases.
+A Stream's effective workload is influenced by both sides:
 
----
-
-### 3.2 Anti-Pattern: One Stream Per Subject Without Justification
-
-The opposite extreme is creating a separate Stream for every persisted subject.
-
-```text id="4f2r3k"
-orders.created     → ORDERS_CREATED_STREAM
-orders.updated     → ORDERS_UPDATED_STREAM
-orders.cancelled   → ORDERS_CANCELLED_STREAM
-```
-
-when all three have the same persistence and operational requirements.
-
-**Impact:**
-
-- Unnecessary Stream proliferation
-- Increased configuration and lifecycle management
-- More resources to monitor
-- Repeated configuration for equivalent workloads
-- Fragmented operational visibility
-- Increased platform overhead
-
-A new subject alone is not sufficient justification for a new Stream.
-
----
-
-### 3.3 Anti-Pattern: Grouping Subjects Only by Naming Hierarchy
-
-Subjects with the same prefix do not necessarily have compatible persistence requirements.
-
-```text id="yq4f7m"
-customer.profile.updated
-customer.audit.created
-customer.notification.sent
-```
-
-Grouping them solely because they begin with `customer` can introduce unnecessary coupling.
-
-**Impact:**
-
-- Incompatible retention requirements
-- Different workload characteristics
-- Different consumer behaviour
-- Difficult operational management
-
-Subject hierarchy defines the messaging namespace; it does not by itself define the persistence boundary.
-
----
-
-### 3.4 Anti-Pattern: Grouping Subjects Only by Application
-
-All subjects owned by one application do not necessarily belong in one Stream.
-
-```text id="z3w8xu"
-Application A
-      │
-      └── APPLICATION_A_STREAM
-             ├── business.events
-             ├── audit.events
-             └── temporary.processing
-```
-
-**Impact:**
-
-- Retention coupling
-- Capacity coupling
-- Lifecycle coupling
-- Unnecessary operational dependency
-
-Application ownership should therefore not be used as the sole Stream-boundary criterion.
-
----
-
-### 3.5 Anti-Pattern: Ignoring Subject Cardinality
-
-A subject model that creates a large or continuously growing number of unique subjects can materially change the workload of a Stream.
-
-For example:
-
-```text id="o6j8xv"
-device.<device-id>.status
-```
-
-may produce a unique subject for every device.
-
-**Impact:**
-
-- Increased Stream metadata
-- Increased filtering complexity
-- Greater consumer workload
-- More difficult capacity planning
-- Increased operational complexity
-
-High cardinality does **not** automatically mean one Stream per subject. The resulting workload and growth pattern must be evaluated.
-
----
-
-### 3.6 Anti-Pattern: Mixing Significantly Different Workloads
-
-Subjects with dramatically different traffic characteristics can create an undesirable shared workload.
-
-```text id="2qk2m9"
-application.started
-```
-
-may generate very few messages, while:
-
-```text id="h3l6n8"
-application.request.trace
-```
-
-may generate messages continuously at very high volume.
-
-**Impact:**
-
-- High-volume traffic determines much of the Stream's resource requirements.
-- Low-volume workloads become coupled to high-volume workloads.
-- Capacity planning becomes less predictable.
-- Performance investigation becomes more difficult.
-
----
-
-### 3.7 Anti-Pattern: Mixing Incompatible Retention Requirements
-
-Retention is a Stream-level concern.
-
-For example:
-
-```text id="2qbl9s"
-customer.preference.changed
-```
-
-may require only a short recovery window, while:
-
-```text id="g2jv8h"
-customer.legal.consent.updated
-```
-
-may require substantially longer retention.
-
-**Impact:**
-
-- Unnecessary storage consumption through over-retention
-- Insufficient retention for workloads requiring longer recovery
-- Difficulty changing retention independently
-- Potential recovery or compliance concerns
-
-Subjects with materially different retention requirements should therefore be evaluated for separate Stream boundaries.
-
----
-
-## 3.8 Anti-Pattern: Creating Consumers Without Considering Stream Workload
-
-A Stream can have multiple Consumers, and different applications may independently consume the same persisted data.
-
-```text id="xk6q71"
-                CUSTOMER_EVENTS
-                 /      |      \
-                /       |       \
-          Consumer A Consumer B Consumer C
-              │          │          │
-          Service A  Service B  Service C
-```
-
-Multiple Consumers are not inherently a problem.
-
-The anti-pattern is creating Consumers without considering their combined workload.
-
-We should evaluate:
-
-- Number of Consumers
-- Durable vs ephemeral Consumers
-- Long-lived vs short-lived Consumers
-- Consumer creation rate
-- Consumer filter requirements
-- Replay behaviour
-- Expected lag
-- Acknowledgement and redelivery behaviour
-- Number of applications consuming the Stream
-
-**Impact:**
-
-- Increased server-side consumer state
-- Increased filtering and delivery work
-- Increased replay / recovery load
-- More operational resources to manage
-- Increased Stream workload even when publish volume remains unchanged
-
-Synadia's guidance specifically highlights **consumer count, filter overlap, and dynamic subscription behaviour** as important scaling considerations for JetStream workloads.
-
----
-
-### 3.9 Anti-Pattern: Treating Every Consumer Requirement as a Stream Requirement
-
-Different Consumers do not automatically require separate Streams.
-
-For example:
-
-```text id="x3c8t4"
-ORDERS_STREAM
-      │
-      ├── Order Processor
-      ├── Notification Service
-      └── Reporting
-```
-
-These Consumers can have independent delivery state and acknowledgement behaviour while consuming the same persisted workload.
-
-Creating three Streams solely because there are three Consumers would unnecessarily duplicate the persistence boundary.
-
-**Impact of unnecessary Stream separation:**
-
-- Duplicate persisted data
-- Additional storage consumption
-- More Stream configuration
-- Increased operational complexity
-- More difficult data lifecycle management
-
-Consumer-specific requirements should normally be handled at the Consumer level.
-
----
-
-### 3.10 Anti-Pattern: Allowing Consumer Behaviour to Distort an Otherwise Appropriate Stream
-
-The opposite problem can also occur.
-
-Suppose a Stream contains a normal operational workload:
-
-```text id="m0x0tq"
-ORDER_EVENTS
-```
-
-and a new consumer requires large-scale historical replay or repeated snapshot-style access.
-
-The new Consumer may introduce a substantially different workload against the same persisted data.
-
-We should therefore evaluate whether the additional consumption pattern creates:
-
-- Significant replay traffic
-- Increased storage I/O
-- Large delivery bursts
-- High consumer creation/deletion rates
-- Significant filtering overhead
-- Resource contention with existing Consumers
-
-If the consumer workload becomes a materially different operational workload, Stream separation may need to be reconsidered.
-
-The important point is:
-
-> **Consumer requirements can influence Stream design, but should not automatically determine it.**
-
----
-
-### 3.11 Anti-Pattern: Ignoring the Combined Subject and Consumer Effect
-
-Stream design should not be evaluated only from the publishing side.
-
-Consider:
-
-```text id="x9b5pp"
-                  STREAM
-                    │
-        ┌───────────┼───────────┐
-        │           │           │
-     Subject A   Subject B   Subject C
-        │           │           │
-        └───────────┼───────────┘
-                    │
-          ┌─────────┼─────────┐
-          │         │         │
-       Consumer A Consumer B Consumer C
-```
-
-The Stream workload is influenced by both:
-
-**Subject side**
-
+**Subject Side**
 - Publish rate
 - Message size
 - Retained data
 - Subject cardinality
-- Retention
+- Retention requirements
 
-**Consumer side**
-
-- Number of Consumers
-- Filter complexity
+**Consumer Side**
+- Consumer count
+- Filtering
 - Replay
 - Delivery rate
 - Consumer lifecycle
-- Acknowledgement / redelivery behaviour
 
-A Stream that appears appropriate based only on its subjects may become unsuitable when its actual consumer workload is considered.
+These together determine the **Stream workload and operational characteristics**.
 
----
+A Stream that appears appropriate based only on its subjects may become unsuitable once Consumer workload is considered.
 
-### 3.12 Anti-Pattern: Ignoring Operational Blast Radius
+However, a large number of Consumers does **not automatically** require separate Streams. Consumer-level configuration should be considered first.
 
-A Stream is an operational boundary.
+### 3.4 Operational Blast Radius
 
-Any Stream-level operation can potentially affect every subject and Consumer associated with it.
-
-Examples include:
+A Stream is an **operational boundary**. Changes to the Stream can affect all subjects and Consumers associated with it, including:
 
 - Retention changes
-- Storage changes
-- Replication changes
-- Subject configuration changes
+- Storage configuration
+- Replication configuration
+- Subject configuration
 - Purging
 - Stream deletion
-- Capacity changes
 
-The more unrelated workloads we place into one Stream, the larger the potential blast radius of these operations becomes.
+> The more unrelated workloads we place in one Stream, the larger the potential operational blast radius.
 
----
+Therefore, Stream boundaries should minimise unnecessary coupling while avoiding unnecessary Stream proliferation.
 
-## 3.13 Enterprise Standard
+## 4. Enterprise Standards
 
-Based on the above anti-patterns and their impact, we establish the following standards:
+### 4.1 Stream Boundary Standards
 
-1. **A Stream should contain subjects with compatible persistence and operational requirements.**
+1. **Reuse an existing compatible Stream by default.**
+2. **Create a new Stream only when a specific persistence or operational requirement justifies an independent boundary.**
+3. A new **Subject, Application, Service, or Consumer does not by itself justify a new Stream.**
+4. A Stream should contain subjects with compatible:
+   - Persistence requirements
+   - Retention requirements
+   - Workload and capacity characteristics
+   - Storage and replication requirements
+   - Lifecycle requirements
+   - Operational requirements
+5. **Application ownership and subject naming hierarchy are not standalone criteria** for defining Stream boundaries.
+6. **Materially incompatible requirements must be isolated** into separate Streams.
 
-2. **We should not create a catch-all Stream for unrelated workloads.**
+### 4.2 Subject Standards
 
-3. **We should not create one Stream per subject unless an independent persistence or operational requirement justifies it.**
+7. **Subject cardinality and workload must be evaluated** before grouping subjects into an existing Stream.
+8. High-volume or continuously growing subject populations must be assessed for their impact on shared Stream capacity and operations.
+9. Avoid both:
+   - **Catch-All Streams**
+   - **One-Stream-per-Subject designs**
+10. Stream boundaries must be based on **compatible persistence and operational requirements**, not simply on the number of subjects.
 
-4. **Subject naming similarity and application ownership are not sufficient reasons to group subjects into a Stream.**
+### 4.3 Consumer Standards
 
-5. **Materially different retention, storage, replication, workload, lifecycle, or operational requirements should be evaluated as separate Stream boundaries.**
+11. Multiple Consumers may share a Stream when they consume **compatible persisted data**.
+12. Consumer-specific requirements should normally be handled at the **Consumer level**.
+13. The following must be considered when assessing Stream workload:
+   - Consumer count
+   - Filtering
+   - Replay behaviour
+   - Delivery behaviour
+   - Consumer lifecycle
+14. Consumer behaviour may justify Stream separation **only when it creates a materially different workload or operational requirement**.
 
-6. **High-cardinality and high-volume subjects must be explicitly evaluated before being grouped with other workloads.**
+### 4.4 Governance Standards
 
-7. **Multiple Consumers on a Stream are supported and should not, by themselves, result in additional Streams.**
+15. Every new Stream must have an **explicit justification** recorded as part of the Maker–Checker process.
+16. Every Stream must represent an **intentional persistence and operational boundary**.
+17. The number of Streams should be **minimised without creating inappropriate coupling** between workloads.
 
-8. **Consumer-specific requirements should normally be handled at the Consumer level.**
+### 4.5 Core Enterprise Principle
 
-9. **Consumer count, filtering, replay, delivery behaviour, and lifecycle must be considered when assessing the total workload of a Stream.**
+> **Create the minimum number of Streams necessary to maintain appropriate persistence and operational boundaries.**
 
-10. **A Consumer workload that creates a materially different operational or capacity requirement may justify a separate Stream boundary.**
+The target model is:
 
-11. **We should evaluate both subject-side and consumer-side workload before finalising a Stream design.**
+**Compatible Requirements → Shared Stream**
 
-12. **Every Stream should represent an intentional persistence and operational boundary.**
+**Materially Different Requirements → Separate Stream**
 
-### 3.14 Core Principle
+The objective is neither:
 
-> **We should group subjects and Consumers around compatible persistence and operational requirements, while avoiding both unnecessary coupling and unnecessary fragmentation.**
+**One Subject → One Stream**
 
-The two extremes to avoid are:
+nor:
 
-```text id="d1q6uh"
-Too Broad
-Unrelated Subjects + Consumers
-            ↓
-     Excessive Coupling
-```
+**One Application → One Stream**
 
-and:
+Instead:
 
-```text id="84okzj"
-Too Narrow
-Every Subject / Consumer
-            ↓
-    Excessive Fragmentation
-```
+> **One Stream boundary for one compatible persistence and operational workload.**
 
-The desired design is:
 
-```text id="t2s9ck"
-Compatible Workloads
-        ↓
-    Shared Stream
-
-Materially Different
-Operational Requirements
-        ↓
-   Separate Stream
-```
-
-## References
+## 5. References
 
 - [Synadia - How Many Subjects for a JetStream Stream?](https://www.synadia.com/blog/how-many-subjects-jetstream-stream)
 - [Synadia - Scaling Dynamic Dashboard Subscriptions with JetStream & Core NATS](https://www.synadia.com/blog/scaling-dynamic-dashboard-subscriptions-jetstream-core-nats)
