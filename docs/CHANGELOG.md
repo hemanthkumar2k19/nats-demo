@@ -2,6 +2,27 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-08] Add Good and Bad Example Tables to Subject Design Enterprise Standards
+
+- **Change:** Added structured `Good Example`, `Bad Example`, and `Reason / Rule Violated` comparison tables across all 7 Enterprise Standard sections (`Subject`, `Token`, `Wildcards`, `Subject Constraints`, `Subject Structure`, `Stream`, and `Subject Versioning`) in [docs/subject-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/subject-design.md).
+- **Reason:** Provide clear visual contrast and concrete enterprise examples for every rule defined in the Subject Design standard.
+- **Affected Area:** [docs/subject-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/subject-design.md)
+
+
+## [2026-10-08] Add NATS Inter-Service Communication Usage Guide (Go and Java SDKs)
+
+- **Change:** Created [docs/developer-guide/usage-patterns/inter-service-communcation.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/usage-patterns/inter-service-communcation.md) detailing inter-service communication patterns using NATS Core Request-Reply, JetStream persistent streams, and the `NATS Micro` Services framework. Covers architectural comparisons to traditional HTTP/REST stacks (location-transparent subject addressability, native load balancing via Queue Groups, watertight outbound security, zero open inbound ports), and complete Go (`nats.go`/`jetstream`/`micro`) and Java (`io.nats.client`/`Service`) SDK code examples.
+- **Reason:** Fulfill the Inter-Service Communication guide requirement referenced in developer walkthrough step 7 (`Phase 4: Usage Patterns & Integration`).
+- **Affected Area:** [docs/developer-guide/usage-patterns/inter-service-communcation.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/usage-patterns/inter-service-communcation.md)
+
+
+## [2026-10-08] Add Event-Driven Saga Pattern Usage Guide (Go and Java SDKs)
+
+- **Change:** Created [docs/developer-guide/usage-patterns/saga-pattern.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/usage-patterns/saga-pattern.md) providing an enterprise usage pattern guide for the Event-Driven Saga Pattern. Explains distributed transaction management without 2PC, Saga Orchestration vs. Choreography models, command (`commands.*`) vs event (`events.*`) subject hierarchies, compensating actions, and complete Go (`nats.go`/`jetstream`) and Java (`io.nats.client`) SDK code examples.
+- **Reason:** Fulfill the Saga Pattern guide requirement referenced in developer walkthrough step 7 (`Phase 4: Usage Patterns & Integration`).
+- **Affected Area:** [docs/developer-guide/usage-patterns/saga-pattern.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/usage-patterns/saga-pattern.md)
+
+
 ## [2026-10-08] Restructure Developer Walkthrough Mermaid Flowchart into 4-Phase Grid
 
 - **Change:** Restructured the Mermaid flowchart in [docs/developer-walkthrough.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough.md) into 4 subgraphs (`Phase 1: Environment & Setup`, `Phase 2: Design & Client SDK`, `Phase 3: Messaging Execution`, and `Phase 4: Usage Patterns & Integration`) forming a balanced grid layout.

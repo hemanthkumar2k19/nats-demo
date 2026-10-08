@@ -21,6 +21,13 @@ Subjects should be designed as stable messaging contracts and should account for
 - Subjects **MUST** be treated as stable messaging contracts.
 - Subject names **MUST NOT** unnecessarily encode implementation-specific details.
 
+| Good Example | Bad Example | Reason / Rule Violated |
+| :--- | :--- | :--- |
+| `prod.order.event.order.created` | `PROD.ORDER.EVENT.ORDER.CREATED` | Bad example uses uppercase letters. Subjects MUST be strictly lowercase. |
+| `prod.order.event.order.created` | `prod.order.event.orderCreated` | Bad example uses camelCase. Subject tokens MUST follow dot-separated hierarchy. |
+| `prod.order.event.order.created` | `prod.order.event.sql.postgres.insert` | Bad example encodes database implementation details rather than business domain semantics. |
+
+
 ## Token
 
 - Each `.`-separated segment is a token.
@@ -43,6 +50,13 @@ Here, `orders` represents the broader domain, while `customer` and `created` pro
 - Hyphens (`-`) **MUST** be used as word separators.
 - Underscores (`_`) **MUST NOT** be used.
 - Token ordering **MUST** follow the enterprise subject hierarchy defined in this standard.
+
+| Good Example | Bad Example | Reason / Rule Violated |
+| :--- | :--- | :--- |
+| `order-processing` | `order_processing` | Bad example uses an underscore (`_`). Word separators MUST be hyphens (`-`). |
+| `customer-id` | `CUSTOMER-ID` | Bad example uses uppercase letters. Tokens MUST contain lowercase alphanumeric characters only. |
+| `prod.order.event.order.created` | `created.order.event.order.prod` | Bad example reverses token order. Hierarchy MUST progress from broader domain to narrower operation. |
+
 
 ## Wildcards
 
@@ -69,15 +83,29 @@ Publishers must send messages to fully specified subjects.
 - Application consumers **SHOULD** use the narrowest wildcard scope required.
 - Broad wildcard subscriptions such as `>` **SHOULD NOT** be used unless there is a justified requirement.
 
+| Good Example | Bad Example | Reason / Rule Violated |
+| :--- | :--- | :--- |
+| `nc.Publish("prod.order.event.order.created", payload)` | `nc.Publish("prod.order.event.order.*", payload)` | Bad example publishes to a wildcard pattern. Publishers MUST publish to concrete subjects. |
+| `nc.Subscribe("prod.order.event.order.processing.*")` | `nc.Subscribe(">")` | Bad example uses global wildcard (`>`). Consumers SHOULD subscribe using the narrowest required scope. |
+| `nc.Subscribe("prod.order.event.order.processing.completed")` | `nc.Subscribe("prod.order.>")` | Bad example uses a broad multi-token wildcard when consuming a single specific operation. |
+
+
 ## Subject Constraints
 
 NATS supports hierarchical subjects with multiple tokens. Subject length and depth should be kept reasonable to maintain readability and operational manageability.
 
 ### Enterprise Standard
-- Anything past 8–10 tokens is usually a sign that you’re encoding data into the subject
+
+- Anything past 8-10 tokens is usually a sign that you are encoding data into the subject.
 - Total subject length **MUST NOT** exceed **256 characters**.
 - Total number of tokens **MUST NOT** exceed **16**.
 - Subject depth **SHOULD** be limited to meaningful architectural or business boundaries.
+
+| Good Example | Bad Example | Reason / Rule Violated |
+| :--- | :--- | :--- |
+| `prod.order.event.order.processing.completed` (6 tokens) | `prod.order.event.order.step1.step2.step3.step4.step5.step6.step7.step8.step9.step10` (13 tokens) | Bad example exceeds recommended depth (> 10 tokens), indicating data is encoded into subject tokens. |
+| `prod.order.event.order.created` (31 chars) | `prod.order.event.order.processing.completed.with.a.very.long.descriptive.sentence.that.exceeds.two.hundred.fifty.six.characters.total.length.in.a.single.subject.string.identifier...` (> 256 chars) | Bad example exceeds maximum subject length limit of 256 characters. |
+| `prod.order.event.order.created` | `prod.order.event.eu-west-1.rack-3.node-12.order.created` | Bad example exposes physical infrastructure depth instead of business domain boundaries. |
 
 
 ## Subject Structure
@@ -121,6 +149,13 @@ prod.order.event.order.processing.completed
 - Application teams **MUST NOT** introduce additional top-level categories without platform approval.
 - Platform deployment details such as physical region, primary/DR role, or infrastructure topology **MUST NOT** be exposed in application subjects.
 
+| Good Example | Bad Example | Reason / Rule Violated |
+| :--- | :--- | :--- |
+| `prod.order.event.order.processing.completed` | `prod.order.event.order.processing.completed.ORD-12345` | Bad example includes entity identifier (`ORD-12345`). Identifiers MUST be carried in payload/headers. |
+| `prod.order.event.order.processing.completed` | `prod.order.telemetry.order.processing.completed` | Bad example uses unapproved category (`telemetry`). Category MUST be `event` or `audit`. |
+| `prod.order.event.order.processing.completed` | `order.processing.completed` | Bad example omits required `environment`, `tenant`, and `category` tokens. |
+| `prod.order.event.order.processing.completed` | `prod.us-east-1.order.event.order.processing.completed` | Bad example exposes platform topology (`us-east-1`) in application subject string. |
+
 ### Examples
 
 **Business Event**
@@ -158,6 +193,12 @@ Subjects define the namespace from which JetStream Streams select messages for p
 - Highly fragmented Streams and Consumers **SHOULD NOT** be created when a common subject hierarchy provides the required isolation and filtering.
 - Audit subjects **SHOULD** be separated from business event subjects when their persistence, retention, or operational requirements differ.
 
+| Good Example | Bad Example | Reason / Rule Violated |
+| :--- | :--- | :--- |
+| Stream A: `prod.order.event.>` (7-day retention)<br/>Stream B: `prod.order.audit.>` (7-year retention) | Single Stream bound to `prod.order.>` storing both operational events (7-day) and audit logs (7-year) | Bad example combines audit logs and operational events with conflicting retention policies into one stream. |
+| Consumer Filter: `prod.order.event.order.processing.completed` | Creating 50 separate micro-streams for every individual action token | Bad example over-fragmentates streams instead of using unified streams with subject filters. |
+| Stable Subject: `prod.order.event.order.processing.completed` | Mutating subject to `prod.order.event.streamA.order.processing.completed` | Bad example changes application subject contract solely to satisfy internal stream configuration naming. |
+
 
 ## Subject Versioning
 
@@ -188,6 +229,12 @@ Subject versioning is appropriate for:
 - Each version **MUST** represent a distinct messaging contract; a version **MUST NOT** be reused for a different contract.
 - Breaking contract changes **MUST NOT** be published to an existing subject without an approved migration strategy.
 - Old and new versions **MUST** remain available during the approved migration period and **SHOULD** be retired after migration completes.
+
+| Good Example | Bad Example | Reason / Rule Violated |
+| :--- | :--- | :--- |
+| `prod.order.event.order.created.v2` | `prod.order.event.order.created.v1.2.3` | Bad example uses semver (`v1.2.3`). Version format MUST be major-only `v<major>` (e.g. `v2`). |
+| `prod.order.event.order.created.v2` | `prod.order.v2.event.order.created` | Bad example places version token in middle of subject string. Version MUST be the final token. |
+| Maintain `prod.order.event.order.created.v1` when adding an optional `discount_code` payload field | Incrementing to `v2` subject when adding a non-breaking optional payload field | Bad example versions subject for backward-compatible additions. Non-breaking changes MUST remain on existing subject. |
 
 
 ## References
