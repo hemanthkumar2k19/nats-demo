@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-08] Restructure Developer Walkthrough Mermaid Flowchart into 4-Phase Grid
+
+- **Change:** Restructured the Mermaid flowchart in [docs/developer-walkthrough.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough.md) into 4 subgraphs (`Phase 1: Environment & Setup`, `Phase 2: Design & Client SDK`, `Phase 3: Messaging Execution`, and `Phase 4: Usage Patterns & Integration`) forming a balanced grid layout.
+- **Reason:** Convert the tall 14-level vertical strip into a compact, squarer multi-column grid layout that fits comfortably on screens without excessive scrolling while preserving all logic and connections.
+- **Affected Area:** [docs/developer-walkthrough.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough.md)
+
 ## [2026-10-08] Add Guide Index & Reference Matrix Table to Developer Walkthrough
 
 - **Change:** Added a dedicated `## Guide Index & Reference Matrix` table to [docs/developer-walkthrough](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough) mapping each walkthrough step (Understand NATS, Dev Environment, Connectivity, Subject Design, Client SDK, Publisher, Subscription, Consumer, and Usage Patterns) to a brief document summary and empty document link column for future link insertion.

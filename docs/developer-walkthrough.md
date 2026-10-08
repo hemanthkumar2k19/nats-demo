@@ -1,52 +1,52 @@
 ```mermaid
 flowchart TD
 
-    START(["NATS Developer Walkthrough"])
+    subgraph PHASE1 ["Phase 1: Environment & Setup"]
+        START(["NATS Developer Walkthrough"])
+        START --> UNDERSTAND["1. Understand NATS<br/><br/>Ref: NATS Documentation"]
+        UNDERSTAND --> ENV{"2. Select Environment"}
+        ENV -->|"Local"| LOCAL["Local Development<br/><br/>Ref: NATS Local Setup Guide"]
+        ENV -->|"Org Dev"| ACCESS["Dev Environment Access<br/><br/>Ref: NATS Dev Environment Access Guide"]
+        ACCESS --> DEVREADY["Dev Environment Ready"]
+        LOCAL --> CONNECT
+        DEVREADY --> CONNECT["3. Verify NATS Connectivity<br/><br/>Ref: NATS Connectivity Guide"]
+    end
 
-    START --> UNDERSTAND["1. Understand NATS<br/><br/>Ref: NATS Documentation"]
+    subgraph PHASE2 ["Phase 2: Design & Client SDK"]
+        SUBJECT["4. Understand Subject Design<br/><br/>Ref: NATS Subject Design"]
+        CLIENT["5. Use NATS Client SDK<br/><br/>Ref: NATS Client Guide"]
+        MESSAGING["6. Implement Messaging"]
+        SUBJECT --> CLIENT --> MESSAGING
+    end
 
-    UNDERSTAND --> ENV{"2. Select Development Environment"}
+    subgraph PHASE3 ["Phase 3: Messaging Execution"]
+        PUBLISH["Publish Messages<br/><br/>Ref: NATS Publisher Guide"]
+        RECEIVE["Receive Messages"]
+        PERSIST{"Requires Persistence or<br/>Durable Processing?"}
+        SUBSCRIBE["Core NATS Subscription<br/><br/>Ref: NATS Subscription Guide"]
+        CONSUMER["JetStream Consumer<br/><br/>Ref: NATS Consumer Guide"]
 
-    ENV -->|"Local Development"| LOCAL["Local Development<br/><br/>Ref: NATS Local Setup Guide"]
+        RECEIVE --> PERSIST
+        PERSIST -->|"No"| SUBSCRIBE
+        PERSIST -->|"Yes"| CONSUMER
+    end
 
-    ENV -->|"Organization Dev Environment"| ACCESS["Dev Environment Access<br/><br/>Ref: NATS Dev Environment Access Guide"]
+    subgraph PHASE4 ["Phase 4: Usage Patterns & Integration"]
+        PATTERNS["7. Explore Usage Patterns"]
+        ASYNC["Async Inter-Service Comm<br/><br/>Ref: NATS Async Inter-Service Communication"]
+        SAGA["Event-Driven Saga<br/><br/>Ref: NATS Event-Driven Saga"]
+        COMPLETE(["NATS Integrated into Application"])
 
-    ACCESS --> DEVREADY["Dev Environment Ready"]
+        PATTERNS --> ASYNC --> COMPLETE
+        PATTERNS --> SAGA --> COMPLETE
+    end
 
-    LOCAL --> CONNECT
-    DEVREADY --> CONNECT
-
-    CONNECT["3. Verify NATS Connectivity<br/><br/>Ref: NATS Connectivity Guide"]
-
-    CONNECT --> SUBJECT["4. Understand Subject Design<br/><br/>Ref: NATS Subject Design"]
-
-    SUBJECT --> CLIENT["5. Use the NATS Client SDK<br/><br/>Ref: NATS Client Guide"]
-
-    CLIENT --> MESSAGING["6. Implement Messaging"]
-
-    MESSAGING --> PUBLISH["Publish Messages<br/><br/>Ref: NATS Publisher Guide"]
-
-    MESSAGING --> RECEIVE["Receive Messages"]
-
-    RECEIVE --> PERSIST{"Requires Persistence or<br/>Durable Processing?"}
-
-    PERSIST -->|"No"| SUBSCRIBE["Core NATS Subscription<br/><br/>Ref: NATS Subscription Guide"]
-
-    PERSIST -->|"Yes"| CONSUMER["JetStream Consumer<br/><br/>Ref: NATS Consumer Guide"]
-
+    CONNECT --> SUBJECT
+    MESSAGING --> PUBLISH
+    MESSAGING --> RECEIVE
     PUBLISH --> PATTERNS
     SUBSCRIBE --> PATTERNS
     CONSUMER --> PATTERNS
-
-    PATTERNS["7. Explore Usage Patterns"]
-
-    PATTERNS --> ASYNC["Async Inter-Service Communication<br/><br/>Ref: NATS Async Inter-Service Communication"]
-
-    PATTERNS --> SAGA["Event-Driven Saga<br/><br/>Ref: NATS Event-Driven Saga"]
-
-    ASYNC --> COMPLETE(["NATS Integrated into Application"])
-    SAGA --> COMPLETE
-
 
     classDef start fill:#0B5FFF,color:#fff,stroke:#084BCC,stroke-width:2px
     classDef step fill:#E8F1FF,color:#111,stroke:#5B8DEF,stroke-width:1.5px
