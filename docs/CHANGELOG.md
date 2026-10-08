@@ -2,11 +2,19 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
-## [2026-10-08] Add Good and Bad Example Tables to Subject Design Enterprise Standards
+## [2026-10-08] Convert Developer Walkthrough Flowchart to Horizontal Layout (`flowchart LR`)
 
-- **Change:** Added structured `Good Example`, `Bad Example`, and `Reason / Rule Violated` comparison tables across all 7 Enterprise Standard sections (`Subject`, `Token`, `Wildcards`, `Subject Constraints`, `Subject Structure`, `Stream`, and `Subject Versioning`) in [docs/subject-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/subject-design.md).
-- **Reason:** Provide clear visual contrast and concrete enterprise examples for every rule defined in the Subject Design standard.
+- **Change:** Updated the Mermaid flowchart direction in [docs/developer-walkthrough.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough.md) from `flowchart TD` to `flowchart LR`.
+- **Reason:** Lay out all 4 subgraphs horizontally side-by-side so the entire developer walkthrough diagram fits comfortably within wide screenshots and documentation viewports.
+- **Affected Area:** [docs/developer-walkthrough.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough.md)
+
+
+## [2026-10-08] Add Compliant and Non-Compliant Example Tables to Subject Design Enterprise Standards
+
+- **Change:** Added structured `Compliant Example`, `Non-Compliant Example`, and `Reason / Rule Violated` comparison tables across all 7 Enterprise Standard sections (`Subject`, `Token`, `Wildcards`, `Subject Constraints`, `Subject Structure`, `Stream`, and `Subject Versioning`) in [docs/subject-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/subject-design.md).
+- **Reason:** Standardize documentation header terminology to enterprise-grade `Compliant Example` and `Non-Compliant Example` headers.
 - **Affected Area:** [docs/subject-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/subject-design.md)
+
 
 
 ## [2026-10-08] Add NATS Inter-Service Communication Usage Guide (Go and Java SDKs)

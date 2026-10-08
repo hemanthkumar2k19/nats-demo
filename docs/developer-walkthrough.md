@@ -1,5 +1,5 @@
 ```mermaid
-flowchart TD
+flowchart LR
 
     subgraph PHASE1 ["Phase 1: Environment & Setup"]
         START(["NATS Developer Walkthrough"])
