@@ -9,4 +9,8 @@
 - https://www.synadia.com/blog/jetstream-design-patterns-for-scale
 - https://www.synadia.com/blog/mirror-streams-jetstream
 
+## Observability
+- https://www.synadia.com/blog/series/nats-monitoring
+- https://www.synadia.com/blog/message-tracing-nats
+
 

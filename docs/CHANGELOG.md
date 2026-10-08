@@ -2,6 +2,42 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-08] Add Guide Index & Reference Matrix Table to Developer Walkthrough
+
+- **Change:** Added a dedicated `## Guide Index & Reference Matrix` table to [docs/developer-walkthrough](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough) mapping each walkthrough step (Understand NATS, Dev Environment, Connectivity, Subject Design, Client SDK, Publisher, Subscription, Consumer, and Usage Patterns) to a brief document summary and empty document link column for future link insertion.
+- **Reason:** Provide a structured reference table correlating walkthrough flow steps to document briefs and URL placeholders.
+- **Affected Area:** [docs/developer-walkthrough](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough)
+
+## [2026-10-08] Refactor Developer Walkthrough Mermaid Flowchart
+
+- **Change:** Simplified node text labels in [docs/developer-walkthrough](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough) to focus on concise step titles and guide document references (`Ref: <Guide Title>`). Converted non-ASCII emoji icons to clean ASCII formatting.
+- **Reason:** Reduce visual clutter and improve flowchart scannability while preserving all flow paths, decisions, and guide references.
+- **Affected Area:** [docs/developer-walkthrough](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough)
+
+## [2026-10-08] Add Java NATS Client SDK Code Snippets to Subscription and Consumer Guides
+
+- **Change:** Added equivalent Java NATS SDK (`io.nats.client`) code snippets alongside every Go snippet in [docs/nats-subscription-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-subscription-guide.md) and [docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-consumer-guide.md). Covers Core NATS async/sync subscriptions, request responders, queue group worker pools, buffer pending limits, JetStream durable/ephemeral consumer CRUD, pull batch fetch (`fetch`/`fetchNoWait`), ordered consumers, ACK/NAK/TERM/InProgress signals, redelivery inspection, sequence pointer reset, and resilient consumer teardown. Added Java SDK repository and Javadoc links under `## Official References`.
+- **Reason:** Expand subscription and consumer guides to provide full multi-language Go and Java NATS SDK reference implementations.
+- **Affected Area:** [docs/nats-subscription-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-subscription-guide.md), [docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-consumer-guide.md)
+
+## [2026-10-08] Add Java NATS Client SDK Code Snippets to Publisher Guide
+
+- **Change:** Added equivalent Java NATS SDK (`io.nats.client`) code snippets alongside every Go snippet in [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) covering message construction, Core NATS publish/request-reply, JetStream synchronous/asynchronous publishing, deduplication, publish expectations (OCC), SDK retry options, and graceful connection shutdown. Added Java SDK links under `## Official References`.
+- **Reason:** Provide comprehensive multi-language publisher reference implementations for Go and Java SDK developers.
+- **Affected Area:** [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md)
+
+## [2026-10-08] Add Java NATS Client SDK Code Snippets to Client Developer Guide
+
+- **Change:** Added equivalent Java NATS SDK (`io.nats.client`) code snippets alongside every Go snippet across all sections of [docs/developer-guide/client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/client-guide.md), maintaining language-agnostic titles and conceptual descriptions. Added Java SDK repository and Javadoc links under `## Official References`.
+- **Reason:** Expand client developer guide to provide multi-language reference implementations for Go and Java NATS SDK users.
+- **Affected Area:** [docs/developer-guide/client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/client-guide.md)
+
+## [2026-10-08] Add Prerequisites Section to NATS Client & SDK Developer Guide
+
+- **Change:** Replaced the `## Guide Structure` table in [docs/developer-guide/client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/client-guide.md) with a dedicated `## Prerequisites` section outlining language version requirements and SDK installation/dependency instructions for Go (`nats.go`) and Java (`jnats`).
+- **Reason:** Provide practical developer setup instructions for Go and Java NATS Client SDKs in place of redundant structural overview tables.
+- **Affected Area:** [docs/developer-guide/client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/client-guide.md)
+
 ## [2026-10-07] Refactor NATS Triaging Guide to MELT Observability Framework
 
 - **Change:** Refactored [docs/developer-guide/observability/triaging.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/observability/triaging.md) to adopt the MELT (Metrics, Events, Logs, Traces) observability sequence: starting with Distributed Traces as the primary entry point to locate failing execution spans, correlating structured Application & NATS Broker Logs by `trace_id` for deep execution context, and verifying NATS System Events/Advisories (`$JS.EVENT.ADVISORY.>`) & Metrics (`nats consumer info`, lag stats) for broker state inspection. Replaced Mermaid chart with an ASCII text-based diagram.

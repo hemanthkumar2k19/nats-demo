@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This guide provides SREs with a flow-based procedure to validate NATS connectivity, cluster connectivity, server health, and functional communication, and to isolate connectivity failures.
+This guide provides with a flow-based procedure to validate NATS connectivity, cluster connectivity, server health, and functional communication, and to isolate connectivity failures.
 
 ### Prerequisite
 

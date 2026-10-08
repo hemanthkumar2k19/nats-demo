@@ -2,22 +2,33 @@
 
 This guide provides application developers with reference patterns for initializing and managing NATS client connections and JetStream API access.
 
-The concepts and descriptions are language agnostic. Code examples currently use the official NATS Go SDK.
+The concepts and descriptions are language agnostic. Code examples feature the official NATS Go and Java SDKs.
 
 ---
 
-## Guide Structure
+## Prerequisites
 
-| Section | Topic                             | Primary Coverage                                                         |
-| ------- | --------------------------------- | ------------------------------------------------------------------------ |
-| **1**   | **NATS Client Initialization**    | Basic connection, cluster connection                                     |
-| **2**   | **NATS Connection Lifecycle**     | Connection states, lifecycle events, graceful shutdown                   |
-| **3**   | **NATS Connection Configuration** | Client identification, timeouts, reconnect behavior, liveness            |
-| **4**   | **NATS Connection Validation**    | Connection state, RTT, connection/server information                     |
-| **5**   | **JetStream API Context**         | JetStream client initialization and API access validation                |
-| **6**   | **Client Resource Management**    | Connection reuse, lifecycle ownership, avoiding connection-per-operation |
-| **7**   | **Client Error Handling**         | Connection errors, asynchronous errors, reconnect-related errors         |
-| **8**   | **Client Testing**                | Connection and JetStream API connectivity testing                        |
+### Go NATS Client SDK
+- **Go Version:** Go 1.22+
+- **SDK Installation:**
+  ```bash
+  go get github.com/nats-io/nats.go
+  ```
+
+### Java NATS Client SDK
+- **Java Version:** Java 17+
+- **Dependency Management (Maven):**
+  ```xml
+  <dependency>
+      <groupId>io.nats</groupId>
+      <artifactId>jnats</artifactId>
+      <version>2.20.0</version>
+  </dependency>
+  ```
+- **Dependency Management (Gradle):**
+  ```groovy
+  implementation 'io.nats:jnats:2.20.0'
+  ```
 
 ---
 
@@ -51,6 +62,24 @@ func main() {
 }
 ```
 
+### Java
+
+```java
+import io.nats.client.Connection;
+import io.nats.client.Nats;
+
+public class BasicConnection {
+    public static void main(String[] args) {
+        // Use the NATS endpoint provided by the platform.
+        try (Connection nc = Nats.connect("nats://nats.example.com:4222")) {
+            System.out.printf("Connected to NATS: %s%n", nc.getConnectedUrl());
+        } catch (Exception e) {
+            System.err.printf("Failed to connect to NATS: %s%n", e.getMessage());
+        }
+    }
+}
+```
+
 ---
 
 ## 1.2 Cluster Connection
@@ -81,6 +110,36 @@ func main() {
 
 	log.Printf("Connected server: %s", nc.ConnectedUrl())
 	log.Printf("Discovered servers: %v", nc.DiscoveredServers())
+}
+```
+
+### Java
+
+```java
+import io.nats.client.Connection;
+import io.nats.client.Nats;
+import io.nats.client.Options;
+
+public class ClusterConnection {
+    public static void main(String[] args) {
+        // Use the cluster endpoints provided by the platform.
+        String[] servers = new String[] {
+            "nats://node1.example.com:4222",
+            "nats://node2.example.com:4222",
+            "nats://node3.example.com:4222"
+        };
+
+        Options options = new Options.Builder()
+                .servers(servers)
+                .build();
+
+        try (Connection nc = Nats.connect(options)) {
+            System.out.printf("Connected server: %s%n", nc.getConnectedUrl());
+            System.out.printf("Discovered servers: %s%n", nc.getServers());
+        } catch (Exception e) {
+            System.err.printf("Failed to connect to NATS cluster: %s%n", e.getMessage());
+        }
+    }
 }
 ```
 
@@ -151,6 +210,27 @@ opts := []nats.Option{
 nc, err := nats.Connect(serverURL, opts...)
 ```
 
+### Java
+
+```java
+ConnectionListener connectionListener = (conn, type) -> {
+    switch (type) {
+        case CONNECTED -> System.out.printf("Connected to %s%n", conn.getConnectedUrl());
+        case DISCONNECTED -> System.out.println("Disconnected from NATS server");
+        case RECONNECTED -> System.out.printf("Reconnected to %s%n", conn.getConnectedUrl());
+        case CLOSED -> System.out.println("NATS connection closed");
+        case DISCOVERED_SERVERS -> System.out.println("Discovered new servers");
+    }
+};
+
+Options options = new Options.Builder()
+        .server(serverUrl)
+        .connectionListener(connectionListener)
+        .build();
+
+Connection nc = Nats.connect(options);
+```
+
 ---
 
 ## 2.3 Graceful Shutdown
@@ -164,6 +244,17 @@ Gracefully terminate the NATS client during application shutdown so that active 
 // Use Drain during application shutdown when graceful termination is required.
 if err := nc.Drain(); err != nil {
 	log.Printf("NATS drain failed: %v", err)
+}
+```
+
+### Java
+
+```java
+// Use drain during application shutdown when graceful termination is required.
+try {
+    nc.drain(Duration.ofSeconds(5)).get();
+} catch (Exception e) {
+    System.err.printf("NATS drain failed: %s%n", e.getMessage());
 }
 ```
 
@@ -185,6 +276,17 @@ nc, err := nats.Connect(
 )
 ```
 
+### Java
+
+```java
+Options options = new Options.Builder()
+        .server(serverUrl)
+        .connectionName("order-processing-service")
+        .build();
+
+Connection nc = Nats.connect(options);
+```
+
 ---
 
 ## 3.2 Connection Timeout
@@ -199,6 +301,17 @@ nc, err := nats.Connect(
 	serverURL,
 	nats.Timeout(5*time.Second),
 )
+```
+
+### Java
+
+```java
+Options options = new Options.Builder()
+        .server(serverUrl)
+        .connectionTimeout(Duration.ofSeconds(5))
+        .build();
+
+Connection nc = Nats.connect(options);
 ```
 
 ---
@@ -218,6 +331,18 @@ nc, err := nats.Connect(
 )
 ```
 
+### Java
+
+```java
+Options options = new Options.Builder()
+        .server(serverUrl)
+        .maxReconnects(10)
+        .reconnectWait(Duration.ofSeconds(2))
+        .build();
+
+Connection nc = Nats.connect(options);
+```
+
 Applications should use the platform-recommended reconnect configuration rather than independently defining arbitrary retry behavior.
 
 ---
@@ -235,6 +360,18 @@ nc, err := nats.Connect(
 	nats.PingInterval(15*time.Second),
 	nats.MaxPingsOutstanding(3),
 )
+```
+
+### Java
+
+```java
+Options options = new Options.Builder()
+        .server(serverUrl)
+        .pingInterval(Duration.ofSeconds(15))
+        .maxPingsOutstanding(3)
+        .build();
+
+Connection nc = Nats.connect(options);
 ```
 
 ---
@@ -278,6 +415,19 @@ case nats.CLOSED:
 }
 ```
 
+### Java
+
+```java
+Connection.Status status = nc.getStatus();
+switch (status) {
+    case CONNECTED -> System.out.println("NATS connection is active");
+    case RECONNECTING -> System.out.println("NATS connection is reconnecting");
+    case DRAINING -> System.out.println("NATS connection is draining");
+    case CLOSED -> System.out.println("NATS connection is closed");
+    default -> System.out.println("Status: " + status);
+}
+```
+
 ---
 
 ## 4.2 Round-Trip Time
@@ -295,6 +445,17 @@ if err != nil {
 }
 
 log.Printf("NATS RTT: %v", rtt)
+```
+
+### Java
+
+```java
+try {
+    Duration rtt = nc.getRTT();
+    System.out.printf("NATS RTT: %s%n", rtt);
+} catch (Exception e) {
+    System.err.printf("Failed to measure NATS RTT: %s%n", e.getMessage());
+}
 ```
 
 ---
@@ -324,6 +485,28 @@ log.Printf(
 )
 ```
 
+### Java
+
+```java
+ServerInfo info = nc.getServerInfo();
+if (info != null) {
+    System.out.printf("Server ID: %s%n", info.getServerId());
+    System.out.printf("Server Name: %s%n", info.getServerName());
+    System.out.printf("Server Version: %s%n", info.getVersion());
+    System.out.printf("Cluster: %s%n", info.getClusterName());
+}
+
+Statistics stats = nc.getStatistics();
+System.out.printf(
+    "InBytes=%d OutBytes=%d InMsgs=%d OutMsgs=%d Reconnects=%d%n",
+    stats.getInBytes(),
+    stats.getOutBytes(),
+    stats.getInMsgs(),
+    stats.getOutMsgs(),
+    stats.getReconnects()
+);
+```
+
 ---
 
 # 5. JetStream API Context
@@ -348,6 +531,17 @@ if err != nil {
 }
 ```
 
+### Java
+
+```java
+try (Connection nc = Nats.connect(serverUrl)) {
+    JetStream js = nc.jetStream();
+    JetStreamManagement jsm = nc.jetStreamManagement();
+} catch (Exception e) {
+    System.err.printf("Failed to initialize JetStream: %s%n", e.getMessage());
+}
+```
+
 ---
 
 ## 5.2 Validate JetStream API Access
@@ -367,6 +561,18 @@ if err != nil {
 }
 
 log.Printf("JetStream streams: %d", info.Streams)
+```
+
+### Java
+
+```java
+try {
+    JetStreamManagement jsm = nc.jetStreamManagement();
+    AccountStatistics stats = jsm.getAccountStatistics();
+    System.out.printf("JetStream streams: %d%n", stats.getStreams());
+} catch (Exception e) {
+    System.err.printf("JetStream API access failed: %s%n", e.getMessage());
+}
 ```
 
 ---
@@ -392,6 +598,18 @@ func NewService(nc *nats.Conn) *Service {
 }
 ```
 
+### Java
+
+```java
+public class Service {
+    private final Connection nc;
+
+    public Service(Connection nc) {
+        this.nc = nc;
+    }
+}
+```
+
 ---
 
 ## 6.2 Avoid Connection Per Operation
@@ -399,7 +617,7 @@ func NewService(nc *nats.Conn) *Service {
 **Description:**
 Do not create and close a NATS connection for every application operation. Reuse the established client connection.
 
-### Avoid
+### Go (Avoid)
 
 ```go
 // Do not create a new NATS connection for every request.
@@ -411,7 +629,7 @@ func handleRequest() {
 }
 ```
 
-### Recommended
+### Go (Recommended)
 
 ```go
 // Reuse the application-level NATS connection.
@@ -421,6 +639,36 @@ type Service struct {
 
 func (s *Service) HandleRequest() {
 	// Use the existing connection.
+}
+```
+
+### Java (Avoid)
+
+```java
+// Do not create a new NATS connection for every request.
+public void handleRequest() {
+    try (Connection nc = Nats.connect(serverUrl)) {
+        // Application operation...
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+}
+```
+
+### Java (Recommended)
+
+```java
+// Reuse the application-level NATS connection.
+public class Service {
+    private final Connection nc;
+
+    public Service(Connection nc) {
+        this.nc = nc;
+    }
+
+    public void handleRequest() {
+        // Use the existing connection.
+    }
 }
 ```
 
@@ -440,6 +688,16 @@ nc, err := nats.Connect(serverURL)
 if err != nil {
 	log.Printf("Unable to connect to NATS: %v", err)
 	return
+}
+```
+
+### Java
+
+```java
+try {
+    Connection nc = Nats.connect(serverUrl);
+} catch (Exception e) {
+    System.out.printf("Unable to connect to NATS: %s%n", e.getMessage());
 }
 ```
 
@@ -466,6 +724,34 @@ opts := []nats.Option{
 nc, err := nats.Connect(serverURL, opts...)
 ```
 
+### Java
+
+```java
+ErrorListener errorListener = new ErrorListener() {
+    @Override
+    public void errorOccurred(Connection conn, String error) {
+        System.out.printf("NATS asynchronous error: %s%n", error);
+    }
+
+    @Override
+    public void exceptionOccurred(Connection conn, Exception exp) {
+        System.out.printf("NATS exception: %s%n", exp.getMessage());
+    }
+
+    @Override
+    public void slowConsumerDetected(Connection conn, Consumer consumer) {
+        System.out.println("Slow consumer detected");
+    }
+};
+
+Options options = new Options.Builder()
+        .server(serverUrl)
+        .errorListener(errorListener)
+        .build();
+
+Connection nc = Nats.connect(options);
+```
+
 ---
 
 ## 7.3 Reconnection-Related Errors
@@ -483,6 +769,25 @@ nats.DisconnectErrHandler(func(c *nats.Conn, err error) {
 nats.ReconnectHandler(func(c *nats.Conn) {
 	log.Printf("NATS reconnected to %s", c.ConnectedUrl())
 })
+```
+
+### Java
+
+```java
+ConnectionListener connectionListener = (conn, type) -> {
+    if (type == ConnectionListener.Events.DISCONNECTED) {
+        System.out.println("NATS disconnected");
+    } else if (type == ConnectionListener.Events.RECONNECTED) {
+        System.out.printf("NATS reconnected to %s%n", conn.getConnectedUrl());
+    }
+};
+
+Options options = new Options.Builder()
+        .server(serverUrl)
+        .connectionListener(connectionListener)
+        .build();
+
+Connection nc = Nats.connect(options);
 ```
 
 ---
@@ -510,6 +815,29 @@ func TestNATSConnection(t *testing.T) {
 	if !nc.IsConnected() {
 		t.Fatal("Expected NATS connection to be active")
 	}
+}
+```
+
+### Java
+
+```java
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+public class NatsConnectionTest {
+    @Test
+    public void testNatsConnection() {
+        Options options = new Options.Builder()
+                .server("nats://localhost:4222")
+                .connectionTimeout(Duration.ofSeconds(2))
+                .build();
+
+        try (Connection nc = Nats.connect(options)) {
+            assertEquals(Connection.Status.CONNECTED, nc.getStatus(), "Expected NATS connection to be active");
+        } catch (Exception e) {
+            fail("Failed to connect to NATS: " + e.getMessage());
+        }
+    }
 }
 ```
 
@@ -548,6 +876,26 @@ func TestJetStreamAPI(t *testing.T) {
 }
 ```
 
+### Java
+
+```java
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+public class JetStreamApiTest {
+    @Test
+    public void testJetStreamApi() {
+        try (Connection nc = Nats.connect("nats://localhost:4222")) {
+            JetStreamManagement jsm = nc.jetStreamManagement();
+            AccountStatistics stats = jsm.getAccountStatistics();
+            assertNotNull(stats, "JetStream API access failed");
+        } catch (Exception e) {
+            fail("JetStream API test failed: " + e.getMessage());
+        }
+    }
+}
+```
+
 ---
 
 ## Official References
@@ -555,5 +903,7 @@ func TestJetStreamAPI(t *testing.T) {
 * [Official NATS Go Client Repository](https://github.com/nats-io/nats.go)
 * [NATS Go Client API Documentation (pkg.go.dev)](https://pkg.go.dev/github.com/nats-io/nats.go)
 * [NATS Go JetStream API Documentation (pkg.go.dev)](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream)
+* [Official NATS Java Client Repository](https://github.com/nats-io/nats.java)
+* [NATS Java Client Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/index.html)
 * [Official NATS Developer Documentation](https://docs.nats.io/using-nats/developer)
 

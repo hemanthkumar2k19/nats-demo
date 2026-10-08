@@ -60,8 +60,9 @@ NATS Server -------> Client TCP Reader -------> Subscription Queue -------> Call
 
 #### Basic Asynchronous Subscription
 
+#### Go
+
 ```go
-// Go SDK Example
 sub, err := nc.Subscribe("orders.created", func(msg *nats.Msg) {
     log.Printf("Received message on subject [%s]: %s", msg.Subject, string(msg.Data))
 
@@ -74,6 +75,23 @@ sub, err := nc.Subscribe("orders.created", func(msg *nats.Msg) {
 if err != nil {
     return err
 }
+```
+
+#### Java
+
+```java
+Dispatcher dispatcher = nc.createDispatcher(msg -> {
+    System.out.printf("Received message on subject [%s]: %s%n", msg.getSubject(), new String(msg.getData(), StandardCharsets.UTF_8));
+
+    Headers headers = msg.getHeaders();
+    if (headers != null) {
+        String contentType = headers.getFirst("Content-Type");
+        String correlationId = headers.getFirst("X-Correlation-ID");
+        System.out.printf("Headers: Content-Type=%s, Correlation-ID=%s%n", contentType, correlationId);
+    }
+});
+
+dispatcher.subscribe("orders.created");
 ```
 
 #### Callback Execution & Threading Considerations
@@ -98,8 +116,9 @@ Requester                                 NATS Server                           
     |<-- 4. Receives Response -----------------|                                       |
 ```
 
+#### Go
+
 ```go
-// Go SDK Example: Responding to a Request Message inside Subscribe Handler
 sub, err := nc.Subscribe("orders.validate", func(msg *nats.Msg) {
     log.Printf("Received validation request: %s", string(msg.Data))
 
@@ -127,6 +146,39 @@ sub, err := nc.Subscribe("orders.validate", func(msg *nats.Msg) {
 })
 ```
 
+#### Java
+
+```java
+Dispatcher dispatcher = nc.createDispatcher(msg -> {
+    System.out.printf("Received validation request: %s%n", new String(msg.getData(), StandardCharsets.UTF_8));
+
+    String replyTo = msg.getReplyTo();
+    if (replyTo == null || replyTo.isEmpty()) {
+        System.out.println("Warning: received message without reply subject");
+        return;
+    }
+
+    if ("ping".equals(new String(msg.getData(), StandardCharsets.UTF_8))) {
+        nc.publish(replyTo, "pong".getBytes(StandardCharsets.UTF_8));
+        return;
+    }
+
+    Headers headers = new Headers();
+    headers.set("Status-Code", "200");
+    headers.set("Content-Type", "application/json");
+
+    Message replyMsg = NatsMessage.builder()
+            .subject(replyTo)
+            .headers(headers)
+            .data("{\"valid\": true, \"reason\": \"Order approved\"}".getBytes(StandardCharsets.UTF_8))
+            .build();
+
+    nc.publish(replyMsg);
+});
+
+dispatcher.subscribe("orders.validate");
+```
+
 ---
 
 ### 2.2 Synchronous Pull / Polling Subscriptions
@@ -142,8 +194,9 @@ A synchronous subscription allows an application thread to explicitly pull messa
 | **Rate Control** | Rate determined by inbound server arrival rate. | Rate controlled by application polling loop, avoiding callback buffer overflows. |
 | **Use Cases** | Real-time event handling, instant responders. | Controlled polling loops, batching, custom worker thread pools. |
 
+#### Go
+
 ```go
-// Go SDK Example: Synchronous Polling Loop
 sub, err := nc.SubscribeSync("orders.created")
 if err != nil {
     return err
@@ -171,6 +224,28 @@ for {
 }
 ```
 
+#### Java
+
+```java
+Subscription sub = nc.subscribe("orders.created");
+
+while (true) {
+    try {
+        Message msg = sub.nextMessage(Duration.ofSeconds(1));
+        if (msg != null) {
+            System.out.printf("Synchronously processed order message: %s%n", new String(msg.getData(), StandardCharsets.UTF_8));
+        }
+    } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        System.out.println("Subscription pull loop interrupted, exiting");
+        break;
+    } catch (IllegalStateException e) {
+        System.out.println("Subscription closed or invalid");
+        break;
+    }
+}
+```
+
 ---
 
 ### 2.3 Channel / Dispatch Subscriptions
@@ -183,8 +258,9 @@ Channel or queue dispatch subscriptions deliver incoming messages into an applic
 * **Java SDK**: Uses `Dispatcher` managing an internal thread-safe `BlockingQueue<Message>`.
 * **Python SDK**: Uses `asyncio.Queue` or asynchronous coroutine iterators (`async for msg in sub:`).
 
+#### Go
+
 ```go
-// Go SDK Example: Channel Subscription Pipeline
 msgChan := make(chan *nats.Msg, 64)
 
 sub, err := nc.ChanSubscribe("orders.created", msgChan)
@@ -197,6 +273,30 @@ go func() {
         log.Printf("Received via channel: %s", string(msg.Data))
     }
 }()
+```
+
+#### Java
+
+```java
+BlockingQueue<Message> messageQueue = new LinkedBlockingQueue<>(64);
+
+Dispatcher dispatcher = nc.createDispatcher(msg -> {
+    messageQueue.offer(msg);
+});
+dispatcher.subscribe("orders.created");
+
+ExecutorService worker = Executors.newSingleThreadExecutor();
+worker.submit(() -> {
+    while (!Thread.currentThread().isInterrupted()) {
+        try {
+            Message msg = messageQueue.take();
+            System.out.printf("Received via queue: %s%n", new String(msg.getData(), StandardCharsets.UTF_8));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            break;
+        }
+    }
+});
 ```
 
 > **Warning:** Ensure the application buffer capacity is adequate and the consumer thread processes items quickly. If the channel buffer fills up, the NATS client driver will drop incoming messages and report a slow consumer error.
@@ -221,8 +321,9 @@ Publisher --------> NATS Server (Load Balancer) -+--> Worker 2 (Queue Group "ord
 
 To demonstrate true queue group load balancing, the example below spins up a **pool of 3 worker routines** sharing the same queue group `"order-workers"`. When messages are published to `"orders.created"`, the NATS server load-balances messages across the 3 workers.
 
+#### Go
+
 ```go
-// Go SDK Example: Queue Group Worker Pool (3 Concurrent Workers)
 package main
 
 import (
@@ -254,10 +355,26 @@ func StartWorkerPool(nc *nats.Conn, workerCount int) ([]*nats.Subscription, erro
 }
 ```
 
+#### Java
+
+```java
+public void startWorkerPool(Connection nc, int workerCount) {
+    for (int i = 1; i <= workerCount; i++) {
+        final int workerId = i;
+        Dispatcher workerDispatcher = nc.createDispatcher(msg -> {
+            System.out.printf("[Worker-%d] Handling load-balanced order: %s%n", workerId, new String(msg.getData(), StandardCharsets.UTF_8));
+        });
+        workerDispatcher.subscribe("orders.created", "order-workers");
+    }
+    System.out.printf("Successfully started worker pool with %d workers on queue group 'order-workers'%n", workerCount);
+}
+```
+
 #### Synchronous Queue Group Worker Loop
 
+#### Go
+
 ```go
-// Go SDK Example: Synchronous Worker Pulling from Queue Group
 sub, err := nc.QueueSubscribeSync("orders.created", "order-workers")
 if err != nil {
     return err
@@ -266,6 +383,20 @@ if err != nil {
 msg, err := sub.NextMsg(2 * time.Second)
 if err == nil {
     log.Printf("Worker pulled load-balanced message: %s", string(msg.Data))
+}
+```
+
+#### Java
+
+```java
+Subscription sub = nc.subscribe("orders.created", "order-workers");
+try {
+    Message msg = sub.nextMessage(Duration.ofSeconds(2));
+    if (msg != null) {
+        System.out.printf("Worker pulled load-balanced message: %s%n", new String(msg.getData(), StandardCharsets.UTF_8));
+    }
+} catch (InterruptedException e) {
+    Thread.currentThread().interrupt();
 }
 ```
 
@@ -279,8 +410,9 @@ Each subscription maintains an internal client-side buffer to store messages pri
 
 Application limits for message counts and memory byte sizes can be configured per subscription:
 
+#### Go
+
 ```go
-// Go SDK Example
 sub, err := nc.Subscribe("orders.created", handler)
 if err != nil {
     return err
@@ -293,10 +425,18 @@ if err != nil {
 }
 ```
 
+#### Java
+
+```java
+dispatcher.setPendingMessageLimit(5000);
+dispatcher.setPendingByteLimit(10 * 1024 * 1024);
+```
+
 #### Inspecting Dropped Messages & Buffer Usage
 
+#### Go
+
 ```go
-// Go SDK Example
 msgs, bytes, err := sub.Pending()
 if err == nil {
     log.Printf("Current pending: msgs=%d, bytes=%d", msgs, bytes)
@@ -308,12 +448,23 @@ if err == nil && dropped > 0 {
 }
 ```
 
+#### Java
+
+```java
+long pendingMsgs = dispatcher.getPendingMessageCount();
+long pendingBytes = dispatcher.getPendingByteCount();
+long droppedMsgs = dispatcher.getDroppedCount();
+
+System.out.printf("Current pending: msgs=%d, bytes=%d, dropped=%d%n", pendingMsgs, pendingBytes, droppedMsgs);
+```
+
 #### Auto-Unsubscribe
 
 Auto-Unsubscribe configures a subscription to automatically unregister itself after receiving a target number of messages.
 
+#### Go
+
 ```go
-// Go SDK Example
 sub, err := nc.Subscribe("orders.notifications", handler)
 if err != nil {
     return err
@@ -324,6 +475,12 @@ err = sub.AutoUnsubscribe(10)
 if err != nil {
     return err
 }
+```
+
+#### Java
+
+```java
+dispatcher.unsubscribe("orders.notifications", 10);
 ```
 
 ---
@@ -370,8 +527,9 @@ When a network disruption occurs:
 
 An unhandled exception or panic inside a callback handler can crash the internal subscription thread or application process. Implement defensive exception handling inside message handlers:
 
+#### Go
+
 ```go
-// Go SDK Example
 sub, err := nc.Subscribe("orders.created", func(msg *nats.Msg) {
     defer func() {
         if r := recover(); r != nil {
@@ -382,6 +540,20 @@ sub, err := nc.Subscribe("orders.created", func(msg *nats.Msg) {
     // Process message payload safely
     processOrder(msg.Data)
 })
+```
+
+#### Java
+
+```java
+Dispatcher dispatcher = nc.createDispatcher(msg -> {
+    try {
+        processOrder(msg.getData());
+    } catch (Exception e) {
+        System.err.printf("Recovered from error in message callback [subject=%s]: %s%n", msg.getSubject(), e.getMessage());
+    }
+});
+
+dispatcher.subscribe("orders.created");
 ```
 ---
 
@@ -423,8 +595,9 @@ Close Connection
 
 The runnable snippet below demonstrates how to construct a resilient, graceful Core NATS subscriber service using connection and subscription draining.
 
+#### Go
+
 ```go
-// Go SDK Example
 package main
 
 import (
@@ -506,6 +679,50 @@ func main() {
 }
 ```
 
+#### Java
+
+```java
+import io.nats.client.Connection;
+import io.nats.client.Dispatcher;
+import io.nats.client.Nats;
+import io.nats.client.Options;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+
+public class GracefulSubscriber {
+    public static void main(String[] args) {
+        Options options = new Options.Builder()
+                .server("nats://localhost:4222")
+                .connectionName("graceful-subscriber-demo")
+                .build();
+
+        try (Connection nc = Nats.connect(options)) {
+            Dispatcher dispatcher = nc.createDispatcher(msg -> {
+                System.out.printf("Started processing message: %s%n", new String(msg.getData(), StandardCharsets.UTF_8));
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                System.out.printf("Finished processing message: %s%n", new String(msg.getData(), StandardCharsets.UTF_8));
+            });
+
+            dispatcher.subscribe("orders.created");
+            System.out.println("Subscribed to orders.created. Press Ctrl+C or trigger shutdown...");
+
+            // Drain connection cleanly during shutdown
+            CompletableFuture<Boolean> drainFuture = nc.drain(Duration.ofSeconds(10));
+            drainFuture.get();
+            System.out.println("Subscriber service shutdown complete.");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
 ---
 
 ## 5. Core NATS Subscriber Capability Summary
@@ -525,4 +742,6 @@ func main() {
 
 * [Official NATS Go Client Repository](https://github.com/nats-io/nats.go)
 * [NATS Go Client API Documentation (pkg.go.dev)](https://pkg.go.dev/github.com/nats-io/nats.go)
+* [Official NATS Java Client Repository](https://github.com/nats-io/nats.java)
+* [NATS Java Client Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/index.html)
 * [Official NATS Developer Subscription Documentation](https://docs.nats.io/using-nats/developer/receive)
