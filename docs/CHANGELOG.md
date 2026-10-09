@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-09] Restructure NATS Client & SDK Developer Guide
+
+- **Change:** Updated [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md) into a clean 4-column SDK reference guide (`Development Task`, `Description`, `Go SDK Reference`, `Java SDK Reference`) mapping each core development task directly to specific section-level anchor URLs in official Go (`github.com/nats-io/nats.go`) and Java (`github.com/nats-io/nats.java`) SDK documentation.
+- **Reason:** Provide dedicated, explicit Go and Java SDK section link columns for fast developer lookup without clutter or dead anchor links.
+- **Affected Area:** [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md)
+
 ## [2026-10-09] Rewrite NATS Overview Guide to 4-Section Blueprint Architecture
 
 - **Change:** Rewrote [docs/nats_overview.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats_overview.md) into a clean, publication-ready guide following the 4-section structural blueprint: Section 1 (`Overview`), Section 2 (`Standout Features of NATS`), Section 3 (`Architecture` with clean ASCII dual-engine conceptual diagram), and Section 4 (`Terminology and Platform Capability Mapping` with Solace PubSub+ translation matrix and extensible paradigm matrix). All references point strictly to official public NATS and Synadia online documentation.
