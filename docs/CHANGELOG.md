@@ -2,6 +2,16 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-09] Rewrite NATS Overview Guide to 4-Section Blueprint Architecture
+
+- **Change:** Rewrote [docs/nats_overview.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats_overview.md) into a clean, publication-ready guide following the 4-section structural blueprint: Section 1 (`Overview`), Section 2 (`Standout Features of NATS`), Section 3 (`Architecture` with clean ASCII dual-engine conceptual diagram), and Section 4 (`Terminology and Platform Capability Mapping` with Solace PubSub+ translation matrix and extensible paradigm matrix). All references point strictly to official public NATS and Synadia online documentation.
+- **Reason:** Provide an anchor guide for Solution Architects, Tech Leads, and Software Developers with clear capability value and Solace translation layers.
+- **Affected Area:** [docs/nats_overview.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats_overview.md)
+
+
+
+
+
 ## [2026-10-08] Convert Developer Walkthrough Flowchart to Horizontal Layout (`flowchart LR`)
 
 - **Change:** Updated the Mermaid flowchart direction in [docs/developer-walkthrough.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough.md) from `flowchart TD` to `flowchart LR`.
