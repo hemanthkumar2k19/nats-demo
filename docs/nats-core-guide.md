@@ -126,3 +126,5 @@ Queue Groups provide automatic, broker-managed load balancing across a pool of s
 ---
 
 ## 6. Next Steps
+
+- [NATS JetStream Guide](nats-jetstream-guide.md) - Learn how to implement persistent messaging, at-least-once delivery, stream consumers, deduplication, and message acknowledgments.

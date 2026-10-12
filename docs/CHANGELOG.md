@@ -2,6 +2,19 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-12] Standardize API vs Model References and Fix Publishing Links in NATS JetStream Guide
+
+- **Change:** Updated [docs/nats-jetstream-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-jetstream-guide.md): added official reference `https://docs.nats.io/learn/jetstream/publishing#avoiding-duplicate-writes` under Advanced Publishing; standardized reference naming across Go and Java to strictly differentiate callable methods/interfaces (`API`) from data structures/configurations (`Model`); updated Java synchronous publishing reference to target `https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html#publish(io.nats.client.Message)`; and updated Java message headers and deduplication references to point accurately to `PublishOptions.Builder` (`messageId`) and `Message.getHeaders()` alongside the repository `Headers` model source.
+- **Reason:** Correct invalid Javadoc links, accurately distinguish API contracts from data models, and provide direct links for duplicate suppression and headers.
+- **Affected Area:** [docs/nats-jetstream-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-jetstream-guide.md)
+
+## [2026-10-12] Restructure NATS JetStream Guide into Publishing and Consumers Hierarchy
+
+- **Change:** Restructured [docs/nats-jetstream-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-jetstream-guide.md) into a streamlined, high-level structural hierarchy: consolidated Section 2 (*Publishing*) with a comprehensive child subsection (*2.1 Advanced Publishing*) integrating deduplication (`Nats-Msg-Id`), per-message TTL (`Nats-TTL`), async pipelining, OCC reorder mitigations (`Nats-Expected-*`), atomic batching, and fast ingest; restructured Section 3 (*Consumers*) into a sequential developer lifecycle: Subject Filters -> Pull and Push Consumers -> Ordered Consumers -> Delivery Policy & Tracking -> Acknowledgment Policy & Signals -> Scaling Consumers with Worker Pools. Verified and aligned all Go (`nats.go/jetstream`) and Java (`jnats`) API documentation reference anchors and ensured complete ASCII compliance.
+- **Reason:** Provide an intuitive sequential structure grouping all complex publishing features directly under Publishing and organizing all consumer topics into a progressive lifecycle under Consumers.
+- **Affected Area:** [docs/nats-jetstream-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-jetstream-guide.md)
+
+
 ## [2026-10-12] Standardize Implementation References and Best Practices Table in NATS Core Guide
 
 - **Change:** Refactored [docs/nats-core-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-core-guide.md): standardized reference schema across all messaging pattern sections to official Go/Java SDK and NATS by Example sources, and restructured Section 5 under heading `## 5. Best Practices` as a concise, high-impact two-column table (`Suggestion` and `Reason`) summarizing platform guidelines on JetStream selection, slow consumer buffering, request-reply idempotency, no-responders fail-fast, connection pooling, queue group consistency, and connection draining.
