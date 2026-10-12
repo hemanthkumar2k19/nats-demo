@@ -2,6 +2,20 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-12] Align Sequential Reference Hierarchy Across Messaging and Client Guides
+
+- **Change:** Restructured Next Steps across guides to establish a clear sequential parent-child reading hierarchy (`NATS Messaging -> NATS Client Guide -> Core NATS & JetStream Guides`): updated [docs/nats-messaging-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-messaging-guide.md) Section 4 to direct users directly to [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md), linked [docs/subject-design.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/subject-design.md), and transferred the Core NATS and JetStream guide links into Section 9 (*Next Steps*) of [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md). Enforced ASCII compliance across all modified text.
+- **Reason:** Provide an intuitive sequential learning path for developers moving from core messaging concepts into SDK client connectivity, then branching into Core NATS and JetStream implementation guides.
+- **Affected Area:** [docs/nats-messaging-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-messaging-guide.md), [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md)
+
+
+## [2026-10-12] Consolidate Recommendations and Update Links in NATS Client Guide
+
+- **Change:** Restructured [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md): removed redundant Learning Objectives from Section 1, merged fragmented recommendations from Section 3 and Section 4 into a unified `Section 6: Key Connection and Resilience Recommendations` placed immediately after SDK References, renumbered downstream sections, replaced broken Java Javadoc URLs with verified live links targeting `Connection.drain`, mapped generic package links to specific Go API anchors, and enforced ASCII compliance.
+- **Reason:** Remove redundant learning objectives, eliminate scattered connection guidance across early sections, establish a unified implementation checklist after SDK references, and ensure all references are accurate and ASCII-compliant.
+- **Affected Area:** [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md)
+
+
 ## [2026-10-12] Streamline NATS Publisher Guide and Fix SDK / Example References
 
 - **Change:** Restructured [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) by removing the separate redundant Message Construction section and integrating message structure directly into Core NATS Publishing with explicit parity between Core NATS and JetStream message representations. Removed obsolete and broken 404 links (including old `src/examples/...` paths in `nats.java`), updated Java sample paths to `examples/src/main/java/io/nats/examples/...`, and verified all Go and Java SDK references against official APIs and working repository samples.
