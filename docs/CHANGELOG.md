@@ -2,6 +2,13 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-12] Standardize Implementation References and Best Practices Table in NATS Core Guide
+
+- **Change:** Refactored [docs/nats-core-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-core-guide.md): standardized reference schema across all messaging pattern sections to official Go/Java SDK and NATS by Example sources, and restructured Section 5 under heading `## 5. Best Practices` as a concise, high-impact two-column table (`Suggestion` and `Reason`) summarizing platform guidelines on JetStream selection, slow consumer buffering, request-reply idempotency, no-responders fail-fast, connection pooling, queue group consistency, and connection draining.
+- **Reason:** Provide clear developer-friendly lookup without nested subsections, aligning recommendations into a clean Suggestion/Reason tabular structure and ensuring full ASCII compliance.
+- **Affected Area:** [docs/nats-core-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-core-guide.md)
+
+
 ## [2026-10-12] Consolidate Client Guide into NATS Messaging & Client SDK Guide
 
 - **Change:** Merged [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md) into [docs/nats-messaging-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-messaging-guide.md), creating a single unified developer guide covering messaging fundamentals (subjects, message structure), client setup (prerequisites for Go and Java, connecting), resilience deep-dive reading path, quick-lookup SDK API reference table, key connection and resilience principles, enterprise platform requirements, JetStream API initialization, and next-step links to Core NATS and JetStream guides. Replaced [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md) with a redirect notice and updated [docs/developer-walkthrough.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-walkthrough.md) step 5 link to target the consolidated guide.

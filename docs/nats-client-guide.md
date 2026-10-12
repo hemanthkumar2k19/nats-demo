@@ -175,5 +175,5 @@ JetStream API initialization does not itself guarantee that an application is au
 
 Choose the appropriate messaging model based on your application's delivery, persistence, and processing requirements:
 
-- [Core NATS Developer Guide](developer-guide/usage-patterns/core-nats.md) - Implementation of Core NATS messaging (ephemeral publish/subscribe, request-reply, and load-balanced queue groups).
+- [Core NATS Developer Guide](nats-core-guide.md) - Implementation of Core NATS messaging (ephemeral publish/subscribe, request-reply, and load-balanced queue groups).
 - [JetStream Developer Guide](developer-guide/usage-patterns/jetstream.md) - Implementation of persistent messaging with JetStream (streams, consumers, deduplication, and acknowledgements).
