@@ -1,1002 +1,211 @@
 # NATS Publisher Guide
 
-## Purpose
+## 1. Purpose
 
-This guide defines application-level practices for publishing messages to NATS using Core NATS and JetStream.
+This guide provides application developers with a unified reference for publishing messages to NATS using Core NATS and JetStream.
 
-It covers the publisher lifecycle from initialization through message construction, publishing, failure and retry handling, and graceful shutdown.
+It introduces the publishing patterns, capabilities, and operational considerations developers need when implementing publishers in Go or Java.
 
----
+The guide follows a reference-oriented approach: each topic provides a brief description and links to the relevant SDK documentation or examples.
 
-## 1. Prerequisites & NATS Subject Architecture
+## 2. NATS Subjects
 
-### 1.1 Prerequisites
+A NATS subject identifies the destination to which a message is published. Subjects consist of dot-separated tokens and provide the namespace used by publishers, subscribers, and JetStream.
 
-Publishing to NATS requires an active NATS connection (`*nats.Conn`). For JetStream publishing, a JetStream API context (`jetstream.JetStream`) initialized from the connection is required (refer to the NATS Client Connectivity Guide).
+Publishers must use fully specified subjects. Wildcards are used in subscription patterns and applicable JetStream subject filters, not to select a group of destinations when publishing.
 
-Conceptually:
+Subject hierarchy can influence message routing, authorization, and JetStream stream filtering.
 
-```text
-Active NATS Connection (TCP Socket)
-      |
-      +-- Core NATS Publisher (Ephemeral Publish / Request)
-      |
-      +-- JetStream Context (Server Ack & Persistent Stream Publish)
-```
+### 2.1 Learn the Fundamentals
 
----
+| Topic | Description | Reference |
+|---|---|---|
+| Subject concepts | Understand subject syntax, tokens, hierarchy, and wildcard fundamentals. | [NATS Subjects](https://docs.nats.io/concepts/subjects) |
+| Subjects and wildcards | Learn how subject patterns work for publishing and subscribing, with practical examples. | [Subjects and Wildcards](https://docs.nats.io/learn/core-nats/subjects-and-wildcards) |
 
-### 1.2 NATS Subjects Brief & Naming Architecture
+### 2.2 Developer Considerations
 
-#### What is a NATS Subject?
+Before publishing messages, developers should understand the following:
 
-A **Subject** is a lightweight, case-sensitive ASCII string used by NATS to route messages between publishers and subscribers/streams. Subjects act as destination addresses and do not require prior creation or registration in Core NATS.
+- **Concrete subjects:** Publish to a fully specified subject rather than a wildcard pattern.
+- **Subject stability:** Treat established subjects as messaging contracts shared between publishers and consumers.
+- **Message identifiers:** Keep per-message identifiers, such as order IDs and correlation IDs, in the payload or headers unless the application has an explicit design requirement otherwise.
+- **Authorization:** Ensure the application's credentials permit publishing to the intended subject.
+- **JetStream:** When publishing through JetStream, ensure the subject is covered by the intended stream configuration.
 
-#### Subject Naming Hierarchy
+Detailed subject design and enterprise naming conventions are outside the scope of this guide and will be maintained separately.
 
-Enterprise NATS subjects follow a dot-separated hierarchical naming convention:
+## 3. Message Construction
 
-`<domain>.<entity>.<action>` or `<region>.<service>.<resource>.<event>`
+A NATS message contains a destination subject and payload, with optional headers and a reply subject.
 
-Examples:
-* `orders.eu.created`
-* `payments.us.processed`
-* `telemetry.sensors.temp.reading`
+Developers should select the appropriate message representation and serialization format based on the application contract.
 
-#### Rules for Valid NATS Subjects
+| Topic | Description | Go Reference | Java Reference |
+|---|---|---|---|
+| Basic message | Construct a message using a subject and payload. | [Conn.Publish API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Publish) / [nats-pub sample](https://github.com/nats-io/nats.go/blob/main/examples/nats-pub/main.go) | [Connection.publish](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#publish(java.lang.String,byte%5B%5D)) / [NatsPub sample](https://github.com/nats-io/nats.java/blob/main/src/examples/java/io/nats/examples/NatsPub.java) |
+| Payload serialization | Serialize application objects into bytes before publishing. | [JSON by Example](https://natsbyexample.com/examples/messaging/json/go) / [Protobuf by Example](https://natsbyexample.com/examples/messaging/protobuf/go) | [Java Client Basic Usage](https://github.com/nats-io/nats.java#basic-usage) |
+| Message headers | Attach metadata such as content type, correlation identifiers, and JetStream deduplication IDs. | [Header Type API](https://pkg.go.dev/github.com/nats-io/nats.go#Header) / [Msg.Header](https://pkg.go.dev/github.com/nats-io/nats.go#Msg) | [Headers Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/impl/Headers.html) / [NatsMessage.Builder.headers](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/NatsMessage.Builder.html#headers(io.nats.client.impl.Headers)) |
+| Reply subject | Specify where a response can be sent when using a request-reply interaction. | [Conn.PublishMsg API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.PublishMsg) / [Msg.Reply](https://pkg.go.dev/github.com/nats-io/nats.go#Msg) | [Connection.publish with reply](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#publish(java.lang.String,java.lang.String,byte%5B%5D)) |
 
-* **Characters**: Alphanumeric ASCII characters (`a-z`, `A-Z`, `0-9`), dots (`.`), hyphens (`-`), and underscores (`_`). Spaces and special characters are forbidden.
-* **Tokens**: Substrings separated by dots (`.`). Empty tokens are invalid (e.g., `orders..created` is invalid).
-* **Case Sensitivity**: Subjects are strictly case-sensitive (`ORDERS.created` and `orders.created` are separate subjects).
-* **Concrete Publish Requirement**: Messages MUST be published to **concrete subjects** (wildcards are forbidden when publishing).
+## 4. Core NATS Publishing
 
-#### NATS Wildcards (Subscriber & Stream Filtering)
+Core NATS supports lightweight, low-latency messaging. A publish operation does not wait for a server-side publish acknowledgement or confirmation that a subscriber processed the message.
 
-Subscribers and JetStream streams use wildcards to listen to or capture groups of subjects:
+Use Core NATS when its delivery semantics meet the application's requirements.
 
-| Wildcard Symbol | Name | Scope & Behavior | Example Pattern | Matching Subjects | Non-Matching Subjects |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `*` | Single-Token Wildcard | Matches **exactly one token** at a specific level in the hierarchy. | `orders.*.created` | `orders.eu.created`, `orders.us.created` | `orders.created`, `orders.eu.123.created` |
-| `>` | Multi-Token Wildcard | Matches **one or more tokens** at the end of a subject (must be final token). | `orders.>` | `orders.created`, `orders.eu.created`, `orders.eu.123.created` | `audit.orders.created` |
+### 4.1 Publishing Patterns
 
-> **Publisher Rule:** Wildcards (`*` and `>`) are evaluated **only during subscriber matching**, not during message publishing.
-> * If you execute `nats pub "order.*" "Hello"`, NATS publishes the message to the **literal 7-character string subject `"order.*"`**.
-> * It will **NOT** expand or deliver the message to subscribers listening on `order.created` or `order.123`.
-> * Therefore, publishers MUST always publish to explicit, concrete subject strings (e.g., `order.created`).
+| Publishing pattern | Description | Go Reference | Java Reference |
+|---|---|---|---|
+| Basic publish | Publish a payload to a concrete subject. | [Conn.Publish API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Publish) / [nats-pub sample](https://github.com/nats-io/nats.go/blob/main/examples/nats-pub/main.go) | [Connection.publish](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#publish(java.lang.String,byte%5B%5D)) / [NatsPub sample](https://github.com/nats-io/nats.java/blob/main/src/examples/java/io/nats/examples/NatsPub.java) |
+| Structured message publish | Publish a message with headers and, optionally, a reply subject. | [Conn.PublishMsg API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.PublishMsg) | [Connection.publish(Message)](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#publish(io.nats.client.Message)) |
+| Request-reply | Send a request and wait for a response within a defined timeout. | [Conn.Request API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Request) / [Request-Reply by Example](https://natsbyexample.com/examples/messaging/request-reply/go) | [Connection.request](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#request(java.lang.String,byte%5B%5D,java.time.Duration)) / [NatsReq sample](https://github.com/nats-io/nats.java/blob/main/src/examples/java/io/nats/examples/NatsReq.java) |
+| Flush | Wait for the server to process pending client operations. This does not confirm subscriber processing or durable storage. | [Conn.Flush API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Flush) / [Conn.FlushTimeout](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.FlushTimeout) | [Connection.flush](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#flush(java.time.Duration)) |
+| Concurrent publishing | Publish from concurrent routines or threads using a shared connection where appropriate. | [Go Client Basic Usage](https://github.com/nats-io/nats.go#basic-usage) | [Java Client Basic Usage](https://github.com/nats-io/nats.java#basic-usage) |
 
----
+### 4.2 Important Considerations
 
-## 2. Message Construction
+- Check client-side errors returned by publishing operations.
+- Do not interpret a successful Core NATS publish call as proof that a subscriber received or processed the message.
+- Use request-reply when an application requires a response rather than merely attaching a reply subject.
+- Reuse established connections instead of creating a new connection for each message.
+- Use JetStream when server-side persistence and publish acknowledgements are required.
 
-A NATS message consists of a destination subject, binary payload data, optional headers, and an optional reply subject.
+## 5. JetStream Publishing
 
-### 2.1 Subject & Target Namespace
+JetStream extends NATS messaging with persistence and server-side publish acknowledgements, subject to the configured stream and storage policies.
 
-Every published message must have a destination subject that complies with subject naming standards (`<domain>.<entity>.<action>`).
+Applications should select synchronous or asynchronous publishing according to their latency, throughput, acknowledgement, and shutdown requirements.
 
-#### Go
+### 5.1 Publishing Patterns
 
-```go
-msg := nats.NewMsg("orders.created")
-```
+| Publishing pattern | Description | Go Reference | Java Reference |
+|---|---|---|---|
+| Synchronous publish | Publish a message and wait for the JetStream acknowledgement. | [JetStream.Publish API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#JetStream.Publish) / [JS Basic Usage](https://github.com/nats-io/nats.go#jetstream) | [JetStream.publish](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html#publish(java.lang.String,byte%5B%5D)) / [NatsJsPub sample](https://github.com/nats-io/nats.java/blob/main/src/examples/java/io/nats/examples/NatsJsPub.java) |
+| Asynchronous publish | Initiate publishing without blocking for each individual acknowledgement. | [JetStream.PublishAsync API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#JetStream.PublishAsync) / [AsyncPubAckFuture](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#AsyncPubAckFuture) | [JetStream.publishAsync](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html#publishAsync(java.lang.String,byte%5B%5D)) / [NatsJsPubAsync sample](https://github.com/nats-io/nats.java/blob/main/src/examples/java/io/nats/examples/NatsJsPubAsync.java) |
+| Publish acknowledgement | Inspect acknowledgement information, including the stream and message sequence. | [PubAck Type](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#PubAck) | [PublishAck Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/api/PublishAck.html) |
+| Pending publish management | Track outstanding asynchronous publishes and account for them before shutdown. | [PublishAsyncComplete API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#JetStream.PublishAsyncComplete) | [CompletableFuture PublishAck](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html#publishAsync(io.nats.client.Message)) |
 
-#### Java
+### 5.2 Deduplication
 
-```java
-Message msg = NatsMessage.builder()
-        .subject("orders.created")
-        .build();
-```
+JetStream supports duplicate publish detection using the `Nats-Msg-Id` message header.
 
-### 2.2 Payload & Serialization
+| Topic | Description | Go Reference | Java Reference |
+|---|---|---|---|
+| Message ID | Assign a stable identifier to a logical message when using JetStream deduplication. | [WithMsgID Option](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#WithMsgID) | [PublishOptions messageId](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/PublishOptions.Builder.html#messageId(java.lang.String)) |
+| Duplicate acknowledgement | Understand how JetStream indicates that a message was recognized as a duplicate. | [PubAck.Duplicate](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#PubAck) | [PublishAck.isDuplicate()](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/api/PublishAck.html#isDuplicate()) |
 
-Application domain objects must be serialized into a binary byte slice (e.g., JSON) before being set on `msg.Data`.
+When retrying the same logical message, retain the same message ID. Deduplication applies within the configured duplicate-detection window; it is not a general guarantee of end-to-end exactly-once processing.
 
-#### Go
+### 5.3 Publish Expectations
 
-```go
-type OrderEvent struct {
-    OrderID string `json:"order_id"`
-}
+JetStream publish expectations allow publishers to assert conditions about stream state before a message is accepted. They can support optimistic concurrency control when multiple publishers update shared stream state.
 
-event := OrderEvent{OrderID: "12345"}
-payload, err := json.Marshal(event)
-if err != nil {
-    return err
-}
+| Topic | Description | Go Reference | Java Reference |
+|---|---|---|---|
+| Expected stream | Assert that a publish targets the intended stream. | [WithExpectStream Option](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#WithExpectStream) | [PublishOptions expectedStream](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/PublishOptions.Builder.html#expectedStream(java.lang.String)) |
+| Expected sequence | Assert a condition on the stream's last sequence or the relevant subject sequence. | [WithExpectLastSequence](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#WithExpectLastSequence) | [PublishOptions expectedLastSequence](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/PublishOptions.Builder.html#expectedLastSequence(long)) |
+| Expectation failures | Handle rejected publishes when an expected condition no longer holds. | [APIError Struct](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#APIError) | [JetStreamApiException](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStreamApiException.html) |
 
-msg.Data = payload
-```
+Use publish expectations only when the application requires conditional writes or concurrency control. Verify the supported expectation options and error handling against the SDK version in use.
 
-#### Java
+## 6. Failure Handling and Retry
 
-```java
-OrderEvent event = new OrderEvent("12345");
-byte[] payload = objectMapper.writeValueAsBytes(event);
+Publish failures can arise from client-side validation, connection interruptions, authorization failures, JetStream configuration, resource limits, or acknowledgement timeouts.
 
-Message msg = NatsMessage.builder()
-        .subject("orders.created")
-        .data(payload)
-        .build();
-```
+The application must distinguish a known rejection from an outcome that remains unknown.
 
-### 2.3 Headers & Metadata
+### 6.1 Failure Scenarios
 
-Use NATS headers (`msg.Header`) for metadata such as content types, correlation IDs, or JetStream deduplication keys (`Nats-Msg-Id`).
+| Scenario | Description and consideration | Go Reference | Java Reference |
+|---|---|---|---|
+| Client-side publish error | Handle errors reported directly by the client API. | [Conn.Publish API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Publish) | [Connection.publish](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#publish(java.lang.String,byte%5B%5D)) |
+| Request timeout | A request-reply operation did not receive a response within its deadline. | [ErrTimeout Definition](https://pkg.go.dev/github.com/nats-io/nats.go#ErrTimeout) | [Connection.request timeout](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#request(java.lang.String,byte%5B%5D,java.time.Duration)) |
+| JetStream rejection | A publish was rejected because of an API error, configuration issue, or failed expectation. | [APIError Struct](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#APIError) | [JetStreamApiException](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStreamApiException.html) |
+| Publish acknowledgement timeout | The acknowledgement was not received in time; the message may already have been stored. | [JetStream.Publish API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#JetStream.Publish) | [JetStream.publish](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html#publish(java.lang.String,byte%5B%5D)) |
+| Authorization failure | Verify that the application's identity has permission to publish to the intended subject. | [NATS Authorization Guide](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/authorization) | [NATS Authorization Guide](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/authorization) |
 
-#### Go
+### 6.2 Retry Considerations
 
-```go
-msg.Header.Set("Content-Type", "application/json")
-msg.Header.Set("X-Correlation-ID", correlationID)
-```
+- **Use SDK reconnection:** Let the client SDK handle supported transport reconnection behavior.
+- **Separate reconnection from message retry:** Re-establishing a connection does not guarantee that an earlier publish was unsuccessful or that it is safe to repeat.
+- **Classify errors:** Avoid retrying permanent configuration or authorization failures as if they were transient network failures.
+- **Handle unknown outcomes:** A JetStream acknowledgement timeout does not necessarily mean the server failed to store the message.
+- **Use deduplication where appropriate:** Reuse the same `Nats-Msg-Id` for retries of the same logical message.
+- **Bound retry behavior:** Apply appropriate deadlines, backoff, and error reporting to avoid uncontrolled retry loops.
 
-#### Java
+### 6.3 SDK Resilience References
 
-```java
-Headers headers = new Headers();
-headers.set("Content-Type", "application/json");
-headers.set("X-Correlation-ID", correlationId);
+| Topic | Description | Go Reference | Java Reference |
+|---|---|---|---|
+| Initial connection retry | Configure behavior when the initial connection attempt fails. | [RetryOnFailedConnect](https://pkg.go.dev/github.com/nats-io/nats.go#RetryOnFailedConnect) | [Connecting (connectReconnectOnConnect)](https://github.com/nats-io/nats.java#connecting) |
+| Reconnection | Configure reconnect attempts, delay, and related connection options. | [MaxReconnects Option](https://pkg.go.dev/github.com/nats-io/nats.go#MaxReconnects) / [ReconnectWait](https://pkg.go.dev/github.com/nats-io/nats.go#ReconnectWait) | [Clusters & Reconnecting](https://github.com/nats-io/nats.java#clusters--reconnecting) |
+| Asynchronous publish errors | Handle errors from asynchronous JetStream publishing. | [WithPublishAsyncErrHandler](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#WithPublishAsyncErrHandler) | [ErrorListener Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/ErrorListener.html) |
 
-Message msg = NatsMessage.builder()
-        .subject("orders.created")
-        .headers(headers)
-        .build();
-```
+## 7. Graceful Shutdown
 
-### 2.4 Optional Reply Subject
-
-A message can specify an optional reply subject (`msg.Reply`) indicating where a responder can publish a response.
-
-#### Go
-
-```go
-msg.Reply = "orders.reply.inbox"
-```
-
-#### Java
-
-```java
-Message msg = NatsMessage.builder()
-        .subject("orders.created")
-        .replyTo("orders.reply.inbox")
-        .build();
-```
-
-The message structure is independent of whether it is subsequently published through Core NATS or JetStream.
-
----
-
-## 3. Core NATS Publishing
-
-Core NATS provides ephemeral publish semantics. A Core NATS publish does not wait for a server-side publish acknowledgement or subscriber acknowledgement.
-
-### 3.1 Basic Publish
-
-Use `Publish` when only a subject and payload are required.
-
-#### Go
-
-```go
-err := nc.Publish(
-    "orders.created",
-    []byte(`{"orderId":"12345"}`),
-)
-if err != nil {
-    return err
-}
-```
-
-#### Java
-
-```java
-nc.publish("orders.created", "{\"orderId\":\"12345\"}".getBytes(StandardCharsets.UTF_8));
-```
-
-The client queues the message for transmission and the publish operation returns without waiting for subscriber confirmation.
-
-Core NATS does not provide JetStream-style publish acknowledgements or persistence.
-
----
-
-### 3.2 Structured Message Publish
-
-Use `PublishMsg` when headers or an optional reply subject are required on the message.
-
-#### Go
-
-```go
-msg := nats.NewMsg("orders.created")
-msg.Data = []byte(`{"orderId":"12345"}`)
-msg.Header.Set("Content-Type", "application/json")
-
-// Optional reply subject attached to the structured message
-msg.Reply = "orders.reply.inbox"
-
-err := nc.PublishMsg(msg)
-if err != nil {
-    return err
-}
-```
-
-#### Java
-
-```java
-Headers headers = new Headers();
-headers.set("Content-Type", "application/json");
-
-Message msg = NatsMessage.builder()
-        .subject("orders.created")
-        .replyTo("orders.reply.inbox")
-        .headers(headers)
-        .data("{\"orderId\":\"12345\"}".getBytes(StandardCharsets.UTF_8))
-        .build();
-
-nc.publish(msg);
-```
-
----
-
-### 3.3 Publishing with Reply Subject (`PublishRequest`)
-
-A publisher can send a message with an explicitly attached reply subject using `PublishRequest`.
-
-#### Go
-
-```go
-err := nc.PublishRequest(
-    "orders.validate",
-    "orders.reply.inbox",
-    []byte(`{"orderId":"12345"}`),
-)
-if err != nil {
-    return err
-}
-```
-
-#### Java
-
-```java
-nc.publish("orders.validate", "orders.reply.inbox", "{\"orderId\":\"12345\"}".getBytes(StandardCharsets.UTF_8));
-```
-
-> **Important Distinction:** `PublishRequest` is an asynchronous publish operation that simply attaches the reply subject to the message. It does **NOT** wait for a response or create a response subscription.
-
----
-
-### 3.4 Synchronous Request-Reply Pattern (`Request` / `RequestMsg`)
-
-Unlike `PublishRequest`, the true **Request-Reply pattern** (`nc.Request` / `nc.RequestMsg`) is a synchronous, blocking query:
-
-```text
-Publisher                                       NATS Server                                      Responder
-    |                                                |                                               |
-    |-- 1. Creates ephemeral Inbox (_INBOX.xxx) ---->|                                               |
-    |-- 2. Publishes Request msg (Reply=_INBOX.xxx)->|---------------- 3. Delivers Request --------->|
-    |                                                |                                               |
-    |                                                |<--------------- 4. Responds to _INBOX.xxx ----|
-    |<-- 5. Receives Response (or timeout) ----------|                                               |
-```
-
-1. The client SDK automatically creates an ephemeral inbox subscription (`_INBOX.xxx`).
-2. The client attaches `_INBOX.xxx` as `msg.Reply` and publishes the request.
-3. The client **blocks** waiting for a responder to publish a response to `_INBOX.xxx` until the specified timeout expires.
-
-#### Go
-
-```go
-// Synchronous Request-Reply: publishes request AND waits for response
-resp, err := nc.Request(
-    "orders.validate",
-    []byte(`{"orderId":"12345"}`),
-    2*time.Second,
-)
-if err != nil {
-    return fmt.Errorf("request-reply failed or timed out: %w", err)
-}
-
-log.Printf("Response received: %s", string(resp.Data))
-```
-
-For structured request messages with headers:
-
-```go
-msg := nats.NewMsg("orders.validate")
-msg.Data = []byte(`{"orderId":"12345"}`)
-msg.Header.Set("Content-Type", "application/json")
-
-resp, err := nc.RequestMsg(msg, 2*time.Second)
-if err != nil {
-    return err
-}
-```
-
-#### Java
-
-```java
-// Synchronous Request-Reply: publishes request AND waits for response
-CompletableFuture<Message> future = nc.request("orders.validate", "{\"orderId\":\"12345\"}".getBytes(StandardCharsets.UTF_8));
-try {
-    Message resp = future.get(2, TimeUnit.SECONDS);
-    System.out.printf("Response received: %s%n", new String(resp.getData(), StandardCharsets.UTF_8));
-} catch (Exception e) {
-    System.err.printf("Request-reply failed or timed out: %s%n", e.getMessage());
-}
-```
-
-For structured request messages with headers:
-
-```java
-Headers headers = new Headers();
-headers.set("Content-Type", "application/json");
-
-Message msg = NatsMessage.builder()
-        .subject("orders.validate")
-        .headers(headers)
-        .data("{\"orderId\":\"12345\"}".getBytes(StandardCharsets.UTF_8))
-        .build();
-
-CompletableFuture<Message> future = nc.request(msg);
-try {
-    Message resp = future.get(2, TimeUnit.SECONDS);
-    System.out.printf("Response received: %s%n", new String(resp.getData(), StandardCharsets.UTF_8));
-} catch (Exception e) {
-    System.err.printf("Structured request-reply failed: %s%n", e.getMessage());
-}
-```
-
----
-
-### 3.5 Flush
-
-Use `Flush` when the application needs confirmation that pending client operations have been processed by the server.
-
-#### Go
-
-```go
-if err := nc.Flush(); err != nil {
-    return err
-}
-```
-
-#### Java
-
-```java
-try {
-    nc.flush(Duration.ofSeconds(2));
-} catch (Exception e) {
-    System.err.printf("Flush failed: %s%n", e.getMessage());
-}
-```
-
-`Flush` is useful when:
-
-* validating connectivity
-* coordinating shutdown
-* confirming that pending client operations have reached the server
-
-`Flush` does not provide message persistence or subscriber acknowledgement.
-
----
-
-### 3.6 Concurrent Publishing
-
-A shared NATS connection can be used by concurrent publisher routines.
-
-#### Go
-
-```go
-go func() {
-    _ = nc.Publish("orders.created", payload)
-}()
-
-go func() {
-    _ = nc.Publish("orders.updated", payload)
-}()
-```
-
-#### Java
-
-```java
-ExecutorService executor = Executors.newFixedThreadPool(2);
-
-executor.submit(() -> nc.publish("orders.created", payload));
-executor.submit(() -> nc.publish("orders.updated", payload));
-```
-
-A separate connection should not be created for every publish operation.
-
----
-
-## 4. JetStream Publishing
-
-JetStream publishing provides server-side acknowledgement and persistence according to the configured stream and storage policy.
-
-### 4.1 Synchronous Publish
-
-Use synchronous publishing when the application needs the JetStream publish acknowledgement before continuing.
-
-#### Go
-
-```go
-ack, err := js.Publish(
-    context.Background(),
-    "orders.created",
-    []byte(`{"orderId":"12345"}`),
-)
-if err != nil {
-    return err
-}
-
-fmt.Println(ack.Stream, ack.Sequence)
-```
-
-#### Java
-
-```java
-JetStream js = nc.jetStream();
-PublishAck ack = js.publish("orders.created", "{\"orderId\":\"12345\"}".getBytes(StandardCharsets.UTF_8));
-
-System.out.printf("Stream: %s, Sequence: %d%n", ack.getStream(), ack.getSequence());
-```
-
-The publish operation waits for the JetStream publish acknowledgement.
-
-The acknowledgement provides information such as:
-
-* Stream
-* Sequence
-* Duplicate detection result
-
----
-
-### 4.2 Asynchronous Publish
-
-Use asynchronous publishing when the application wants to continue processing without waiting for every individual publish acknowledgement.
-
-#### Go
-
-```go
-future, err := js.PublishAsync(
-    "orders.created",
-    []byte(`{"orderId":"12345"}`),
-)
-if err != nil {
-    return err
-}
-
-select {
-case ack := <-future.Ok():
-    log.Printf("Published to stream=%s sequence=%d", ack.Stream, ack.Sequence)
-case err := <-future.Err():
-    return fmt.Errorf("async publish failed: %w", err)
-}
-```
-
-#### Java
-
-```java
-JetStream js = nc.jetStream();
-CompletableFuture<PublishAck> future = js.publishAsync(
-    "orders.created",
-    "{\"orderId\":\"12345\"}".getBytes(StandardCharsets.UTF_8)
-);
-
-try {
-    PublishAck ack = future.get(5, TimeUnit.SECONDS);
-    System.out.printf("Published to stream=%s sequence=%d%n", ack.getStream(), ack.getSequence());
-} catch (Exception e) {
-    System.err.printf("Async publish failed: %s%n", e.getMessage());
-}
-```
-
-Applications using asynchronous publishing should account for outstanding publishes before shutdown.
-
----
-
-### 4.3 Managing Pending Publishes
-
-JetStream provides APIs to inspect and wait for asynchronous publishing activity.
-
-#### Go
-
-```go
-pending := js.PublishAsyncPending()
-
-if pending > 0 {
-    <-js.PublishAsyncComplete()
-}
-```
-
-#### Java
-
-```java
-// In Java NATS SDK, async publish futures (CompletableFuture<PublishAck>) track pending status
-CompletableFuture<PublishAck> future = js.publishAsync("orders.created", payload);
-if (!future.isDone()) {
-    PublishAck ack = future.get(5, TimeUnit.SECONDS);
-}
-```
-
-The application should define an appropriate shutdown boundary so that pending publishing work is either completed or explicitly abandoned.
-
----
-
-### 4.4 Publish Deduplication
-
-JetStream supports duplicate publish detection using the `Nats-Msg-Id` header.
-
-#### Go
-
-```go
-msg := nats.NewMsg("orders.created")
-msg.Header.Set("Nats-Msg-Id", "order-12345")
-msg.Data = []byte(`{"orderId":"12345"}`)
-
-ack, err := js.PublishMsg(context.Background(), msg)
-if err != nil {
-    return err
-}
-
-if ack.Duplicate {
-    // Server detected that this message ID was already processed
-}
-```
-
-#### Java
-
-```java
-Headers headers = new Headers();
-headers.set("Nats-Msg-Id", "order-12345");
-
-Message msg = NatsMessage.builder()
-        .subject("orders.created")
-        .headers(headers)
-        .data("{\"orderId\":\"12345\"}".getBytes(StandardCharsets.UTF_8))
-        .build();
-
-PublishAck ack = js.publish(msg);
-if (ack.isDuplicate()) {
-    // Server detected that this message ID was already processed
-}
-```
-
-When retrying the same logical message, retain the same `Nats-Msg-Id`.
-
-The server can then detect a duplicate publish within the applicable duplicate-detection window.
-
----
-
-### 4.5 Publish Expectations
-
-Publish Expectations provide **Optimistic Concurrency Control (OCC)** and atomic conditional publishing in JetStream.
-
-When multiple publisher workers or microservices attempt to append updates concurrently, publish expectations prevent out-of-order writes, lost updates, and state corruption without requiring distributed locks.
-
-#### How Expectations Work
-
-Before appending a message to a stream, the JetStream server evaluates the requested expectations against current stream metadata:
-
-1. **Assertion Match**: If the stream state matches all expectations, JetStream appends the message atomically and returns an `Ack`.
-2. **Assertion Mismatch**: If any expectation fails (for example, another worker wrote to the stream first), JetStream rejects the message, appends nothing, and returns a JetStream expectation error to the client.
-
-```text
-Publisher                       JetStream Server                   Stream State
-    |                                   |                                |
-    |-- Publish (Expect Seq 100) ------>| Check Last Seq = 100?          |
-    |                                   |   |                            |
-    |                                   |   +-- MATCH ------------------>| Append Msg (Seq 101)
-    |<-- ACK (Seq 101) -----------------|                                |
-    |                                   |                                |
-    |-- Publish (Expect Seq 100) ------>| Check Last Seq = 100?          |
-    |                                   |   |                            |
-    |                                   |   +-- MISMATCH (Current 101) --| Reject Msg (No Store)
-    |<-- ERR (Wrong Last Sequence) -----|                                |
-```
-
-#### Available Expectation Options
-
-JetStream supports several expectation options passed as `jetstream.PublishOpt`:
-
-* **`WithExpectStream(name)`**: Guarantees that the target subject maps to the specified stream name, preventing misrouted messages if subject configurations shift.
-* **`WithExpectLastSequence(seq)`**: Asserts that the stream's absolute last sequence number exactly equals `seq`. Useful when strict single-stream linear sequence is required.
-* **`WithExpectLastSubjectSequence(seq)`**: Asserts the last sequence number recorded specifically for the message subject. Useful for per-entity ordering (e.g. order `ORD-123`) across a shared multi-entity stream.
-* **`WithExpectLastMsgID(id)`**: Asserts that the last message appended to the stream had the specific `Nats-Msg-Id`. Useful when chain-linking transactions.
-
-#### Example: Conditional Publish with Sequence Assertion
-
-The following example demonstrates publishing an event only if the stream sequence matches the caller's expected last sequence. If another process modified the stream concurrently, the publish is safely rejected.
-
-##### Go
-
-```go
-package main
-
-import (
-    "context"
-    "errors"
-    "fmt"
-    "log"
-
-    "github.com/nats-io/nats.go/jetstream"
-)
-
-func publishWithExpectation(js jetstream.JetStream, expectedSeq uint64, payload []byte) error {
-    ctx := context.Background()
-
-    // Assert that the stream's last sequence is exactly expectedSeq
-    ack, err := js.Publish(
-        ctx,
-        "orders.updated",
-        payload,
-        jetstream.WithExpectLastSequence(expectedSeq),
-        jetstream.WithExpectStream("ORDERS"),
-    )
-    if err != nil {
-        var jsErr jetstream.JetStreamError
-        if errors.As(err, &jsErr) && jsErr.APIError() != nil {
-            // Check for expectation mismatch (NATS JetStream ErrCode 10071)
-            if jsErr.APIError().ErrorCode == 10071 {
-                return fmt.Errorf("concurrency conflict: stream sequence moved beyond %d: %w", expectedSeq, err)
-            }
-        }
-        return fmt.Errorf("publish failed: %w", err)
-    }
-
-    log.Printf("Published message to stream %s at sequence %d", ack.Stream, ack.Sequence)
-    return nil
-}
-```
-
-##### Java
-
-```java
-import io.nats.client.JetStream;
-import io.nats.client.PublishAck;
-import io.nats.client.api.PublishOptions;
-import io.nats.client.JetStreamApiException;
-
-public class ConditionalPublish {
-    public static void publishWithExpectation(JetStream js, long expectedSeq, byte[] payload) throws Exception {
-        try {
-            PublishOptions opts = PublishOptions.builder()
-                    .expectedLastSequence(expectedSeq)
-                    .stream("ORDERS")
-                    .build();
-
-            PublishAck ack = js.publish("orders.updated", payload, opts);
-            System.out.printf("Published message to stream %s at sequence %d%n", ack.getStream(), ack.getSequence());
-        } catch (JetStreamApiException e) {
-            // Check for expectation mismatch (NATS JetStream ErrCode 10071)
-            if (e.getErrorCode() == 10071) {
-                System.err.printf("Concurrency conflict: stream sequence moved beyond %d: %s%n", expectedSeq, e.getMessage());
-            } else {
-                throw e;
-            }
-        }
-    }
-}
-```
-
-#### Use Cases for Publish Expectations
-
-* **State Machine Transitions**: Ensure state events (`ORDER_SUBMITTED` -> `ORDER_PAID`) are only stored if the predecessor event sequence is intact.
-* **Optimistic Locking**: Multi-tenant or partitioned applications can write updates to dedicated subjects (`orders.ORD-123.events`) using `WithExpectLastSubjectSequence` without locking the global stream.
-* **Preventing Race Conditions**: Multiple workers reading work from a stream can commit updates back only if no competing worker committed first.
-
----
-
-## 5. Failure Handling & Retry
-
-### 5.1 Publish Errors
-
-Publish errors in NATS vary by messaging model: Core NATS publishing, Core NATS Request-Reply, and JetStream publishing.
-
-Developers should understand how errors are surfaced by the NATS client, which failures can be classified directly, and when a publish outcome may remain unknown.
-
-#### Error Manifestation by Messaging Pattern
-
-| Messaging Pattern      | API                            | Error / Outcome                            | Typical Causes                                                                                                                           |
-| :--------------------- | :----------------------------- | :----------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
-| **Core NATS**          | `nc.Publish`                   | Client-side publish error                  | Invalid subject, connection state, outbound buffer limit, payload exceeds `max_payload`                                                  |
-| **Core Request-Reply** | `nc.Request`                   | Responder / timeout error                  | No active responder, responder unavailable, response not received before deadline                                                        |
-| **JetStream**          | `js.Publish` / `js.PublishMsg` | Publish error / timeout / `PubAck` outcome | Stream configuration, publish expectation failure, authorization, resource limits, server/storage conditions, or acknowledgement timeout |
-
-#### Publish Outcome and Error Classification
-
-Not all publish failures provide enough information to determine whether the server processed the message.
-
-For example, a JetStream publish may time out while waiting for its `PubAck`:
-
-1. **Network Disconnect** — The publish request may not have reached the server.
-2. **Server-Side Processing Delay** — The server may still be processing the publish.
-3. **JetStream Cluster Transition** — A temporary leader or cluster transition may delay the acknowledgement.
-4. **Acknowledgement Lost** — The server may have successfully stored the message, but the `PubAck` may not have reached the client.
-
-Therefore, a timeout does **not necessarily mean that the message was not stored**. Retrying an operation with an unknown outcome can result in a duplicate publish unless an appropriate idempotency mechanism is used.
-
-Where the SDK exposes a specific semantic error, applications should classify the error accordingly. Where the outcome cannot be determined, applications should treat it as an **unknown publish outcome** rather than assuming failure.
-
-#### Common NATS Error Reference
-
-The table below provides a comprehensive reference of Core NATS client errors and JetStream API error codes encountered during publishing, along with their status codes, classifications, and recommended remediation:
-
-| Error / Symbol | Source / API | Error / Status Code | Classification | Root Cause & Remediation Guidance |
-| :--- | :--- | :--- | :--- | :--- |
-| `nats.ErrNoResponders` | Core Request-Reply | Err 503 | Transient / App | No active subscribers are listening on the request subject. Ensure the service is running and subscribed. |
-| `nats.ErrTimeout` / `context.DeadlineExceeded` | Core / JetStream | Client Timeout | Unknown Outcome | Request or publish Ack was not received before deadline. For JetStream, outcome is unknown (message MAY be stored). |
-| `nats.ErrMaxPayload` | Core NATS | Err 400 | Permanent | Message payload size exceeds the server `max_payload` limit. Reduce payload size or use Object Store. |
-| `nats.ErrAuthorization` | Core NATS | Err 403 | Permanent | Client credentials lack publish permission for the subject. Correct account ACLs or subject permissions. |
-| `nats.ErrConnectionClosed` | Core NATS | Client State | Permanent | The client connection was explicitly closed or unrecoverable. Re-establish NATS connection. |
-| `nats.ErrReconnectBufExceeded` | Core NATS | Client Buffer | Transient Limit | Outbound client buffer (`ReconnectBufSize`) filled while disconnected. Increase buffer or slow publishing. |
-| `jetstream.ErrStreamNotFound` | JetStream | Code `10005` (HTTP 404) | Configuration | Target stream does not exist or subject is not bound to a stream. Verify stream config and subject mapping. |
-| `ErrStreamLimits` | JetStream | Code `10054` (HTTP 400) | Resource Limit | Stream limits (`max_msgs`, `max_bytes`, `max_msg_size`) exceeded. Increase stream limits or purge expired data. |
-| `ErrStreamWrongLastSequence` | JetStream | Code `10071` (HTTP 400) | State Conflict | `WithExpectLastSequence` assertion failed (OCC failure). Re-read stream head sequence before publishing. |
-| `ErrStreamWrongLastSubjectSequence` | JetStream | Code `10072` (HTTP 400) | State Conflict | `WithExpectLastSubjectSequence` assertion failed for subject. Re-evaluate subject event history before retry. |
-| `ErrStreamWrongLastMsgID` | JetStream | Code `10073` (HTTP 400) | State Conflict | `WithExpectLastMsgID` assertion failed. Verify logical message ordering. |
-| `ErrStreamWrongStream` | JetStream | Code `10075` (HTTP 400) | Configuration | Subject maps to a stream name different from `WithExpectStream`. Check stream subject bindings. |
-| `ack.Duplicate == true` (`ErrDuplicate`) | JetStream | Code `10077` (HTTP 200) | Duplicate | Message `Nats-Msg-Id` was already accepted within `duplicate_window`. Success outcome; message not duplicated. |
-| `ErrNoStreamResponse` | JetStream | Code `10014` (HTTP 503) | Cluster Transient | Server timed out waiting for Raft quorum consensus across stream replicas. Retry publish. |
-| `ErrClusterUnavail` | JetStream | Code `10023` (HTTP 503) | Cluster Transient | JetStream cluster is unavailable or undergoing leader re-election. Retry publish after short backoff. |
-
----
-
-### 5.2 Retry Policy
-
-The NATS Client SDK (`nats.go`) and JetStream package (`jetstream`) provide built-in transport resilience and configurable client-side retry options. 
-
-Developers should leverage SDK client options to configure connection retries, backoff strategies, reconnect buffers, and async publish error handling directly through the NATS driver.
-
-#### SDK Connection Retry & Reconnect Options
-
-When establishing a connection, the NATS client SDK provides built-in reconnect options that handle network disruptions automatically:
-
-| SDK Option | Purpose | Default Value | Usage / Behavior |
-| :--- | :--- | :--- | :--- |
-| `nats.RetryOnFailedConnect(true)` | Initial Connection Retry | `false` | Enables SDK to retry connection on startup if initial server dial fails. |
-| `nats.MaxReconnects(n)` | Reconnect Attempts Limit | `60` (`-1` = infinite) | Maximum number of reconnect attempts before client closes connection. |
-| `nats.ReconnectWait(d)` | Fixed Reconnect Delay | `2s` | Fixed wait duration between reconnect attempts. |
-| `nats.CustomReconnectDelay(fn)` | SDK-Managed Backoff | `nil` | Function hook executed by SDK on each reconnect attempt to apply custom exponential backoff/jitter. |
-| `nats.ReconnectJitter(j, tlsJ)` | Reconnect Jitter | `100ms` / `1s` | Random duration added to reconnect delay to prevent thundering herd. |
-| `nats.ReconnectBufSize(bytes)` | Outbound Reconnect Buffer | `8MB` (`8 * 1024 * 1024`) | Outbound memory buffer storing publications while disconnected, flushed on reconnect. |
-
-#### JetStream Publisher Resilience Options
-
-JetStream provides client-level options for managing asynchronous publish buffering, error callbacks, and server-side deduplication:
-
-| JetStream Mechanism | Config / API | Description |
-| :--- | :--- | :--- |
-| **Pending Buffer Limit** | `jetstream.WithPublishAsyncMaxPending(n)` | Sets maximum unacknowledged async publish count to enforce backpressure. |
-| **Async Error Handler** | `jetstream.WithPublishAsyncErrHandler(cb)` | Configures SDK callback invoked when an async publish fails or times out. |
-| **Async Completion Signal** | `js.PublishAsyncComplete()` | Returns channel signaling when all in-flight async publications receive Acks or fail. |
-| **Server Deduplication** | Header `Nats-Msg-Id` | Enables server-side duplicate suppression within `duplicate_window`. |
-
-#### Configuring NATS SDK Retry & Resilience Options in Go
-
-The example below demonstrates how to configure NATS client SDK options for automated connection reconnect backoff, buffer management, and JetStream async error handling:
-
-##### Go
-
-```go
-package main
-
-import (
-	"fmt"
-	"log"
-	"math/rand"
-	"time"
-
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
-)
-
-func ConnectWithSDKRetry(serverURL string) (jetstream.JetStream, error) {
-	// Configure NATS Client SDK options for automated connection reconnect & backoff
-	nc, err := nats.Connect(
-		serverURL,
-		// Retry connection on initial startup dial
-		nats.RetryOnFailedConnect(true),
-		// Unlimited reconnect attempts during network outages
-		nats.MaxReconnects(-1),
-		// SDK-managed exponential backoff with jitter
-		nats.CustomReconnectDelay(func(attempts int) time.Duration {
-			base := 100 * time.Millisecond
-			max := 10 * time.Second
-			delay := base * time.Duration(1<<uint(attempts))
-			if delay > max {
-				delay = max
-			}
-			// Add randomized jitter
-			jitter := time.Duration(rand.Int63n(int64(delay / 2)))
-			return delay + jitter
-		}),
-		// Increase client outbound buffer for publications while disconnected
-		nats.ReconnectBufSize(16*1024*1024), // 16MB
-		// Event handlers for logging connection state changes
-		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
-			log.Printf("NATS disconnected: %v. Reconnecting in background...", err)
-		}),
-		nats.ReconnectHandler(func(nc *nats.Conn) {
-			log.Printf("NATS reconnected successfully to %s", nc.ConnectedUrl())
-		}),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
-	}
-
-	// Initialize JetStream context with async publish error handling options
-	js, err := jetstream.New(nc,
-		jetstream.WithPublishAsyncMaxPending(256),
-		jetstream.WithPublishAsyncErrHandler(func(js jetstream.JetStream, msg *nats.Msg, err error) {
-			log.Printf("Async publish failed for subject %s (Msg-ID: %s): %v",
-				msg.Subject, msg.Header.Get("Nats-Msg-Id"), err)
-		}),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize JetStream: %w", err)
-	}
-
-	return js, nil
-}
-```
-
-##### Java
-
-```java
-import io.nats.client.Connection;
-import io.nats.client.ConnectionListener;
-import io.nats.client.ErrorListener;
-import io.nats.client.JetStream;
-import io.nats.client.Nats;
-import io.nats.client.Options;
-
-import java.time.Duration;
-
-public class SDKRetrySetup {
-    public static JetStream connectWithSDKRetry(String serverUrl) throws Exception {
-        Options options = new Options.Builder()
-                .server(serverUrl)
-                .maxReconnects(-1) // Unlimited reconnect attempts
-                .reconnectWait(Duration.ofSeconds(2)) // SDK reconnect wait
-                .reconnectBufferSize(16 * 1024 * 1024) // 16MB outbound buffer
-                .connectionListener((conn, type) -> {
-                    if (type == ConnectionListener.Events.DISCONNECTED) {
-                        System.out.println("NATS disconnected. Reconnecting in background...");
-                    } else if (type == ConnectionListener.Events.RECONNECTED) {
-                        System.out.printf("NATS reconnected successfully to %s%n", conn.getConnectedUrl());
-                    }
-                })
-                .errorListener(new ErrorListener() {
-                    @Override
-                    public void errorOccurred(Connection conn, String error) {
-                        System.out.printf("Async error: %s%n", error);
-                    }
-                })
-                .build();
-
-        Connection nc = Nats.connect(options);
-        return nc.jetStream();
-    }
-}
-```
-
-
-## 6. Graceful Shutdown
-
-Publishers should stop accepting new work before shutting down the NATS connection.
+Publishers should stop accepting new work before shutting down their NATS connection. Outstanding operations should be completed or explicitly accounted for within a bounded shutdown period.
 
 A typical shutdown sequence is:
 
-```text
-Stop New Publishing
-       |
-       v
-Complete Application-Level Pending Work
-       |
-       v
-Wait for JetStream Async Publishes (if applicable)
-       |
-       v
-Flush Core NATS Operations (if applicable)
-       |
-       v
-Drain NATS Connection
-       |
-       v
-Close
-```
+1. Stop accepting new publishing work.
+2. Complete or account for application-level pending work.
+3. Wait for outstanding JetStream asynchronous publishes where applicable.
+4. Flush pending Core NATS client operations where applicable.
+5. Drain the connection when graceful shutdown is required.
+6. Close remaining resources and complete shutdown.
 
-For JetStream asynchronous publishing:
+| Topic | Description | Go Reference | Java Reference |
+|---|---|---|---|
+| Async publish completion | Track outstanding JetStream publishes before terminating the application. | [PublishAsyncComplete API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#JetStream.PublishAsyncComplete) | [CompletableFuture PublishAck](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html#publishAsync(io.nats.client.Message)) |
+| Flush | Allow pending client operations to be processed by the server before shutdown. | [Conn.Flush API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Flush) | [Connection.flush](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#flush(java.time.Duration)) |
+| Connection drain | Gracefully process pending client work before closing the connection. | [Conn.Drain API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Drain) | [Connection.drain](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#drain(java.time.Duration)) |
 
-### Go
+Drain and flush do not independently guarantee message durability or subscriber processing. Applications should use bounded timeouts and handle shutdown failures explicitly.
 
-```go
-<-js.PublishAsyncComplete()
-```
-
-### Java
-
-```java
-// Wait for in-flight publish futures to complete
-future.get(5, TimeUnit.SECONDS);
-```
-
-For Core NATS pending operations:
-
-### Go
-
-```go
-if err := nc.Flush(); err != nil {
-    // handle shutdown error
-}
-```
-
-### Java
-
-```java
-try {
-    nc.flush(Duration.ofSeconds(2));
-} catch (Exception e) {
-    System.err.printf("Flush error: %s%n", e.getMessage());
-}
-```
-
-The connection can then be drained:
-
-### Go
-
-```go
-if err := nc.Drain(); err != nil {
-    // handle shutdown error
-}
-```
-
-### Java
-
-```java
-try {
-    nc.drain(Duration.ofSeconds(5)).get();
-} catch (Exception e) {
-    System.err.printf("Drain error: %s%n", e.getMessage());
-}
-```
-
-`Drain` provides graceful connection shutdown by allowing pending client work to be processed before the connection closes.
-
-When the connection and server remain healthy, this gives in-flight publications an opportunity to reach the server before shutdown.
-
-`Drain` does not by itself guarantee message durability or delivery.
-
-Applications should use a bounded shutdown timeout rather than waiting indefinitely.
-
----
-
-## 7. Publisher Capability Summary
+## 8. Publisher Capability Summary
 
 | Capability | Core NATS | JetStream |
-| :--- | :--- | :--- |
-| Basic publish | Yes | Yes |
-| Structured message | Yes | Yes |
-| Headers | Yes | Yes |
-| Reply subject | Yes | Yes |
-| Server publish acknowledgement | - | Yes |
-| Synchronous publish | - | Yes |
-| Asynchronous publish | Client-side | Yes |
-| Publish acknowledgement | - | Yes |
-| Duplicate detection | - | Yes |
-| Publish expectations | - | Yes |
-| Persistent storage | - | Yes |
-| Flush | Yes | Yes |
-| Connection drain | Yes | Yes |
+|---|---|---|
+| Publish to a subject | Supported | Supported |
+| Message headers | Supported | Supported |
+| Reply subject | Supported | Supported, with API-specific behavior |
+| Server-side publish acknowledgement | Not provided | Provided |
+| Server-side persistence | Not provided by Core NATS | Supported according to stream configuration |
+| Asynchronous publishing | Client-side publish operations | Asynchronous publishing with acknowledgement tracking |
+| Server-side duplicate detection | Not provided by Core NATS | Supported through message IDs and the configured duplicate-detection window |
+| Conditional publishing | Not provided by Core NATS | Supported through publish expectations |
+| Flush and graceful connection drain | Supported | Supported |
 
----
+Choose the messaging model based on the application's delivery and persistence requirements rather than treating JetStream as a drop-in equivalent for every Core NATS operation.
 
-## 8. Official References
+## 9. Official References
 
-* [Official NATS Go Client Repository](https://github.com/nats-io/nats.go)
-* [NATS Go Client API Documentation (pkg.go.dev)](https://pkg.go.dev/github.com/nats-io/nats.go)
-* [NATS Go JetStream Package Documentation (pkg.go.dev)](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream)
-* [Official NATS Java Client Repository](https://github.com/nats-io/nats.java)
-* [NATS Java Client Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/index.html)
-* [Official NATS Developer Documentation](https://docs.nats.io/using-nats/developer)
+### NATS Concepts and Platform Documentation
 
+- [NATS Subjects](https://docs.nats.io/concepts/subjects)
+- [NATS Subjects and Wildcards](https://docs.nats.io/learn/core-nats/subjects-and-wildcards)
+- [NATS Core NATS Documentation](https://docs.nats.io/learn/core-nats/)
+- [NATS JetStream Documentation](https://docs.nats.io/learn/jetstream/)
+- [NATS Authorization](https://docs.nats.io/learn/security/authorization)
+
+### Go SDK
+
+- [Official NATS Go Client Repository](https://github.com/nats-io/nats.go)
+- [NATS Go Client Examples](https://github.com/nats-io/nats.go/tree/main/examples)
+- [NATS Go Client API](https://pkg.go.dev/github.com/nats-io/nats.go)
+- [NATS Go JetStream API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream)
+
+### Java SDK
+
+- [Official NATS Java Client Repository](https://github.com/nats-io/nats.java)
+- [Official Java Client Examples](https://github.com/nats-io/nats.java/tree/main/src/examples/java/io/nats/examples)
+- [Java NATS Examples Repository](https://github.com/nats-io/java-nats-examples)
+- [NATS Java Client Javadocs](https://javadoc.io/doc/io.nats/jnats/latest/index.html)
+
+### Cross-Client Reference Examples
+
+- [NATS by Example](https://natsbyexample.com/)
+
+Use the API documentation corresponding to the SDK version approved for your application. The latest documentation may describe capabilities not present in an older pinned dependency.

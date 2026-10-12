@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-12] Update NATS Publisher Guide with Accurate Anchored SDK and Code Sample References
+
+- **Change:** Updated [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) across all tables (Message Construction, Core NATS Publishing, JetStream Publishing, Deduplication, Publish Expectations, Failure Scenarios, SDK Resilience, Graceful Shutdown, and Official References) replacing generic root repository and package URLs with specific method-level anchors and official runnable code sample links for both Go (`nats.go`, `pkg.go.dev`, `natsbyexample.com`) and Java (`jnats`, `javadoc.io`, `java-nats-examples`).
+- **Reason:** Provide accurate, actionable, and verified SDK reference links and runnable code sample locations for application developers.
+- **Affected Area:** [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md)
+
 ## [2026-10-09] Restructure NATS Client & SDK Developer Guide
 
 - **Change:** Updated [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md) into a clean 4-column SDK reference guide (`Development Task`, `Description`, `Go SDK Reference`, `Java SDK Reference`) mapping each core development task directly to specific section-level anchor URLs in official Go (`github.com/nats-io/nats.go`) and Java (`github.com/nats-io/nats.java`) SDK documentation.

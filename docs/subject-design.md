@@ -1,8 +1,8 @@
 # NATS Subject Design
 
-Subject design is a foundational architectural decision in NATS. Publishers and subscribers encode subject names and patterns into their application logic; changes to established subjects can therefore require coordinated changes across services that use the subject.
-
-Subjects should be designed as stable messaging contracts and should account for routing, access control, and message persistence requirements from the beginning.
+- Subject design is a foundational architectural decision in NATS.
+- Publishers and subscribers encode subject names and patterns into their application logic; changes to established subjects can therefore require coordinated changes across services that use the subject.
+- Subjects should be designed as stable messaging contracts and should account for routing, access control, and message persistence requirements from the beginning.
 
 ## Subject
 
