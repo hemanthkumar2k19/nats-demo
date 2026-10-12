@@ -2,11 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
-## [2026-10-12] Update NATS Publisher Guide with Accurate Anchored SDK and Code Sample References
+## [2026-10-12] Streamline NATS Publisher Guide and Fix SDK / Example References
 
-- **Change:** Standardized references in [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) against NATS by Example runnable examples (`/examples/messaging/pub-sub/`, `/examples/messaging/json/`, `/examples/messaging/request-reply/` across both Go and Java). Verified all Go `jetstream` anchors against the `Publisher` interface (`#Publisher.Publish`, `#Publisher.PublishAsync`, `#Publisher.PublishAsyncComplete`, `#WithMsgID`, `#WithExpectStream`, `#WithExpectLastSequence`), and cleaned up Java references to direct class documentation and runnable samples.
-- **Reason:** Resolve broken anchors (`#JetStream.PublishAsyncComplete`), replace generic basic usage links with exact JSON payload serialization examples for Java, and provide 100% verified URLs for developers.
+- **Change:** Restructured [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) by removing the separate redundant Message Construction section and integrating message structure directly into Core NATS Publishing with explicit parity between Core NATS and JetStream message representations. Removed obsolete and broken 404 links (including old `src/examples/...` paths in `nats.java`), updated Java sample paths to `examples/src/main/java/io/nats/examples/...`, and verified all Go and Java SDK references against official APIs and working repository samples.
+- **Reason:** Eliminate redundant sections, resolve 404 dead links, ensure accurate developer reference mapping, and maintain document cohesion.
 - **Affected Area:** [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md)
+
 
 ## [2026-10-09] Restructure NATS Client & SDK Developer Guide
 

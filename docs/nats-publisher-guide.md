@@ -35,36 +35,24 @@ Before publishing messages, developers should understand the following:
 
 Detailed subject design and enterprise naming conventions are outside the scope of this guide and will be maintained separately.
 
-## 3. Message Construction
-
-A NATS message contains a destination subject and payload, with optional headers and a reply subject.
-
-Developers should select the appropriate message representation and serialization format based on the application contract.
-
-| Topic | Description | Go Reference | Java Reference |
-|---|---|---|---|
-| Basic message | Construct a message using a subject and payload. | [Pub-Sub by Example](https://natsbyexample.com/examples/messaging/pub-sub/go) / [nats-pub sample](https://github.com/nats-io/nats.go/blob/main/examples/nats-pub/main.go) | [Pub-Sub by Example](https://natsbyexample.com/examples/messaging/pub-sub/java) / [NatsPub sample](https://github.com/nats-io/nats.java/blob/main/src/examples/java/io/nats/examples/NatsPub.java) |
-| Payload serialization | Serialize application objects into bytes before publishing. | [JSON by Example](https://natsbyexample.com/examples/messaging/json/go) / [Protobuf by Example](https://natsbyexample.com/examples/messaging/protobuf/go) | [JSON by Example](https://natsbyexample.com/examples/messaging/json/java) |
-| Message headers | Attach metadata such as content type, correlation identifiers, and JetStream deduplication IDs. | [Header Documentation](https://docs.nats.io/learn/core-nats/headers) / [Header Type API](https://pkg.go.dev/github.com/nats-io/nats.go#Header) | [Header Documentation](https://docs.nats.io/learn/core-nats/headers) / [Headers Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/impl/Headers.html) |
-| Reply subject | Specify where a response can be sent when using a request-reply interaction. | [Request-Reply by Example](https://natsbyexample.com/examples/messaging/request-reply/go) / [Conn.PublishMsg API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.PublishMsg) | [Request-Reply by Example](https://natsbyexample.com/examples/messaging/request-reply/java) / [Connection Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html) |
-
-## 4. Core NATS Publishing
+## 3. Core NATS Publishing
 
 Core NATS supports lightweight, low-latency messaging. A publish operation does not wait for a server-side publish acknowledgement or confirmation that a subscriber processed the message.
 
-Use Core NATS when its delivery semantics meet the application's requirements.
+A NATS message consists of a destination subject and a byte payload, with optional message headers and an optional reply subject. This message model is identical whether publishing via Core NATS or JetStream.
 
-### 4.1 Publishing Patterns
+### 3.1 Publishing Patterns
 
 | Publishing pattern | Description | Go Reference | Java Reference |
 |---|---|---|---|
-| Basic publish | Publish a payload to a concrete subject. | [Pub-Sub by Example](https://natsbyexample.com/examples/messaging/pub-sub/go) / [Conn.Publish API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Publish) | [Pub-Sub by Example](https://natsbyexample.com/examples/messaging/pub-sub/java) / [NatsPub sample](https://github.com/nats-io/nats.java/blob/main/src/examples/java/io/nats/examples/NatsPub.java) |
-| Structured message publish | Publish a message with headers and, optionally, a reply subject. | [Header Documentation](https://docs.nats.io/learn/core-nats/headers) / [Conn.PublishMsg API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.PublishMsg) | [Header Documentation](https://docs.nats.io/learn/core-nats/headers) / [Connection Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html) |
-| Request-reply | Send a request and wait for a response within a defined timeout. | [Request-Reply by Example](https://natsbyexample.com/examples/messaging/request-reply/go) / [Conn.Request API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Request) | [Request-Reply by Example](https://natsbyexample.com/examples/messaging/request-reply/java) / [NatsReq sample](https://github.com/nats-io/nats.java/blob/main/src/examples/java/io/nats/examples/NatsReq.java) |
+| Basic publish | Publish a byte payload to a concrete subject. | [Conn.Publish API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Publish) / [nats-pub sample](https://github.com/nats-io/nats.go/blob/main/examples/nats-pub/main.go) | [Connection Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html) / [NatsPub sample](https://github.com/nats-io/nats.java/blob/main/examples/src/main/java/io/nats/examples/NatsPub.java) |
+| Structured message publish | Publish a message with headers and an optional reply subject. | [Conn.PublishMsg API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.PublishMsg) / [Msg Struct](https://pkg.go.dev/github.com/nats-io/nats.go#Msg) | [Connection Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html) / [Message Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Message.html) |
+| Payload serialization | Serialize application objects (e.g., JSON) into bytes before publishing. | [JSON by Example](https://natsbyexample.com/examples/messaging/json/go) | [JSON by Example](https://natsbyexample.com/examples/messaging/json/java) |
+| Request-reply | Send a request and wait for a response within a defined timeout. | [Conn.Request API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Request) / [Request-Reply by Example](https://natsbyexample.com/examples/messaging/request-reply/go) | [Connection Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html) / [NatsReq sample](https://github.com/nats-io/nats.java/blob/main/examples/src/main/java/io/nats/examples/NatsReq.java) |
 | Flush | Wait for the server to process pending client operations. This does not confirm subscriber processing or durable storage. | [Conn.Flush API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Flush) / [Conn.FlushTimeout](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.FlushTimeout) | [Connection Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html) |
 | Concurrent publishing | Publish from concurrent routines or threads using a shared connection where appropriate. | [Go Client Basic Usage](https://github.com/nats-io/nats.go#basic-usage) | [Java Client Basic Usage](https://github.com/nats-io/nats.java#basic-usage) |
 
-### 4.2 Important Considerations
+### 3.2 Important Considerations
 
 - Check client-side errors returned by publishing operations.
 - Do not interpret a successful Core NATS publish call as proof that a subscriber received or processed the message.
@@ -72,22 +60,22 @@ Use Core NATS when its delivery semantics meet the application's requirements.
 - Reuse established connections instead of creating a new connection for each message.
 - Use JetStream when server-side persistence and publish acknowledgements are required.
 
-## 5. JetStream Publishing
+## 4. JetStream Publishing
 
 JetStream extends NATS messaging with persistence and server-side publish acknowledgements, subject to the configured stream and storage policies.
 
 Applications should select synchronous or asynchronous publishing according to their latency, throughput, acknowledgement, and shutdown requirements.
 
-### 5.1 Publishing Patterns
+### 4.1 Publishing Patterns
 
 | Publishing pattern | Description | Go Reference | Java Reference |
 |---|---|---|---|
-| Synchronous publish | Publish a message and wait for the JetStream acknowledgement. | [JetStream README](https://github.com/nats-io/nats.go/blob/main/jetstream/README.md#basic-usage) / [Publisher.Publish API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#Publisher.Publish) | [JetStream README](https://github.com/nats-io/nats.java#jetstream) / [NatsJsPub sample](https://github.com/nats-io/nats.java/blob/main/src/examples/java/io/nats/examples/NatsJsPub.java) |
-| Asynchronous publish | Initiate publishing without blocking for each individual acknowledgement. | [Publisher.PublishAsync API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#Publisher.PublishAsync) | [NatsJsPubAsync sample](https://github.com/nats-io/nats.java/blob/main/src/examples/java/io/nats/examples/NatsJsPubAsync.java) / [JetStream Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html) |
+| Synchronous publish | Publish a message and wait for the JetStream acknowledgement. | [JetStream README](https://github.com/nats-io/nats.go/blob/main/jetstream/README.md#basic-usage) / [Publisher.Publish API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#Publisher.Publish) | [JetStream Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html) / [NatsJsPub sample](https://github.com/nats-io/nats.java/blob/main/examples/src/main/java/io/nats/examples/jetstream/NatsJsPub.java) |
+| Asynchronous publish | Initiate publishing without blocking for each individual acknowledgement. | [Publisher.PublishAsync API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#Publisher.PublishAsync) | [JetStream Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html) / [NatsJsPubAsync sample](https://github.com/nats-io/nats.java/blob/main/examples/src/main/java/io/nats/examples/jetstream/NatsJsPubAsync.java) |
 | Publish acknowledgement | Inspect acknowledgement information, including the stream and message sequence. | [PubAck Type](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#PubAck) | [PublishAck Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/api/PublishAck.html) |
 | Pending publish management | Track outstanding asynchronous publishes and account for them before shutdown. | [Publisher.PublishAsyncComplete API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#Publisher.PublishAsyncComplete) | [JetStream Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html) |
 
-### 5.2 Deduplication
+### 4.2 Deduplication
 
 JetStream supports duplicate publish detection using the `Nats-Msg-Id` message header.
 
@@ -98,7 +86,7 @@ JetStream supports duplicate publish detection using the `Nats-Msg-Id` message h
 
 When retrying the same logical message, retain the same message ID. Deduplication applies within the configured duplicate-detection window; it is not a general guarantee of end-to-end exactly-once processing.
 
-### 5.3 Publish Expectations
+### 4.3 Publish Expectations
 
 JetStream publish expectations allow publishers to assert conditions about stream state before a message is accepted. They can support optimistic concurrency control when multiple publishers update shared stream state.
 
@@ -110,13 +98,13 @@ JetStream publish expectations allow publishers to assert conditions about strea
 
 Use publish expectations only when the application requires conditional writes or concurrency control. Verify the supported expectation options and error handling against the SDK version in use.
 
-## 6. Failure Handling and Retry
+## 5. Failure Handling and Retry
 
 Publish failures can arise from client-side validation, connection interruptions, authorization failures, JetStream configuration, resource limits, or acknowledgement timeouts.
 
 The application must distinguish a known rejection from an outcome that remains unknown.
 
-### 6.1 Failure Scenarios
+### 5.1 Failure Scenarios
 
 | Scenario | Description and consideration | Go Reference | Java Reference |
 |---|---|---|---|
@@ -126,7 +114,7 @@ The application must distinguish a known rejection from an outcome that remains 
 | Publish acknowledgement timeout | The acknowledgement was not received in time; the message may already have been stored. | [Publisher.Publish API](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#Publisher.Publish) | [JetStream Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html) |
 | Authorization failure | Verify that the application's identity has permission to publish to the intended subject. | [NATS Authorization Guide](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/authorization) | [NATS Authorization Guide](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/authorization) |
 
-### 6.2 Retry Considerations
+### 5.2 Retry Considerations
 
 - **Use SDK reconnection:** Let the client SDK handle supported transport reconnection behavior.
 - **Separate reconnection from message retry:** Re-establishing a connection does not guarantee that an earlier publish was unsuccessful or that it is safe to repeat.
@@ -135,7 +123,7 @@ The application must distinguish a known rejection from an outcome that remains 
 - **Use deduplication where appropriate:** Reuse the same `Nats-Msg-Id` for retries of the same logical message.
 - **Bound retry behavior:** Apply appropriate deadlines, backoff, and error reporting to avoid uncontrolled retry loops.
 
-### 6.3 SDK Resilience References
+### 5.3 SDK Resilience References
 
 | Topic | Description | Go Reference | Java Reference |
 |---|---|---|---|
@@ -143,7 +131,7 @@ The application must distinguish a known rejection from an outcome that remains 
 | Reconnection | Configure reconnect attempts, delay, and related connection options. | [MaxReconnects Option](https://pkg.go.dev/github.com/nats-io/nats.go#MaxReconnects) / [ReconnectWait](https://pkg.go.dev/github.com/nats-io/nats.go#ReconnectWait) | [Clusters & Reconnecting](https://github.com/nats-io/nats.java#clusters--reconnecting) |
 | Asynchronous publish errors | Handle errors from asynchronous JetStream publishing. | [WithPublishAsyncErrHandler](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream#WithPublishAsyncErrHandler) | [ErrorListener Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/ErrorListener.html) |
 
-## 7. Graceful Shutdown
+## 6. Graceful Shutdown
 
 Publishers should stop accepting new work before shutting down their NATS connection. Outstanding operations should be completed or explicitly accounted for within a bounded shutdown period.
 
@@ -164,7 +152,7 @@ A typical shutdown sequence is:
 
 Drain and flush do not independently guarantee message durability or subscriber processing. Applications should use bounded timeouts and handle shutdown failures explicitly.
 
-## 8. Publisher Capability Summary
+## 7. Publisher Capability Summary
 
 | Capability | Core NATS | JetStream |
 |---|---|---|
@@ -180,7 +168,7 @@ Drain and flush do not independently guarantee message durability or subscriber 
 
 Choose the messaging model based on the application's delivery and persistence requirements rather than treating JetStream as a drop-in equivalent for every Core NATS operation.
 
-## 9. Official References
+## 8. Official References
 
 ### NATS Concepts and Platform Documentation
 
@@ -200,7 +188,7 @@ Choose the messaging model based on the application's delivery and persistence r
 ### Java SDK
 
 - [Official NATS Java Client Repository](https://github.com/nats-io/nats.java)
-- [Official Java Client Examples](https://github.com/nats-io/nats.java/tree/main/src/examples/java/io/nats/examples)
+- [Official Java Client Examples](https://github.com/nats-io/nats.java/tree/main/examples/src/main/java/io/nats/examples)
 - [Java NATS Examples Repository](https://github.com/nats-io/java-nats-examples)
 - [NATS Java Client Javadocs](https://javadoc.io/doc/io.nats/jnats/latest/index.html)
 
