@@ -4,8 +4,8 @@ All notable changes to the NATS reference evaluation platform will be documented
 
 ## [2026-10-12] Update NATS Publisher Guide with Accurate Anchored SDK and Code Sample References
 
-- **Change:** Updated [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) across all tables (Message Construction, Core NATS Publishing, JetStream Publishing, Deduplication, Publish Expectations, Failure Scenarios, SDK Resilience, Graceful Shutdown, and Official References) replacing generic root repository and package URLs with specific method-level anchors and official runnable code sample links for both Go (`nats.go`, `pkg.go.dev`, `natsbyexample.com`) and Java (`jnats`, `javadoc.io`, `java-nats-examples`).
-- **Reason:** Provide accurate, actionable, and verified SDK reference links and runnable code sample locations for application developers.
+- **Change:** Standardized references in [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md) against NATS by Example runnable examples (`/examples/messaging/pub-sub/`, `/examples/messaging/json/`, `/examples/messaging/request-reply/` across both Go and Java). Verified all Go `jetstream` anchors against the `Publisher` interface (`#Publisher.Publish`, `#Publisher.PublishAsync`, `#Publisher.PublishAsyncComplete`, `#WithMsgID`, `#WithExpectStream`, `#WithExpectLastSequence`), and cleaned up Java references to direct class documentation and runnable samples.
+- **Reason:** Resolve broken anchors (`#JetStream.PublishAsyncComplete`), replace generic basic usage links with exact JSON payload serialization examples for Java, and provide 100% verified URLs for developers.
 - **Affected Area:** [docs/nats-publisher-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-publisher-guide.md)
 
 ## [2026-10-09] Restructure NATS Client & SDK Developer Guide
