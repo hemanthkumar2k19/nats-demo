@@ -1,16 +1,50 @@
-# NATS Client & SDK Developer Guide
+# NATS Messaging & Client SDK Developer Guide
 
 ## 1. Overview
 
-This guide provides application developers with a structured learning path for initializing, configuring, and managing NATS client connections in Go and Java applications.
+This guide is the entry point for application developers learning how to use NATS messaging and manage client connections.
 
-It brings together the official NATS connection documentation, production resilience guidance, and language-specific SDK references. It also identifies the platform documentation developers must consult before connecting to enterprise NATS environments.
+It introduces foundational messaging concepts (subjects, message structure) shared across Core NATS and JetStream, provides practical reference patterns for initializing and managing NATS client connections in Go and Java, and guides developers through production resilience best practices and enterprise platform connectivity requirements.
 
-The guide is a navigation and implementation reference. It does not replace the official NATS documentation or define enterprise-specific security and connectivity policies.
+The guide is an implementation and navigation reference. It does not replace the official NATS documentation or define enterprise-specific security policies.
 
-## 2. Prerequisites and SDK Setup
+## 2. Subjects
 
-### 2.1 Go NATS Client SDK
+A subject is the address to which a NATS message is published. Subscribers use subject patterns to identify the messages they want to receive.
+
+NATS subjects consist of tokens separated by periods (`.`). Wildcards allow subscriptions to match multiple subjects without requiring a separate subscription for every subject.
+
+Developers should understand:
+
+- Subject token hierarchy and separators.
+- Exact subject matching.
+- Single-token (`*`) and multi-token (`>`) wildcards.
+- How subscription patterns determine which messages are received.
+
+**Official reference:** [Core NATS - Subjects and Wildcards](https://docs.nats.io/learn/core-nats/subjects-and-wildcards)
+
+For enterprise subject naming conventions and namespace design, refer to the [Subject Design Guide](subject-design.md).
+
+## 3. Message Structure
+
+A NATS message carries application data and the metadata needed to route or process it.
+
+The main elements are:
+
+- **Subject:** Identifies the message's destination or routing address.
+- **Payload:** Contains the application data. Its format and schema are defined by the application.
+- **Headers (optional):** Carry metadata associated with the message.
+- **Reply subject (optional):** Provides a reply destination, commonly used in request-reply messaging.
+
+Headers and payload serve different purposes. Headers carry message metadata, while the payload contains the application data being exchanged. NATS does not automatically define an application's business payload schema.
+
+**Official reference:** [Core NATS - Message Headers](https://docs.nats.io/learn/core-nats/headers)
+
+For enterprise requirements concerning message envelopes, payload schemas, and metadata conventions, refer to Message Envelope and Schema Management.
+
+## 4. Prerequisites and SDK Setup
+
+### 4.1 Go NATS Client SDK
 
 **Prerequisites:** Go 1.22+
 
@@ -22,7 +56,7 @@ go get github.com/nats-io/nats.go
 
 Reference: [NATS Go client - Installation and usage](https://github.com/nats-io/nats.go#installation)
 
-### 2.2 Java NATS Client SDK
+### 4.2 Java NATS Client SDK
 
 **Prerequisites:** Java 17+
 
@@ -46,7 +80,7 @@ Reference: [NATS Java client - Installation and usage](https://github.com/nats-i
 
 Use the approved dependency version for your application. When consulting Javadocs hosted under `latest`, verify that the documented API is available in the version you use.
 
-## 3. Connect to NATS
+## 5. Connect to NATS
 
 Start with the official [Core NATS - Connecting guide](https://docs.nats.io/learn/core-nats/connecting).
 
@@ -56,13 +90,13 @@ The client library handles the NATS protocol handshake. Application code should 
 
 For production connection configuration, including multiple server URLs and connection timeouts, continue to the resilient-client learning path below.
 
-## 4. Build a Resilient NATS Client
+## 6. Build a Resilient NATS Client
 
 Once basic connectivity is understood, follow the official [Resilient Clients Deep Dive](https://docs.nats.io/learn/resilient-clients/).
 
 This is the primary learning path for production connection behavior. It builds on a working connection and introduces resilience mechanisms progressively rather than treating each connection option as an isolated feature.
 
-### 4.1 Recommended Reading Path
+### 6.1 Recommended Reading Path
 
 | Order | Official reference | What developers should learn |
 |---|---|---|
@@ -71,9 +105,9 @@ This is the primary learning path for production connection behavior. It builds 
 | 3 | [Connection Events](https://docs.nats.io/learn/resilient-clients/connection-events) | Connection lifecycle callbacks, state inspection, and application responses to disconnects, reconnects, and closure. |
 | 4 | [Drain & Shutdown](https://docs.nats.io/learn/resilient-clients/drain-and-shutdown) | Graceful shutdown, draining pending work, and handling connection termination. |
 
-## 5. Go and Java SDK Reference
+## 7. Go and Java SDK Reference
 
-Use this section as a quick lookup when implementing concepts covered in Sections 3 and 4.
+Use this section as a quick lookup when implementing concepts covered in Sections 5 and 6.
 
 | Development task | Go reference | Java reference |
 |---|---|---|
@@ -94,7 +128,7 @@ Use this section as a quick lookup when implementing concepts covered in Section
 
 The API reference table is intentionally secondary to the learning path. Developers should not need to read every SDK API page before building a basic client.
 
-## 6. Key Connection and Resilience Recommendations
+## 8. Key Connection and Resilience Recommendations
 
 The following principles consolidate foundational connection practices and client-side resilience into a unified implementation checklist:
 
@@ -108,7 +142,7 @@ The following principles consolidate foundational connection practices and clien
 - **Design retries intentionally:** A timeout does not confirm whether an operation was executed by a receiver. Evaluate message idempotency and duplicate side effects before configuring automatic retries.
 - **Decouple authentication and transport security:** Treat authentication (verifying client identity via tokens or credentials) and TLS (securing transport and validating server certificates) as separate concerns per platform security policies.
 
-## 7. Platform Connection Requirements
+## 9. Platform Connection Requirements
 
 Before connecting to a shared or enterprise NATS environment, consult the relevant platform onboarding documentation.
 
@@ -124,7 +158,7 @@ Do not infer production endpoints, credentials, certificate paths, or authorizat
 
 The official [NATS Security documentation](https://docs.nats.io/learn/security) explains the underlying security mechanisms. Platform onboarding documentation defines how those mechanisms are applied in your environment.
 
-## 8. JetStream Client Access
+## 10. JetStream Client Access
 
 Applications that use JetStream must initialize the JetStream API through the established client connection using the relevant SDK.
 
@@ -137,7 +171,7 @@ This guide covers only the client-connection prerequisite and API initialization
 
 JetStream API initialization does not itself guarantee that an application is authorized to access a particular stream, consumer, or operation. Verify the permissions and resource onboarding requirements for the target environment.
 
-## 9. Next Steps
+## 11. Next Steps
 
 Choose the appropriate messaging model based on your application's delivery, persistence, and processing requirements:
 
