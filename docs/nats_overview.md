@@ -8,12 +8,12 @@ Applications connect to NATS using client libraries and publish messages to name
 
 NATS provides two complementary messaging models:
 
-- **Core NATS — Real-time messaging:** Delivers messages to active, matching subscribers. It provides at-most-once delivery and does not persist messages for later delivery.
-- **JetStream — Persistent messaging:** Adds message storage, replay, acknowledgements, and consumer state, allowing applications to consume retained messages and recover processing progress.
+- **Core NATS (Real-time messaging):** Delivers messages to active, matching subscribers. It provides at-most-once delivery and does not persist messages for later delivery.
+- **JetStream (Persistent messaging):** Adds message storage, replay, acknowledgements, and consumer state, allowing applications to consume retained messages and recover processing progress.
 
 The key distinction is that Core NATS decouples applications from each other, while JetStream also decouples them in time: publishers and consumers do not need to be online simultaneously.
 
-**Explore further:** [What is NATS?](https://docs.nats.io/concepts/what-is-nats) · [Core NATS](https://docs.nats.io/nats-concepts/core-nats) · [JetStream](https://docs.nats.io/nats-concepts/jetstream)
+**Explore further:** [What is NATS?](https://docs.nats.io/concepts/what-is-nats) | [Core NATS](https://docs.nats.io/nats-concepts/core-nats) | [JetStream](https://docs.nats.io/nats-concepts/jetstream)
 
 ## 2. Platform Capabilities
 
@@ -40,55 +40,84 @@ The key distinction is that Core NATS decouples applications from each other, wh
 
 ## 3. Architecture
 
-The diagram connects the application-facing messaging concepts to the NATS infrastructure and its logical resources. It distinguishes the server and cluster topology from account isolation and JetStream resources.
+NATS decouples application messaging from the underlying infrastructure topology. The first diagram illustrates logical message flow across Core NATS and JetStream, while the second diagram illustrates how accounts, streams, and consumers map across clustered servers.
 
 ```mermaid
-flowchart TB
-    subgraph APP["Application Layer"]
-        PUB["Publisher Application"]
-        SUB["Subscriber / Worker Application"]
-        CLIENT["NATS Client Library"]
-        PUB --> CLIENT
-        SUB --> CLIENT
-    end
+flowchart LR
+    PUB["Publishing Applications"]
 
-    CLIENT <-->|"Client connection"| S1
+    subgraph NATS["NATS"]
+        direction TB
+        CORE["Core NATS<br/>(In-Memory Messaging)"]
 
-    subgraph CLUSTER["NATS Cluster"]
-        S1["NATS Server 1"]
-        S2["NATS Server 2"]
-        S3["NATS Server 3"]
-        S1 --- S2
-        S2 --- S3
-        S1 --- S3
-
-        subgraph ACCOUNT["NATS Account — logical isolation"]
-            SUBJECT["Subject<br/>Example: orders.created"]
-
-            CORE["Core NATS<br/>Routes to active matching subscribers"]
-
-            subgraph JS["JetStream — when enabled"]
-                STREAM["Stream<br/>Stores messages matching configured subjects"]
-                CONSUMER["Consumer<br/>Tracks delivery and processing progress"]
-                STREAM --> CONSUMER
-            end
-
-            SUBJECT -->|"Transient delivery"| CORE
-            SUBJECT -->|"Matching published messages"| STREAM
+        subgraph JS["JetStream<br/>(Persistence Engine)"]
+            direction LR
+            STREAM["Stream"]
+            CONSUMER["Consumer"]
+            STREAM --> CONSUMER
         end
     end
 
-    CLIENT -. "Publish to subject" .-> SUBJECT
-    CORE -. "Deliver live message" .-> SUB
-    CONSUMER -. "Deliver retained message" .-> SUB
+    SUB["Subscribing Applications"]
 
-    DOMAIN["Optional JetStream Domain<br/>Identifies a JetStream environment"]
-    DOMAIN -. "Logical environment identifier" .-> JS
+    PUB -->|"Publish"| CORE
+    PUB -->|"Publish"| STREAM
+    CORE -->|"Deliver"| SUB
+    CONSUMER -->|"Deliver"| SUB
 ```
 
-*Conceptual architecture; server placement, account boundaries, and the JetStream domain are simplified for readability. The diagram does not represent a specific production topology or replication assignment.*
+```mermaid
+flowchart LR
+    subgraph CLIENTS["Applications"]
+        direction TB
+        PUB["Publisher<br/>(User)"]
+        SUB["Subscriber<br/>(User)"]
+    end
 
-**Explore further:** [NATS concepts](https://docs.nats.io/nats-concepts/intro) · [Clustering](https://docs.nats.io/running-a-nats-service/configuration/clustering) · [JetStream](https://docs.nats.io/nats-concepts/jetstream) · [Accounts](https://docs.nats.io/running-a-nats-service/configuration/securing_nats/accounts)
+    subgraph CLUSTER["NATS Cluster"]
+        direction LR
+
+        subgraph SERVERS["Cluster Servers"]
+            direction TB
+            S1["NATS Server 1"]
+            S2["NATS Server 2"]
+            S3["NATS Server 3"]
+            S1 <-->|"Cluster Route"| S2
+            S2 <-->|"Cluster Route"| S3
+            S1 <-->|"Cluster Route"| S3
+        end
+
+        subgraph ACCOUNT["Account (Tenant Isolation Boundary)"]
+            direction TB
+            CORE["Core NATS<br/>(Transient Routing across Servers)"]
+
+            subgraph DOMAIN["JetStream Domain"]
+                direction TB
+                STREAM["Stream<br/>(R=3 Replicated across Servers)"]
+                CONSUMER["Consumer<br/>(State & Ack Tracking)"]
+                KV_OBJ["KV & Object Store<br/>(Stream-Backed)"]
+                STREAM --> CONSUMER
+                STREAM -.-> KV_OBJ
+            end
+        end
+
+        S1 -.->|"Stream Leader"| STREAM
+        S2 -.->|"Stream Replica"| STREAM
+        S3 -.->|"Stream Replica"| STREAM
+    end
+
+    subgraph NETWORKS["Connected Topologies"]
+        direction TB
+        GW["Remote Cluster<br/>(via Gateway)"]
+        LEAF["Edge NATS<br/>(via Leaf Node)"]
+    end
+
+    PUB -->|"Publish to Subject"| S1
+    SUB -->|"Subscribe / Pull"| S2
+
+    CLUSTER <-->|"Gateway Mesh"| GW
+    CLUSTER <-->|"Leaf Bridge"| LEAF
+```
 
 ## 4. Terminology
 
@@ -120,7 +149,7 @@ This glossary explains NATS concepts in the context of the architecture above an
 | **Gateway** | Connects NATS clusters to support communication across separate NATS environments. | Two NATS clusters connected through gateways. | Inter-broker or Message VPN bridging mechanisms, depending on topology | Cross-cluster replication or linking mechanisms, depending on the Kafka distribution |
 | **Leaf node** | Connects a NATS server or cluster to another NATS environment, commonly supporting edge or regional connectivity. | A regional NATS deployment connects to a central deployment through a leaf node. | No exact equivalent; broker bridging or federation may address related connectivity requirements. | No direct equivalent in Kafka's core architecture; cross-cluster replication or other integration mechanisms may be used. |
 
-**Explore further — NATS**
+**Explore further: NATS**
 - [Messages, subjects, and subscriptions](https://docs.nats.io/nats-concepts/subjects)
 - [Core NATS](https://docs.nats.io/nats-concepts/core-nats)
 - [JetStream streams and consumers](https://docs.nats.io/nats-concepts/jetstream)
@@ -140,7 +169,7 @@ Set up a development environment, connect an application, and start exchanging m
 - NATS Local Setup Guide
 - Request for Dev Environment Access
 - NATS Connectivity Guide
-- Client Guide – SDK Usage
+- Client Guide - SDK Usage
 - Publisher Guide
 - Subscription Guide
 - Consumer Guide

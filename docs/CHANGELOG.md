@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-13] Add High-Level and Low-Level Architecture Views in NATS Overview
+
+- **Change:** Consolidated Section 3 (`## 3. Architecture`) in [docs/nats_overview.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats_overview.md) into a single unified heading and brief overview introducing two Mermaid diagrams: a logical view (Publishing Applications, Subscribing Applications, Core NATS, and JetStream with Stream and Consumer) and an infrastructure landscape view (Clusters, Servers, Accounts, JetStream Domains, Streams, Consumers, Gateways, and Leaf Nodes). Removed all intermediate subheadings and takeaway bullet points.
+- **Reason:** Provide a clean, unified architecture section with minimal wording and immediate visual clarity.
+- **Affected Area:** [docs/nats_overview.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats_overview.md)
+
 ## [2026-10-12] Standardize API vs Model References and Fix Publishing Links in NATS JetStream Guide
 
 - **Change:** Updated [docs/nats-jetstream-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-jetstream-guide.md): added official reference `https://docs.nats.io/learn/jetstream/publishing#avoiding-duplicate-writes` under Advanced Publishing; standardized reference naming across Go and Java to strictly differentiate callable methods/interfaces (`API`) from data structures/configurations (`Model`); updated Java synchronous publishing reference to target `https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html#publish(io.nats.client.Message)`; and updated Java message headers and deduplication references to point accurately to `PublishOptions.Builder` (`messageId`) and `Message.getHeaders()` alongside the repository `Headers` model source.
