@@ -2,6 +2,13 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-14] Restructure NATS Local Setup Guide into Tabbed Hierarchy and Add SDK Client Workflow
+
+- **Change:** Restructured [docs/nats-local-setup-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-local-setup-guide.md) into a tabbed layout hierarchy: Level 1 organizes the two primary execution paths (`Track 1: Podman Workflow` and `Track 2: NATS CLI / Local Binary Workflow`), and Level 2 organizes topologies (`Single-Node Server` and `3-Node Cluster`). Accounted for environments without Homebrew or the NATS CLI by adding application SDK client interaction patterns (Go, Java) and HTTP monitoring curl commands for containerized setups. Updated the Quick Reference table accordingly.
+- **Reason:** Align documentation structure with Confluence tab macro layouts and accommodate container-only developers who interact with NATS exclusively through SDK clients without installing local CLI binaries.
+- **Affected Area:** [docs/nats-local-setup-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-local-setup-guide.md)
+
+
 ## [2026-10-13] Add High-Level and Low-Level Architecture Views in NATS Overview
 
 - **Change:** Consolidated Section 3 (`## 3. Architecture`) in [docs/nats_overview.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats_overview.md) into a single unified heading and brief overview introducing two Mermaid diagrams: a logical view (Publishing Applications, Subscribing Applications, Core NATS, and JetStream with Stream and Consumer) and an infrastructure landscape view (Clusters, Servers, Accounts, JetStream Domains, Streams, Consumers, Gateways, and Leaf Nodes). Removed all intermediate subheadings and takeaway bullet points.

@@ -1,62 +1,48 @@
 # NATS Local Setup
 
 Developer guide for running NATS locally for development and testing.
-Two approaches are provided: a single-node server for simple development and a 3-node cluster for testing replication, failover, and cluster-aware behavior.
 
-Each approach can be started using `podman-compose` with the provided `compose.yaml`, or by running containers directly with `podman run`.
+The guide is organized into two primary tracks designed for tabbed navigation:
+- **Track 1: Podman Workflow (Containerized)** -- Container execution via Podman. Recommended for containerized workflows; does not require Homebrew or native NATS tools. Applications interact directly using NATS SDK clients or HTTP monitoring endpoints.
+- **Track 2: NATS CLI / Local Binary Workflow (Homebrew)** -- Direct binary execution on macOS/Linux. Recommended for lightweight, fast iteration using `nats-server` and `nats` CLI without a container engine.
+
+Within each track, two deployment topologies are provided:
+- **Single-Node Server:** Fast, minimal setup with JetStream for day-to-day development.
+- **3-Node Cluster:** Multi-node cluster for validating JetStream replication (R3), leader election, failover, and cluster routing.
 
 ---
 
-## Prerequisites
+## Track 1: Podman Workflow
 
-### Required Tools
+Run NATS inside isolated containers using Podman. This workflow does not require macOS Homebrew or locally installed NATS binaries; applications can interact with the server directly through NATS SDK clients (Go, Java, Python, Node.js) or via HTTP monitoring endpoints.
+
+### 1. Prerequisites
 
 | Tool | Purpose | Install |
 |------|---------|---------|
-| Podman | Run NATS containers | [podman.io](https://podman.io/getting-started/installation) |
-| podman-compose | Orchestrate multi-container setups | `pip install podman-compose` or [github.com/containers/podman-compose](https://github.com/containers/podman-compose) |
-| NATS CLI (`nats`) | Interact with NATS from the terminal | See below |
+| Podman | Container engine for running NATS containers | [podman.io](https://podman.io/getting-started/installation) or system package manager |
+| podman-compose | Multi-container compose orchestration (optional) | `pip install podman-compose` or `brew install podman-compose` |
+| Application SDK Client | Application interaction with NATS | Go (`nats.go`), Java (`jnats`), Python (`nats-py`), etc. |
 
-### Install NATS CLI
-
-macOS (Homebrew):
-
-```bash
-brew tap nats-io/nats-tools
-brew install nats-io/nats-tools/nats
-```
-
-Verify the installation:
-
-```bash
-nats --version
-```
-
-### Pull Container Image
+Pull the official NATS container image:
 
 ```bash
 podman pull nats:latest
 ```
 
+*(Optional)* If you have Homebrew or the NATS CLI installed, you can also use `nats` CLI commands, but it is not mandatory.
+
 ---
 
-## Single-Node Server
+### 2. Single-Node Server (Podman)
 
-A single NATS server with JetStream enabled. Suitable for most local development and testing.
+A single NATS container with JetStream enabled. Suitable for standard application development and unit/integration testing.
 
-**Source:** `deploy/local-nats/`
+**Source Files:** `deploy/local-nats/`
+- `deploy/local-nats/docker-compose.yaml` -- Container compose specification
+- `deploy/local-nats/nats.conf` -- Server configuration
 
-### Directory Contents
-
-```
-deploy/local-nats/
-  compose.yaml   # Container definition (works with podman-compose)
-  nats.conf              # Server configuration
-```
-
-### Configuration
-
-The server configuration in `nats.conf`:
+Server configuration reference (`deploy/local-nats/nats.conf`):
 
 ```
 # NATS client port
@@ -74,24 +60,27 @@ jetstream {
 ```
 
 Key settings:
-- **port 4222** -- Standard NATS client connection port.
-- **jetstream** -- Enabled with data stored at `/data/jetstream` inside the container, mapped to `./data` on the host via a volume mount.
+- **Port 4222:** Standard client connection port exposed to host.
+- **Port 8222:** HTTP monitoring endpoint (`/varz`, `/connz`, `/jsz`).
+- **JetStream store_dir:** `/data/jetstream` inside the container, mapped to host directory `./deploy/local-nats/data`.
 
-### Start with podman-compose
+#### Option A: Start with podman-compose
+
+From the repository root:
 
 ```bash
 cd deploy/local-nats
 podman-compose up -d
 ```
 
-Stop:
+Stop the server:
 
 ```bash
 cd deploy/local-nats
 podman-compose down
 ```
 
-To remove persisted JetStream data as well:
+Stop and wipe persisted JetStream storage:
 
 ```bash
 cd deploy/local-nats
@@ -99,9 +88,9 @@ podman-compose down
 rm -rf ./data
 ```
 
-### Start with podman run
+#### Option B: Start with podman run
 
-Run the server directly without compose:
+Run directly from the repository root:
 
 ```bash
 podman run -d \
@@ -114,141 +103,73 @@ podman run -d \
   nats:latest -c /etc/nats/nats.conf
 ```
 
-Run from the repository root so the volume paths resolve correctly.
-
-Stop and remove:
+Stop and remove container:
 
 ```bash
 podman stop local-nats
 podman rm local-nats
 ```
 
-To remove persisted data as well:
+Remove persisted JetStream data:
 
 ```bash
 rm -rf ./deploy/local-nats/data
 ```
 
-### Start with nats server (CLI)
+#### Verification (Podman Single-Node)
 
-The NATS CLI includes a lightweight built-in server. No containers required -- useful for quick local development and testing.
+1. Verify container status:
+   ```bash
+   podman ps --filter name=local-nats
+   ```
 
-Start with JetStream enabled:
+2. Check health via HTTP monitoring (no CLI required):
+   ```bash
+   curl -s http://localhost:8222/varz | grep version
+   curl -s http://localhost:8222/jsz
+   ```
 
-```bash
-nats server run --jetstream
-```
-
-The server runs in the foreground on port 4222 by default. Press Ctrl+C to stop it.
-
-To use a custom configuration file:
-
-```bash
-nats server run -c deploy/local-nats/nats.conf
-```
-
-This is the simplest option for single-node development but does not persist data across restarts unless a store directory is configured.
-
-### Verify
-
-Check the container is running (podman-compose or podman run):
-
-```bash
-podman ps --filter name=local-nats
-```
-
-For `nats server run`, verify connectivity directly:
-
-```bash
-nats server ping
-```
+3. Connect via Application SDK client:
+   - Target URL: `nats://localhost:4222`
 
 ---
 
-## 3-Node Cluster
+### 3. 3-Node Cluster (Podman)
 
-A 3-node NATS cluster for testing cluster behavior: replication, leader election, failover, and multi-node JetStream.
+A 3-node containerized NATS cluster for validating cluster behavior: JetStream replication (R3 streams), leader election, seamless failover, and cluster routing.
 
-**Source:** `deploy/local-nats-cluster/`
+**Source Files:** `deploy/local-nats-cluster/`
+- `deploy/local-nats-cluster/docker-compose.yaml` -- 3-node cluster specification
+- `deploy/local-nats-cluster/nats-1.conf` -- Node 1 configuration
+- `deploy/local-nats-cluster/nats-2.conf` -- Node 2 configuration
+- `deploy/local-nats-cluster/nats-3.conf` -- Node 3 configuration
 
-### Directory Contents
+Cluster Port Mapping:
+| Node | Client Port (Host) | HTTP Monitoring Port | Cluster Route Port (Internal) |
+|------|--------------------|----------------------|--------------------------------|
+| nats-1 | 4222 | 8222 | 6222 |
+| nats-2 | 4223 | 8223 | 6222 |
+| nats-3 | 4224 | 8224 | 6222 |
 
-```
-deploy/local-nats-cluster/
-  compose.yaml   # 3 NATS nodes (works with podman-compose)
-  nats-1.conf            # Node 1 configuration
-  nats-2.conf            # Node 2 configuration
-  nats-3.conf            # Node 3 configuration
-```
+#### Option A: Start with podman-compose
 
-### Configuration
-
-Each node has its own configuration file. The structure is the same across nodes with the server name and route peers adjusted per node.
-
-Example (`nats-1.conf`):
-
-```
-port: 4222
-http_port: 8222
-
-server_name: "nats-1"
-
-server_tags: ["stream:primary"]
-
-log_file: "/data/nats.log"
-logtime: true
-
-jetstream {
-    store_dir: "/data/jetstream"
-}
-
-cluster {
-    name: "local-nats-cluster"
-
-    listen: "0.0.0.0:6222"
-
-    routes [
-        "nats://nats-2:6222"
-        "nats://nats-3:6222"
-    ]
-}
-```
-
-Key settings:
-- **server_name** -- Unique name per node (`nats-1`, `nats-2`, `nats-3`).
-- **server_tags** -- `nats-1` and `nats-2` are tagged `stream:primary`. `nats-3` has no stream tag. Tags can be used for JetStream stream placement.
-- **log_file** -- Each node writes logs to `/data/nats.log` inside its container, mapped to `./data/nats-{n}/` on the host.
-- **cluster.name** -- All nodes share the cluster name `local-nats-cluster`.
-- **cluster.listen** -- Intra-cluster communication on port 6222.
-- **cluster.routes** -- Each node lists the other two nodes as route peers. NATS uses gossip to form a full mesh.
-
-### Exposed Ports
-
-| Host Port | Container (Node) | Purpose |
-|-----------|-------------------|---------|
-| 4222 | nats-1:4222 | Client connections (node 1) |
-| 4223 | nats-2:4222 | Client connections (node 2) |
-| 4224 | nats-3:4222 | Client connections (node 3) |
-
-Cluster routing ports (6222) are internal to the Podman network and not exposed to the host.
-
-### Start with podman-compose
+From the repository root:
 
 ```bash
 cd deploy/local-nats-cluster
 podman-compose up -d
 ```
 
-This starts only the 3 NATS nodes. Observability services are behind the `observability` profile and are not started by default.
+This starts `nats-1`, `nats-2`, and `nats-3`. Observability tools (Prometheus, Grafana, Fluent-bit) are under the `observability` profile and remain stopped unless explicitly started.
 
-Stop:
+Stop the cluster:
 
 ```bash
 cd deploy/local-nats-cluster
 podman-compose down
 ```
 
-To remove persisted data and logs:
+Stop and remove persisted cluster data:
 
 ```bash
 cd deploy/local-nats-cluster
@@ -256,15 +177,15 @@ podman-compose down
 rm -rf ./data
 ```
 
-### Start with podman run
+#### Option B: Start with podman run
 
-Create a shared network so the nodes can discover each other:
+Create a user-defined container network for node discovery:
 
 ```bash
 podman network create nats-cluster
 ```
 
-Start all 3 nodes:
+Start all 3 nodes from the repository root:
 
 ```bash
 podman run -d \
@@ -296,9 +217,7 @@ podman run -d \
   nats:latest -c /etc/nats/nats.conf
 ```
 
-Run from the repository root so the volume paths resolve correctly.
-
-Stop and remove:
+Stop and clean up containers:
 
 ```bash
 podman stop nats-1 nats-2 nats-3
@@ -306,96 +225,242 @@ podman rm nats-1 nats-2 nats-3
 podman network rm nats-cluster
 ```
 
-To remove persisted data:
+Remove persisted cluster data:
 
 ```bash
 rm -rf ./deploy/local-nats-cluster/data
 ```
 
-### Verify
+#### Verification (Podman 3-Node Cluster)
 
-Check all 3 containers are running:
+1. Verify container status:
+   ```bash
+   podman ps --filter name=nats
+   ```
+
+2. Check cluster route mesh via HTTP monitoring:
+   ```bash
+   curl -s http://localhost:8222/routez
+   ```
+
+3. Connect via Application SDK client (providing all seed endpoints for automatic failover):
+   - Target URL: `nats://localhost:4222,nats://localhost:4223,nats://localhost:4224`
+
+---
+
+## Track 2: NATS CLI / Local Binary Workflow
+
+Run NATS locally as native processes on macOS or Linux. Best for fast iteration without container overhead or VM resource requirements.
+
+### 1. Prerequisites
+
+| Tool | Purpose | Install (macOS / Linux) |
+|------|---------|-------------------------|
+| NATS Server (`nats-server`) | Local NATS server binary | `brew install nats-server` |
+| NATS CLI (`nats`) | Management and messaging CLI tool | `brew tap nats-io/nats-tools && brew install nats-io/nats-tools/nats` |
+
+Verify installation:
 
 ```bash
-podman ps --filter name=nats
+nats-server -v
+nats --version
 ```
 
 ---
 
-## Testing Connectivity
+### 2. Single-Node Server (CLI)
 
-After starting either the single-node server or the cluster, use the NATS CLI to verify the server is reachable and messaging works.
+#### Option A: Ephemeral Dev Server (Quick Start)
 
-### Add a CLI Context (Optional)
+Start an immediate foreground server with JetStream enabled (stores data in a temporary directory):
 
-Contexts store connection details so you do not have to pass `--server` every time.
+```bash
+nats-server -js
+```
 
-Single-node:
+Stop the server:
+Press `Ctrl+C` in the terminal.
 
+#### Option B: Config-backed Server (Persistent Storage)
+
+Run with the repository configuration file and an explicit local storage directory:
+
+```bash
+nats-server -c deploy/local-nats/nats.conf -sd ./deploy/local-nats/data/jetstream
+```
+
+To run in the background:
+
+```bash
+nats-server -c deploy/local-nats/nats.conf -sd ./deploy/local-nats/data/jetstream &
+```
+
+Stop background server:
+
+```bash
+pkill nats-server
+```
+
+Remove persisted JetStream data:
+
+```bash
+rm -rf ./deploy/local-nats/data
+```
+
+#### Verification (CLI Single-Node)
+
+Check connectivity and JetStream availability:
+
+```bash
+nats server ping
+nats server report jetstream
+```
+
+---
+
+### 3. 3-Node Cluster (CLI)
+
+Run 3 separate `nats-server` processes locally with dedicated client, monitoring, and intra-cluster routing ports.
+
+#### Start Nodes
+
+Open 3 terminal windows and execute one command per terminal from the repository root:
+
+Terminal 1 (Node 1):
+```bash
+nats-server -n nats-1 -p 4222 -m 8222 \
+  -cluster nats://127.0.0.1:6222 \
+  -routes nats://127.0.0.1:6223,nats://127.0.0.1:6224 \
+  --cluster_name local-nats-cluster \
+  -js -sd ./deploy/local-nats-cluster/data/nats-1
+```
+
+Terminal 2 (Node 2):
+```bash
+nats-server -n nats-2 -p 4223 -m 8223 \
+  -cluster nats://127.0.0.1:6223 \
+  -routes nats://127.0.0.1:6222,nats://127.0.0.1:6224 \
+  --cluster_name local-nats-cluster \
+  -js -sd ./deploy/local-nats-cluster/data/nats-2
+```
+
+Terminal 3 (Node 3):
+```bash
+nats-server -n nats-3 -p 4224 -m 8224 \
+  -cluster nats://127.0.0.1:6224 \
+  -routes nats://127.0.0.1:6222,nats://127.0.0.1:6223 \
+  --cluster_name local-nats-cluster \
+  -js -sd ./deploy/local-nats-cluster/data/nats-3
+```
+
+#### Stop Nodes
+
+Press `Ctrl+C` in each terminal window, or stop all running server processes:
+
+```bash
+pkill nats-server
+```
+
+Remove persisted cluster data:
+
+```bash
+rm -rf ./deploy/local-nats-cluster/data/nats-{1,2,3}
+```
+
+#### Verification (CLI 3-Node Cluster)
+
+Verify all nodes are online and clustered:
+
+```bash
+nats server list -s localhost:4222
+nats server ping -s localhost:4222
+```
+
+---
+
+## Interacting and Testing
+
+### Approach 1: Application SDK Clients (No NATS CLI Required)
+
+Applications connect directly using NATS client libraries. No Homebrew or local NATS CLI installation is required.
+
+Connection Endpoints:
+- **Single-Node:** `nats://localhost:4222`
+- **3-Node Cluster:** `nats://localhost:4222,nats://localhost:4223,nats://localhost:4224`
+
+Example Connection Patterns:
+
+**Go (`nats.go`):**
+```go
+// Single node
+nc, err := nats.Connect("nats://localhost:4222")
+
+// Cluster with automatic failover
+nc, err := nats.Connect("nats://localhost:4222,nats://localhost:4223,nats://localhost:4224")
+```
+
+**Java (`jnats`):**
+```java
+// Single node
+Connection nc = Nats.connect("nats://localhost:4222");
+
+// Cluster with automatic failover
+Options options = new Options.Builder()
+    .servers(new String[]{"nats://localhost:4222", "nats://localhost:4223", "nats://localhost:4224"})
+    .build();
+Connection nc = Nats.connect(options);
+```
+
+### Approach 2: NATS CLI Utility
+
+If you have the NATS CLI installed, configure connection contexts:
+
+Save Single-Node Context:
 ```bash
 nats context save local --server localhost:4222 --select
 ```
 
-Cluster (all 3 nodes):
-
+Save Cluster Context (all 3 nodes):
 ```bash
 nats context save local-cluster --server localhost:4222,localhost:4223,localhost:4224 --select
 ```
 
-### Check Connectivity
-
-```bash
-nats server ping
-```
-
-For a cluster, verify all nodes respond:
-
-```bash
-nats server list
-```
-
-### Publish and Subscribe
-
-Open two terminals.
+#### Pub / Sub Verification
 
 Terminal 1 -- Subscribe:
-
 ```bash
 nats sub "demo.>"
 ```
 
 Terminal 2 -- Publish:
-
 ```bash
 nats pub demo.hello "Hello from NATS"
 ```
 
-Terminal 1 should display the received message. Press Ctrl+C to stop the subscriber.
+#### Request / Reply Verification
 
-### Request and Reply
-
-Terminal 1 -- Start a replier:
-
+Terminal 1 -- Reply:
 ```bash
 nats reply demo.greet "Hello, requester"
 ```
 
-Terminal 2 -- Send a request:
-
+Terminal 2 -- Request:
 ```bash
 nats request demo.greet ""
 ```
 
-Terminal 2 should display the reply message.
-
 ---
 
-## Quick Reference
+## Quick Reference Summary
 
-| Action | Single-Node | Cluster |
-|--------|-------------|---------|
-| Start (compose) | `cd deploy/local-nats && podman-compose up -d` | `cd deploy/local-nats-cluster && podman-compose up -d` |
-| Stop (compose) | `cd deploy/local-nats && podman-compose down` | `cd deploy/local-nats-cluster && podman-compose down` |
-| Client URL | `localhost:4222` | `localhost:4222,localhost:4223,localhost:4224` |
-| Config | `deploy/local-nats/nats.conf` | `deploy/local-nats-cluster/nats-{1,2,3}.conf` |
-| Data | `deploy/local-nats/data/` | `deploy/local-nats-cluster/data/nats-{1,2,3}/` |
+| Property | Single-Node (Podman) | 3-Node Cluster (Podman) | Single-Node (CLI) | 3-Node Cluster (CLI) |
+|----------|----------------------|-------------------------|-------------------|----------------------|
+| Primary Requirement | Podman / Compose | Podman / Compose | `nats-server` (Brew) | `nats-server` (Brew) |
+| Start Command | `podman-compose up -d` in `deploy/local-nats` | `podman-compose up -d` in `deploy/local-nats-cluster` | `nats-server -js` | 3 `nats-server` commands with route ports |
+| Stop Command | `podman-compose down` | `podman-compose down` | `Ctrl+C` or `pkill nats-server` | `Ctrl+C` or `pkill nats-server` |
+| Client URL | `localhost:4222` | `localhost:4222,localhost:4223,localhost:4224` | `localhost:4222` | `localhost:4222,localhost:4223,localhost:4224` |
+| HTTP Monitoring | `http://localhost:8222` | `http://localhost:8222`, `8223`, `8224` | `http://localhost:8222` (if `-m 8222`) | `http://localhost:8222`, `8223`, `8224` |
+| Configuration | `deploy/local-nats/nats.conf` | `deploy/local-nats-cluster/nats-{1,2,3}.conf` | `deploy/local-nats/nats.conf` | CLI flags or local config files |
+| Persisted Storage | `./deploy/local-nats/data` | `./deploy/local-nats-cluster/data/nats-{1,2,3}` | `./deploy/local-nats/data/jetstream` | `./deploy/local-nats-cluster/data/nats-{1,2,3}` |
+
+
