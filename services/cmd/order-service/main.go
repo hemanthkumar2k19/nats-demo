@@ -22,7 +22,7 @@ import (
 func main() {
 	// 0. Initialize Zerolog Logger (false = colorful console logs, true = raw JSON)
 	logger.Init(false)
-	gin.SetMode(gin.ReleaseMode)
+	gin.SetMode(gin.DebugMode)
 
 	// 1. Load Environment Configuration
 	cfg, err := config.Load()
@@ -43,9 +43,10 @@ func main() {
 	}
 	log.Info().Msgf("NATS RTT: %v", rtt)
 
-	// 3. Initialize Publisher Service & API Handler
+	// 3. Initialize Publisher & Consumer Services & API Handlers
 	svc := service.NewService(nc, nil)
 	pubHandler := api.NewPublisherHandler(svc)
+	consumerHandler := api.NewConsumerHandler(svc)
 
 	// 4. Setup Gin HTTP Engine & Register Routes
 	r := gin.New()
@@ -53,6 +54,7 @@ func main() {
 
 	v1 := r.Group("/api/v1")
 	pubHandler.RegisterRoutes(v1)
+	consumerHandler.RegisterRoutes(v1)
 
 	httpServer := &http.Server{
 		Addr:    cfg.OrderServicePort,

@@ -1,0 +1,349 @@
+{
+  "info": {
+    "_postman_id": "b3e41419-4fc3-4fae-9d2a-89a3f25c7981",
+    "name": "NATS Reference Platform",
+    "description": "Production-like Postman collection for NATS JetStream Publisher and Consumer APIs.\n\n### Prerequisites\n1. Ensure NATS server is running with JetStream enabled (`nats-server -js`).\n2. Ensure the stream exists (`nats stream add PAYMENTS --subjects 'payments.>' --storage file --default`).\n3. Ensure Order Service is running on `http://localhost:8080` (`go run ./services/cmd/order-service`).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Publishing",
+      "description": "Endpoints for publishing messages to NATS JetStream streams.",
+      "item": [
+        {
+          "name": "Publish to JetStream",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"payments.created\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1001\\\", \\\"amount\\\": 250.00, \\\"currency\\\": \\\"USD\\\"}\",\n  \"headers\": {\n    \"Correlation-ID\": \"c8f9a2b1-4e20-411a-b33c-58e39f72a123\",\n    \"Source\": \"checkout-service\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/publish/js",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "publish",
+                "js"
+              ]
+            },
+            "description": "Publishes a message to JetStream synchronously and returns the native PubAck object containing the stream name, sequence number, domain, and duplicate status."
+          },
+          "response": [
+            {
+              "name": "200 OK - Successful Publish",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"subject\": \"payments.created\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1001\\\", \\\"amount\\\": 250.00, \\\"currency\\\": \\\"USD\\\"}\",\n  \"headers\": {\n    \"Correlation-ID\": \"c8f9a2b1-4e20-411a-b33c-58e39f72a123\",\n    \"Source\": \"checkout-service\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/publish/js",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "publish",
+                    "js"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"stream\": \"PAYMENTS\",\n  \"sequence\": 1,\n  \"domain\": \"\",\n  \"duplicate\": false\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Consumers",
+      "description": "Endpoints for creating and deleting JetStream consumers.",
+      "item": [
+        {
+          "name": "Create Pull Consumer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"consumerName\": \"payments-pull\",\n  \"filterSubject\": [\n    \"payments.>\"\n  ],\n  \"ackPolicy\": \"explicit\",\n  \"deliverPolicy\": \"all\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/consumers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "consumers"
+              ]
+            },
+            "description": "Creates or retrieves an existing pull consumer on the specified stream. Supported ackPolicy values: 'explicit', 'none'. Supported deliverPolicy values: 'all', 'last', 'new'."
+          },
+          "response": [
+            {
+              "name": "200 OK - Consumer Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"consumerName\": \"payments-pull\",\n  \"filterSubject\": [\n    \"payments.>\"\n  ],\n  \"ackPolicy\": \"explicit\",\n  \"deliverPolicy\": \"all\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/consumers",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "consumers"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"stream_name\": \"PAYMENTS\",\n  \"name\": \"payments-pull\",\n  \"created\": \"2026-10-15T10:45:00Z\",\n  \"config\": {\n    \"durable_name\": \"payments-pull\",\n    \"filter_subjects\": [\n      \"payments.>\"\n    ],\n    \"ack_policy\": \"explicit\",\n    \"deliver_policy\": \"all\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Push Consumer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"consumerName\": \"payments-push\",\n  \"filterSubject\": [\n    \"payments.>\"\n  ],\n  \"ackPolicy\": \"explicit\",\n  \"deliverPolicy\": \"all\",\n  \"DeliverSubject\": \"notifications.payments\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/consumers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "consumers"
+              ]
+            },
+            "description": "Creates or retrieves an existing push consumer by specifying 'DeliverSubject'. Messages arriving on the stream are pushed automatically to the deliver subject."
+          },
+          "response": [
+            {
+              "name": "200 OK - Push Consumer Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"consumerName\": \"payments-push\",\n  \"filterSubject\": [\n    \"payments.>\"\n  ],\n  \"ackPolicy\": \"explicit\",\n  \"deliverPolicy\": \"all\",\n  \"DeliverSubject\": \"notifications.payments\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/consumers",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "consumers"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"stream_name\": \"PAYMENTS\",\n  \"name\": \"payments-push\",\n  \"created\": \"2026-10-15T10:45:00Z\",\n  \"config\": {\n    \"durable_name\": \"payments-push\",\n    \"deliver_subject\": \"notifications.payments\",\n    \"filter_subjects\": [\n      \"payments.>\"\n    ],\n    \"ack_policy\": \"explicit\",\n    \"deliver_policy\": \"all\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delete Consumer",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"consumerName\": \"payments-pull\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/consumers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "consumers"
+              ]
+            },
+            "description": "Deletes a JetStream consumer using a JSON request body specifying streamName and consumerName."
+          },
+          "response": [
+            {
+              "name": "200 OK - Consumer Deleted",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"consumerName\": \"payments-pull\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/consumers",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "consumers"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"status\": \"deleted\",\n  \"streamName\": \"PAYMENTS\",\n  \"consumerName\": \"payments-pull\"\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "streamName",
+      "value": "PAYMENTS",
+      "type": "string"
+    },
+    {
+      "key": "consumerName",
+      "value": "payments-pull",
+      "type": "string"
+    }
+  ]
+}

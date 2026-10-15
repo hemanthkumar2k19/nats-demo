@@ -52,8 +52,8 @@ func (s *Service) JSPublish(ctx context.Context, msg *model.Message) (*jetstream
 	return messaging.JSPublishMsg(ctx, s.js, msg)
 }
 
-// JSPublishAsync publishes a message to JetStream asynchronously.
-func (s *Service) JSPublishAsync(ctx context.Context, msg *model.Message) (*jetstream.PubAck, error) {
+// CreateConsumer creates or retrieves a JetStream consumer and returns its metadata.
+func (s *Service) CreateConsumer(ctx context.Context, cr *model.CreateConsumerRequest) (*jetstream.ConsumerInfo, error) {
 	if s.js == nil {
 		var err error
 		s.js, err = jetstream.New(s.nc)
@@ -61,105 +61,33 @@ func (s *Service) JSPublishAsync(ctx context.Context, msg *model.Message) (*jets
 			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
 		}
 	}
-	return messaging.JSPublishAsync(ctx, s.js, msg)
+
+	consumer, err := messaging.CreateConsumer(ctx, s.js, cr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create consumer: %w", err)
+	}
+
+	info, err := consumer.Info(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve consumer info: %w", err)
+	}
+
+	return info, nil
 }
 
-// JSPublishAsyncPending returns the pending async messages count.
-func (s *Service) JSPublishAsyncPending() map[string]any {
+// DeleteConsumer deletes a JetStream consumer.
+func (s *Service) DeleteConsumer(ctx context.Context, cr *model.CreateConsumerRequest) error {
 	if s.js == nil {
-		return map[string]any{"pending": 0}
+		var err error
+		s.js, err = jetstream.New(s.nc)
+		if err != nil {
+			return fmt.Errorf("failed to initialize JetStream context: %w", err)
+		}
 	}
-	return messaging.JSPublishAsyncPending(s.js)
-}
 
-// Publish delegates message publishing to the messaging layer.
-func (s *Service) Publish(msg *model.Message) error {
-	if err := messaging.PublishMsg(s.nc, msg); err != nil {
-		return fmt.Errorf("failed to publish message to subject %s: %w", msg.Subject, err)
+	if err := messaging.DeleteConsumer(ctx, s.js, cr); err != nil {
+		return fmt.Errorf("failed to delete consumer: %w", err)
 	}
+
 	return nil
-}
-
-// PublishWithReply delegates message publishing with a reply subject to the messaging layer.
-func (s *Service) PublishWithReply(msg *model.Message) error {
-
-	sub, err := messaging.Subscribe(s.nc, msg.Reply)
-	if err != nil {
-		return fmt.Errorf("failed to subscribe to reply subject %s: %w", msg.Reply, err)
-	}
-	log.Info().Str("reply_subject", msg.Reply).Msg("Subscribed to reply subject")
-
-	defer sub.Unsubscribe()
-
-	if err := messaging.PublishMsgWithReply(s.nc, msg); err != nil {
-		return fmt.Errorf("failed to publish message with reply to subject %s: %w", msg.Subject, err)
-	}
-	return nil
-}
-
-// PublishRequest delegates request message publishing to the messaging layer.
-func (s *Service) PublishRequest(msg *model.Message) (*nats.Msg, error) {
-	resp, err := messaging.PublishRequest(s.nc, msg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to publish request to subject %s: %w", msg.Subject, err)
-	}
-	return resp, nil
-}
-
-// CreateSubscription creates a NATS subscription and registers it in the subscription manager.
-func (s *Service) CreateSubscription(subject string, handlerType string) (*subscription.Item, error) {
-
-	var sub *nats.Subscription
-	var err error
-
-	switch handlerType {
-	case "order":
-		sub, err = messaging.Subscribe(s.nc, subject)
-	case "reply":
-		sub, err = messaging.Subscribe(s.nc, subject)
-	default:
-		return nil, fmt.Errorf("invalid handler type: %s", handlerType)
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to create NATS subscription for subject %s: %w", subject, err)
-	}
-
-	item, err := s.subManager.Subscribe(sub)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register subscription for subject %s: %w", subject, err)
-	}
-
-	return item, nil
-}
-
-// ListSubscriptions lists all active subscriptions from the manager.
-func (s *Service) ListSubscriptions() []*subscription.Item {
-	if s.subManager == nil {
-		return nil
-	}
-	return s.subManager.List()
-}
-
-// Unsubscribe unsubscribes a subscription by ID.
-func (s *Service) Unsubscribe(id string) error {
-	if s.subManager == nil {
-		return fmt.Errorf("subscription manager is not initialized")
-	}
-	return s.subManager.Unsubscribe(id)
-}
-
-// DrainSubscription gracefully drains a subscription by ID.
-func (s *Service) DrainSubscription(id string) error {
-	if s.subManager == nil {
-		return fmt.Errorf("subscription manager is not initialized")
-	}
-	return s.subManager.Drain(id)
-}
-
-// DrainAllSubscriptions drains all active subscriptions.
-func (s *Service) DrainAllSubscriptions() {
-	if s.subManager != nil {
-		s.subManager.DrainAll()
-	}
 }

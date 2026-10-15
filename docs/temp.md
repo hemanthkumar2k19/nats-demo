@@ -87,3 +87,28 @@
 | 19 | **NATS Gating Guidelines**                      | Platform / SRE / Application Owners | Use case, Usage, Volume                                                                             |    P2    |
 | 20 | **NATS Disaster Recovery Guide**                | SRE / Platform                      | DR strategy, recovery considerations                                                                |    P2    |
 | 21 | **NATS Observability Enablement Guide**         | Developers                          | Application-side observability and instrumentation expectations                                     |    P2    |
+
+
+
+# Feedback on NATS Docs - Developer Guide
+
+-  Atmost once, Atleast once and Exactly once delivery pattern - Test, Document and Demo
+-  Local Setup Guide
+  - Differentiate Podman and Brew Paths
+  - Provide proper paths when ever possible
+- Client Guide
+  - Provide Platform Standard - Configuration
+  - Env Variable Usage for Parameters
+- Subject Management
+  - Process Definition
+  - Design
+- Stream Management
+  - Process Definition
+  - Design
+- Account Management
+  - Process Definition
+  - Design
+- Security
+  - Process Definition
+
+Note: Primary focus is on the Process Definition and Design Definition.

@@ -2,6 +2,48 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-15] Consolidate Consumer Deletion to JSON Body Only
+
+- **Change:** Removed route `DELETE /api/v1/consumers/:stream/:consumer` and path-parameter parsing from `DeleteConsumerHandler` in [services/api/consumer_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/consumer_handler.go), standardizing on `DELETE /api/v1/consumers` with JSON request body (`streamName`, `consumerName`). Updated [nats_platform.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_platform.postman_collection.json) and [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) to reflect the unified deletion endpoint.
+- **Reason:** Simplify API surface and enforce a single consistent contract for consumer deletion across services and documentation.
+- **Affected Area:** [services/api/consumer_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/consumer_handler.go), [nats_platform.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_platform.postman_collection.json), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md)
+
+
+## [2026-10-15] Implement JetStream Push Consumer Worker in Notification Worker
+
+- **Change:** Refactored [services/cmd/notification-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/notification-worker/main.go) to implement the JetStream Push Consumer pattern: added `DeliverSubject = "notifications.payments"` configuration constant, updated `StartWorker` to verify the push consumer in JetStream and subscribe to its `DeliverSubject` via `nc.Subscribe()`, handled `*nats.Msg` callbacks with `msg.Ack()`, and implemented graceful shutdown in `cleanup()` using `sub.Drain()` alongside `nc.Drain()`.
+- **Reason:** Resolve `nats: consumer is not a pull consumer` error when interacting with push consumers (`payments-push`) and provide a canonical reference implementation for JetStream Push Consumers.
+- **Affected Area:** [services/cmd/notification-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/notification-worker/main.go)
+
+
+## [2026-10-15] Streamline README with 3-Service Execution and Remove Curl Commands
+
+- **Change:** Updated [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) to provide a streamlined, production-grade guide: updated architecture diagram and service descriptions to include all three active services (`order-service`, `payment-worker`, `notification-worker`); removed verbose curl commands in favor of a clean API lookup table and the [nats_platform.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_platform.postman_collection.json) reference; and simplified execution instructions into concise commands for running each of the 3 services.
+- **Reason:** Keep README clear, minimal, and focused on service execution and architecture while delegating API test requests to the dedicated Postman collection.
+- **Affected Area:** [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md)
+
+
+## [2026-10-15] Add Postman Collection for JetStream APIs
+
+- **Change:** Created [nats_platform.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_platform.postman_collection.json) adhering to Postman Collection v2.1.0 schema: includes pre-configured collection variables (`baseUrl`, `streamName`, `consumerName`), categorized folders for Publishing (`POST /api/v1/publish/js`) and Consumers (`POST /api/v1/consumers` for pull and push consumers, `DELETE /api/v1/consumers` via path and body), sample request payloads, and formatted 200 OK sample responses. Updated [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) with collection import reference.
+- **Reason:** Provide a single-file, one-click importable API testing suite for developers to evaluate and interact with the NATS JetStream REST endpoints in Postman.
+- **Affected Area:** [nats_platform.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_platform.postman_collection.json), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md)
+
+
+## [2026-10-15] Implement Worker Goroutine Lifecycle and Graceful Shutdown in Payment Worker
+
+- **Change:** Refactored [services/cmd/payment-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/payment-worker/main.go) into a completely generic worker pattern configurable exclusively via constants (`StreamName`, `ConsumerName`, `ClientName`): removed premature `defer cc.Stop()` from `StartWorker`, dynamically parameterized all log contexts and messages with `ClientName`, integrated `sync.WaitGroup` to track active in-flight message callbacks, handled `msg.Ack()` errors, added OS signal listener (`SIGINT`, `SIGTERM`), and implemented graceful shutdown in `cleanup()` with a 5-second bounded drain and `nc.Drain()`. Removed unused `gin` dependency.
+- **Reason:** Provide a standardized, reusable worker implementation where only three top-level configuration constants need adjustment for any JetStream stream/consumer workload.
+- **Affected Area:** [services/cmd/payment-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/payment-worker/main.go)
+
+
+## [2026-10-15] Implement JetStream Publishing and Consumer Management REST API Layer
+
+- **Change:** Built dedicated REST API endpoints and Service layer methods for JetStream messaging: implemented `PublishHandler` in [services/api/publisher_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/publisher_handler.go) for `POST /api/v1/publish/js`; created [services/api/consumer_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/consumer_handler.go) for `POST /api/v1/consumers` and `DELETE /api/v1/consumers`; updated [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go) with `CreateConsumer` and `DeleteConsumer` methods calling [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go) and [services/messaging/js.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/js.go); resolved consumer pointer return check in `CreateConsumer`; registered handlers in [services/cmd/order-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/order-service/main.go); and simplified [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) with latest endpoints and architecture.
+- **Reason:** Clean up legacy endpoints and expose structured JetStream publishing and consumer lifecycle management via clean HTTP REST and service layers.
+- **Affected Area:** [services/api/publisher_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/publisher_handler.go), [services/api/consumer_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/consumer_handler.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go), [services/cmd/order-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/order-service/main.go), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md)
+
+
 ## [2026-10-14] Restructure NATS Local Setup Guide into Tabbed Hierarchy and Add SDK Client Workflow
 
 - **Change:** Restructured [docs/nats-local-setup-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-local-setup-guide.md) into a tabbed layout hierarchy: Level 1 organizes the two primary execution paths (`Track 1: Podman Workflow` and `Track 2: NATS CLI / Local Binary Workflow`), and Level 2 organizes topologies (`Single-Node Server` and `3-Node Cluster`). Accounted for environments without Homebrew or the NATS CLI by adding application SDK client interaction patterns (Go, Java) and HTTP monitoring curl commands for containerized setups. Updated the Quick Reference table accordingly.

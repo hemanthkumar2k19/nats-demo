@@ -29,7 +29,6 @@ func JSPublishMsg(ctx context.Context, js jetstream.JetStream, msg *model.Messag
 		Str("stream", ack.Stream).
 		Uint64("sequence", ack.Sequence).
 		Bool("duplicate", ack.Duplicate).
-		Str("domain", ack.Domain).
 		Msg("Successfully published message to JetStream")
 
 	return ack, nil
@@ -56,7 +55,6 @@ func JSPublishAsync(ctx context.Context, js jetstream.JetStream, msg *model.Mess
 			Str("stream", ack.Stream).
 			Uint64("sequence", ack.Sequence).
 			Bool("duplicate", ack.Duplicate).
-			Str("domain", ack.Domain).
 			Msg("Successfully published async message to JetStream")
 		return ack, nil
 	case err := <-future.Err():
@@ -73,4 +71,3 @@ func JSPublishAsyncPending(js jetstream.JetStream) map[string]any {
 		"pending": pending,
 	}
 }
-

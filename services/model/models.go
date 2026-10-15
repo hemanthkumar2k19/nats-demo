@@ -32,3 +32,15 @@ type SubscribeRequest struct {
 type SubscriptionActionRequest struct {
 	ID string `json:"id"`
 }
+
+type CreateConsumerRequest struct {
+	StreamName     string   `json:"streamName"`
+	ConsumerName   string   `json:"consumerName,omitempty"`
+	DurableName    string   `json:"durableName,omitempty"`
+	FilterSubjects []string `json:"filterSubject"`
+	AckPolicy      string   `json:"ackPolicy,omitempty"`
+	DeliverPolicy  string   `json:"deliverPolicy,omitempty"`
+
+	// Push Consumer
+	DeliverSubject string `json:"DeliverSubject,omitempty"`
+}

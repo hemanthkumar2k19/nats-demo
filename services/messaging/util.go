@@ -5,8 +5,33 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 )
+
+func ResolveAckPolicy(policy string) jetstream.AckPolicy {
+	switch policy {
+	case "explicit":
+		return jetstream.AckExplicitPolicy
+	case "none":
+		return jetstream.AckNonePolicy
+	default:
+		return jetstream.AckExplicitPolicy
+	}
+}
+
+func ResolveDeliverPolicy(policy string) jetstream.DeliverPolicy {
+	switch policy {
+	case "all":
+		return jetstream.DeliverAllPolicy
+	case "last":
+		return jetstream.DeliverLastPolicy
+	case "new":
+		return jetstream.DeliverNewPolicy
+	default:
+		return jetstream.DeliverAllPolicy
+	}
+}
 
 // toNatsHeader converts map[string]any headers to nats.Header.
 func toNatsHeader(headers map[string]any) nats.Header {
