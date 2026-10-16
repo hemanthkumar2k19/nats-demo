@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"services/messaging"
 	"services/model"
-	"services/subscription"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -14,21 +13,19 @@ import (
 
 // Service manages publishing and subscription operations over NATS.
 type Service struct {
-	nc         *nats.Conn
-	js         jetstream.JetStream
-	subManager *subscription.Manager
+	nc *nats.Conn
+	js jetstream.JetStream
 }
 
 // NewService creates a new Service instance.
-func NewService(nc *nats.Conn, subManager *subscription.Manager) *Service {
+func NewService(nc *nats.Conn) *Service {
 	js, err := jetstream.New(nc)
 	if err != nil {
 		log.Warn().Err(err).Msg("JetStream context creation warning")
 	}
 	return &Service{
-		nc:         nc,
-		js:         js,
-		subManager: subManager,
+		nc: nc,
+		js: js,
 	}
 }
 
@@ -87,6 +84,46 @@ func (s *Service) DeleteConsumer(ctx context.Context, cr *model.CreateConsumerRe
 
 	if err := messaging.DeleteConsumer(ctx, s.js, cr); err != nil {
 		return fmt.Errorf("failed to delete consumer: %w", err)
+	}
+
+	return nil
+}
+
+// CreateStream creates or retrieves a JetStream stream and returns its metadata.
+func (s *Service) CreateStream(ctx context.Context, sr *model.CreateStreamRequest) (*jetstream.StreamInfo, error) {
+	if s.js == nil {
+		var err error
+		s.js, err = jetstream.New(s.nc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
+		}
+	}
+
+	stream, err := messaging.CreateStream(ctx, s.js, *sr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stream: %w", err)
+	}
+
+	info, err := stream.Info(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve stream info: %w", err)
+	}
+
+	return info, nil
+}
+
+// DeleteStream deletes a JetStream stream by name.
+func (s *Service) DeleteStream(ctx context.Context, streamName string) error {
+	if s.js == nil {
+		var err error
+		s.js, err = jetstream.New(s.nc)
+		if err != nil {
+			return fmt.Errorf("failed to initialize JetStream context: %w", err)
+		}
+	}
+
+	if err := messaging.DeleteStream(ctx, s.js, streamName); err != nil {
+		return fmt.Errorf("failed to delete stream: %w", err)
 	}
 
 	return nil

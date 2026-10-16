@@ -44,9 +44,10 @@ func main() {
 	log.Info().Msgf("NATS RTT: %v", rtt)
 
 	// 3. Initialize Publisher & Consumer Services & API Handlers
-	svc := service.NewService(nc, nil)
+	svc := service.NewService(nc)
 	pubHandler := api.NewPublisherHandler(svc)
 	consumerHandler := api.NewConsumerHandler(svc)
+	streamHandler := api.NewStreamHandler(svc)
 
 	// 4. Setup Gin HTTP Engine & Register Routes
 	r := gin.New()
@@ -55,6 +56,7 @@ func main() {
 	v1 := r.Group("/api/v1")
 	pubHandler.RegisterRoutes(v1)
 	consumerHandler.RegisterRoutes(v1)
+	streamHandler.RegisterRoutes(v1)
 
 	httpServer := &http.Server{
 		Addr:    cfg.OrderServicePort,

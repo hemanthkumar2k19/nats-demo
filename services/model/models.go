@@ -44,3 +44,17 @@ type CreateConsumerRequest struct {
 	// Push Consumer
 	DeliverSubject string `json:"DeliverSubject,omitempty"`
 }
+
+type CreateStreamRequest struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Subjects    []string `json:"subjects,omitempty"`
+	Retention   string   `json:"retention,omitempty"`
+	Discard     string   `json:"discard,omitempty"`
+	Replicas    int      `json:"replicas,omitempty"`
+	Storage     string   `json:"storage,omitempty"`
+}
+
+type DeleteStreamRequest struct {
+	Name string `json:"name"`
+}

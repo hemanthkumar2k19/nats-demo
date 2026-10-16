@@ -4,7 +4,7 @@
 
 This guide is the entry point for application developers learning how to use NATS messaging and manage client connections.
 
-It introduces foundational messaging concepts (subjects, message structure) shared across Core NATS and JetStream, provides practical reference patterns for initializing and managing NATS client connections in Go and Java, and guides developers through production resilience best practices and enterprise platform connectivity requirements.
+It introduces foundational messaging concepts (subjects, message structure) shared across Core NATS and JetStream, provides practical reference patterns for initializing and managing NATS client connections in Go, Java, and Python, and guides developers through production resilience best practices and enterprise platform connectivity requirements.
 
 The guide is an implementation and navigation reference. It does not replace the official NATS documentation or define enterprise-specific security policies.
 
@@ -48,17 +48,22 @@ For enterprise requirements concerning message envelopes, payload schemas, and m
 
 **Prerequisites:** Go 1.22+
 
+**Latest Stable Version:** `v1.54.0`
+
 Install the official Go client:
 
 ```bash
-go get github.com/nats-io/nats.go
+# Pin to latest stable release
+go get github.com/nats-io/nats.go@v1.54.0
 ```
 
-Reference: [NATS Go client - Installation and usage](https://github.com/nats-io/nats.go#installation)
+Reference: [NATS Go client - Installation and usage](https://github.com/nats-io/nats.go#installation) and [NATS Go Releases](https://github.com/nats-io/nats.go/releases)
 
 ### 4.2 Java NATS Client SDK
 
 **Prerequisites:** Java 17+
+
+**Latest Stable Version:** `2.26.4`
 
 **Maven**
 
@@ -66,19 +71,37 @@ Reference: [NATS Go client - Installation and usage](https://github.com/nats-io/
 <dependency>
     <groupId>io.nats</groupId>
     <artifactId>jnats</artifactId>
-    <version>2.20.0</version>
+    <version>2.26.4</version>
 </dependency>
 ```
 
 **Gradle**
 
 ```groovy
-implementation 'io.nats:jnats:2.20.0'
+implementation 'io.nats:jnats:2.26.4'
 ```
 
-Reference: [NATS Java client - Installation and usage](https://github.com/nats-io/nats.java#installation)
+Reference: [NATS Java client - Installation and usage](https://github.com/nats-io/nats.java#installation) and [NATS Java Releases](https://github.com/nats-io/nats.java/releases)
 
 Use the approved dependency version for your application. When consulting Javadocs hosted under `latest`, verify that the documented API is available in the version you use.
+
+### 4.3 Python NATS Client SDK
+
+**Prerequisites:** Python 3.8+
+
+**Latest Stable Version:** `2.16.0`
+
+Install the official Python client:
+
+```bash
+# Standard installation
+pip install nats-py==2.16.0
+
+# With NKeys/JWT authentication support
+pip install "nats-py[nkeys]==2.16.0"
+```
+
+Reference: [NATS Python client - Installation and usage](https://github.com/nats-io/nats.py#nats-py-client), [nats-py on PyPI](https://pypi.org/project/nats-py/2.16.0/), and [NATS Python Releases](https://github.com/nats-io/nats.py/releases)
 
 ## 5. Connect to NATS
 
@@ -105,19 +128,19 @@ This is the primary learning path for production connection behavior. It builds 
 | 3 | [Connection Events](https://docs.nats.io/learn/resilient-clients/connection-events) | Connection lifecycle callbacks, state inspection, and application responses to disconnects, reconnects, and closure. |
 | 4 | [Drain & Shutdown](https://docs.nats.io/learn/resilient-clients/drain-and-shutdown) | Graceful shutdown, draining pending work, and handling connection termination. |
 
-## 7. Go and Java SDK Reference
+## 7. Go, Java, and Python SDK Reference
 
 Use this section as a quick lookup when implementing concepts covered in Sections 5 and 6.
 
-| Development task | Go reference | Java reference |
-|---|---|---|
-| SDK installation and basic usage | [NATS Go client](https://github.com/nats-io/nats.go) | [NATS Java client](https://github.com/nats-io/nats.java) |
-| Connection initialization and options | [Go Connect API](https://pkg.go.dev/github.com/nats-io/nats.go#Connect) | [Java client - Connecting](https://github.com/nats-io/nats.java#connecting) |
-| Connection status and lifecycle handling | [Go Status API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Status) | [Java client - Clusters & Reconnecting](https://github.com/nats-io/nats.java#clusters--reconnecting) |
-| Authentication and TLS configuration | [Go client - Authentication](https://github.com/nats-io/nats.go#new-authentication-nkeys-and-user-credentials) | [Java client - Connection Security](https://github.com/nats-io/nats.java#connection-security) |
-| Graceful shutdown and draining | [Go `Conn.Drain` API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Drain) | [Java `Connection.drain` API](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#drain-java.time.Duration-) |
-| JetStream API initialization | [Go JetStream documentation](https://github.com/nats-io/nats.go#jetstream) | [Java JetStream documentation](https://github.com/nats-io/nats.java#jetstream) |
-| Runnable examples | [NATS by Example](https://natsbyexample.com/) | [Java NATS examples](https://github.com/nats-io/java-nats-examples) |
+| Development task | Go reference | Java reference | Python reference |
+|---|---|---|---|
+| SDK installation and basic usage | [NATS Go client](https://github.com/nats-io/nats.go) | [NATS Java client](https://github.com/nats-io/nats.java) | [NATS Python client](https://github.com/nats-io/nats.py) |
+| Connection initialization and options | [Go Connect API](https://pkg.go.dev/github.com/nats-io/nats.go#Connect) | [Java client - Connecting](https://github.com/nats-io/nats.java#connecting) | [Python Connect API](https://nats-io.github.io/nats.py/modules.html#nats.connect) |
+| Connection status and lifecycle handling | [Go Status API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Status) | [Java client - Clusters & Reconnecting](https://github.com/nats-io/nats.java#clusters--reconnecting) | [Python Client Callbacks](https://nats-io.github.io/nats.py/modules.html#nats.aio.client.Client.connect) |
+| Authentication and TLS configuration | [Go client - Authentication](https://github.com/nats-io/nats.go#new-authentication-nkeys-and-user-credentials) | [Java client - Connection Security](https://github.com/nats-io/nats.java#connection-security) | [Python client - Auth & TLS](https://github.com/nats-io/nats.py#getting-started) |
+| Graceful shutdown and draining | [Go `Conn.Drain` API](https://pkg.go.dev/github.com/nats-io/nats.go#Conn.Drain) | [Java `Connection.drain` API](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#drain-java.time.Duration-) | [Python `Client.drain` API](https://nats-io.github.io/nats.py/modules.html#nats.aio.client.Client.drain) |
+| JetStream API initialization | [Go JetStream documentation](https://github.com/nats-io/nats.go#jetstream) | [Java JetStream documentation](https://github.com/nats-io/nats.java#jetstream) | [Python JetStream documentation](https://github.com/nats-io/nats.py#jetstream) |
+| Runnable examples | [NATS by Example](https://natsbyexample.com/) | [Java NATS examples](https://github.com/nats-io/java-nats-examples) | [NATS by Example (Python)](https://natsbyexample.com/) |
 
 **Reference guidance**
 
@@ -166,6 +189,7 @@ Start with the SDK-specific references:
 
 - [Go JetStream documentation](https://github.com/nats-io/nats.go#jetstream)
 - [Java JetStream documentation](https://github.com/nats-io/nats.java#jetstream)
+- [Python JetStream documentation](https://github.com/nats-io/nats.py#jetstream)
 
 This guide covers only the client-connection prerequisite and API initialization entry point. For streams, consumers, persistence, acknowledgments, publishing guarantees, and consumption patterns, follow the dedicated JetStream and application messaging guides.
 

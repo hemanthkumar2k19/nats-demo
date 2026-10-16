@@ -327,6 +327,166 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Streams",
+      "description": "Endpoints for creating and deleting JetStream streams.",
+      "item": [
+        {
+          "name": "Create Stream",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PAYMENTS\",\n  \"description\": \"Stream for payment transaction events\",\n  \"subjects\": [\n    \"payments.>\"\n  ],\n  \"storage\": \"file\",\n  \"retention\": \"limits\",\n  \"discard\": \"old\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/streams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "streams"
+              ]
+            },
+            "description": "Creates or retrieves an existing JetStream stream. Supported storage values: 'file', 'memory'. Supported retention values: 'limits', 'interest', 'workqueue'. Supported discard values: 'old', 'new'."
+          },
+          "response": [
+            {
+              "name": "200 OK - Stream Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"PAYMENTS\",\n  \"description\": \"Stream for payment transaction events\",\n  \"subjects\": [\n    \"payments.>\"\n  ],\n  \"storage\": \"file\",\n  \"retention\": \"limits\",\n  \"discard\": \"old\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/streams",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "streams"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"config\": {\n    \"name\": \"PAYMENTS\",\n    \"subjects\": [\n      \"payments.>\"\n    ],\n    \"retention\": \"limits\",\n    \"discard\": \"old\",\n    \"storage\": \"file\"\n  },\n  \"created\": \"2026-10-16T09:00:00Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delete Stream",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"PAYMENTS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/streams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "streams"
+              ]
+            },
+            "description": "Deletes a JetStream stream by name using a JSON request body."
+          },
+          "response": [
+            {
+              "name": "200 OK - Stream Deleted",
+              "originalRequest": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"PAYMENTS\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/streams",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "streams"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"status\": \"deleted\",\n  \"name\": \"PAYMENTS\"\n}"
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [

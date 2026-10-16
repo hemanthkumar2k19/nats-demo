@@ -90,25 +90,10 @@
 
 
 
-# Feedback on NATS Docs - Developer Guide
+# SDK Usage Points
+1. Delete Stream -> Deletes Consumers
+2. Consumer Replicas:
+  - Limits Retention: <= Stream Replicas
+  - Intereset: == Stream Replicas
+  - WorkQueue: == Stream Replicas
 
--  Atmost once, Atleast once and Exactly once delivery pattern - Test, Document and Demo
--  Local Setup Guide
-  - Differentiate Podman and Brew Paths
-  - Provide proper paths when ever possible
-- Client Guide
-  - Provide Platform Standard - Configuration
-  - Env Variable Usage for Parameters
-- Subject Management
-  - Process Definition
-  - Design
-- Stream Management
-  - Process Definition
-  - Design
-- Account Management
-  - Process Definition
-  - Design
-- Security
-  - Process Definition
-
-Note: Primary focus is on the Process Definition and Design Definition.

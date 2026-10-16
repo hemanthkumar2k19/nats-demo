@@ -35,7 +35,7 @@ Publish-Subscribe (Pub/Sub) is the fundamental communication pattern in Core NAT
 
 **Official reference:** [Core NATS - Publish-Subscribe](https://docs.nats.io/learn/core-nats/publish-subscribe)
 
-### Reference Links (Go & Java Standards)
+### Reference Links (Go, Java & Python Standards)
 
 #### Go
 1. **Examples:** [NATS by Example - Publish-Subscribe](https://natsbyexample.com/examples/messaging/pub-sub/cli) (Use the language selector to switch to Go)
@@ -46,6 +46,11 @@ Publish-Subscribe (Pub/Sub) is the fundamental communication pattern in Core NAT
 1. **Examples:** [NATS by Example - Publish-Subscribe](https://natsbyexample.com/examples/messaging/pub-sub/cli) (Use the language selector to switch to Java when available)
 2. **API References:** [Connection.publish Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#publish-java.lang.String-byte:A-) and [Dispatcher.subscribe Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Dispatcher.html#subscribe-java.lang.String-)
 3. **Code Files References:** [nats.java Examples Directory](https://github.com/nats-io/nats.java/tree/main/examples) and [nats.java Basic Usage](https://github.com/nats-io/nats.java#basic-usage)
+
+#### Python
+1. **Examples:** [NATS by Example - Publish-Subscribe](https://natsbyexample.com/examples/messaging/pub-sub/python)
+2. **API References:** [Client.publish API](https://nats-io.github.io/nats.py/modules.html#nats.aio.client.Client.publish) and [Client.subscribe API](https://nats-io.github.io/nats.py/modules.html#nats.aio.client.Client.subscribe)
+3. **Code Files References:** [nats.py Getting Started](https://github.com/nats-io/nats.py#getting-started) and [nats.py Examples Directory](https://github.com/nats-io/nats.py/tree/main/examples)
 
 ---
 
@@ -61,7 +66,7 @@ Under the hood, NATS accomplishes request-reply over standard pub/sub:
 
 **Official reference:** [Core NATS - Request-Reply](https://docs.nats.io/learn/core-nats/request-reply)
 
-### Reference Links (Go & Java Standards)
+### Reference Links (Go, Java & Python Standards)
 
 #### Go
 1. **Examples:** [NATS by Example - Request-Reply](https://natsbyexample.com/examples/messaging/request-reply/go) (Use the language selector to switch to Go)
@@ -72,6 +77,11 @@ Under the hood, NATS accomplishes request-reply over standard pub/sub:
 1. **Examples:** [NATS by Example - Request-Reply](https://natsbyexample.com/examples/messaging/request-reply/java)
 2. **API References:** [Connection.request Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#request-java.lang.String-byte:A-java.time.Duration-) and [Message.getReplyTo Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Message.html#getReplyTo--)
 3. **Code Files References:** [nats.java Request](https://github.com/nats-io/nats.java/blob/main/examples/src/main/java/io/nats/examples/NatsReq.java) and [nats.Java Replay](https://github.com/nats-io/nats.java/blob/main/examples/src/main/java/io/nats/examples/NatsReply.java)
+
+#### Python
+1. **Examples:** [NATS by Example - Request-Reply](https://natsbyexample.com/examples/messaging/request-reply/python)
+2. **API References:** [Client.request API](https://nats-io.github.io/nats.py/modules.html#nats.aio.client.Client.request) and [Msg.respond API](https://nats-io.github.io/nats.py/modules.html#nats.aio.msg.Msg.respond)
+3. **Code Files References:** [nats.py Request-Reply Usage](https://github.com/nats-io/nats.py#getting-started) and [nats.py Examples Directory](https://github.com/nats-io/nats.py/tree/main/examples)
 
 ### 3.1 Scatter-Gather
 
@@ -97,7 +107,7 @@ Queue Groups provide automatic, broker-managed load balancing across a pool of s
 
 **Official reference:** [Core NATS - Queue Groups](https://docs.nats.io/learn/core-nats/queue-groups)
 
-### Reference Links (Go & Java Standards)
+### Reference Links (Go, Java & Python Standards)
 
 #### Go
 1. **Examples:** [NATS by Example](https://natsbyexample.com/) (Core messaging patterns)
@@ -109,6 +119,11 @@ Queue Groups provide automatic, broker-managed load balancing across a pool of s
 2. **API References:** [Dispatcher.subscribe (Queue Group) Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Dispatcher.html#subscribe-java.lang.String-java.lang.String-)
 3. **Code Files References:** [nats.java Basic Usage](https://github.com/nats-io/nats.java/blob/main/examples/src/main/java/io/nats/examples/NatsSubQueue.java)
 
+#### Python
+1. **Examples:** [NATS by Example](https://natsbyexample.com/) (Core messaging patterns)
+2. **API References:** [Client.subscribe (Queue Group) API](https://nats-io.github.io/nats.py/modules.html#nats.aio.client.Client.subscribe)
+3. **Code Files References:** [nats.py Queue Group Usage](https://github.com/nats-io/nats.py#getting-started) and [nats.py Examples Directory](https://github.com/nats-io/nats.py/tree/main/examples)
+
 ---
 
 ## 5. Best Practices
@@ -116,10 +131,10 @@ Queue Groups provide automatic, broker-managed load balancing across a pool of s
 | Suggestion | Reason |
 |---|---|
 | Use JetStream instead of Core NATS whenever delivery guarantees, persistence, or message replay are required. | Core NATS operates on an at-most-once (fire-and-forget) delivery model; messages published while a subscriber is offline or disconnected are permanently discarded. |
-| Keep subscription callbacks lightweight and offload heavy processing to internal worker pools or bounded worker queues (`chan` in Go, `BlockingQueue` in Java). | Executing long-running I/O or database calls inside subscription callbacks causes client-side buffers to overflow, triggering `ErrSlowConsumer` and dropping incoming messages. |
+| Keep subscription callbacks lightweight and offload heavy processing to internal worker pools or bounded worker queues (`chan` in Go, `BlockingQueue` in Java, `asyncio.Queue` in Python). | Executing long-running I/O or database calls inside subscription callbacks causes client-side buffers to overflow, triggering `ErrSlowConsumer` and dropping incoming messages. |
 | Design request-reply service handlers to be strictly idempotent. | A client-side timeout on `nc.Request` indicates only that a response was not received within the window; the replier may still be processing the message, so non-idempotent retries cause duplicate execution. |
 | Handle `ErrNoResponders` errors on request operations. | Enables clients to fail fast when no service is listening on the request subject, avoiding blocking until the full timeout duration expires. |
-| Reuse a single, long-lived `nats.Conn` across all application routines and threads. | NATS client connections are thread-safe and multiplex all operations over a single TCP socket; creating connections per request or thread causes resource exhaustion and socket churn. |
+| Reuse a single, long-lived `nats.Conn` (`Client` in Python `nats-py`) across application routines/tasks. | NATS client connections are thread-safe and multiplex all operations over a single TCP socket; creating connections per request causes resource exhaustion and socket churn. In Python `asyncio`, share connection across coroutines on the same loop or dispatch thread-safely via `asyncio.run_coroutine_threadsafe`. |
 | Ensure all worker instances in a load-balanced tier register with the identical queue group name. | Any subscriber listening to the subject without specifying the queue group receives an independent copy of every message, leading to unintended duplicate execution. |
 | Always use connection and subscription draining (`nc.Drain()`) during controlled application shutdown (such as on SIGTERM). | Abruptly calling `nc.Close()` terminates connections immediately, dropping in-flight messages and buffered outbound publishes that draining safely flushes. |
 

@@ -2,6 +2,36 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-16] Update Client SDK Prerequisites to Latest Stable Versions
+
+- **Change:** Updated [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md) Section 4 with latest verified stable releases: Go client `nats.go` pinned to `v1.54.0` (`go get github.com/nats-io/nats.go@v1.54.0`), Java client `jnats` bumped from `2.20.0` to `2.26.4` across Maven and Gradle configurations, and Python client `nats-py` pinned to `2.16.0` (`pip install nats-py==2.16.0`) with NKeys authentication extra command. Added official GitHub/PyPI release references for each SDK.
+- **Reason:** Ensure developers and platform evaluators reference active, verified stable client SDK versions matching current enterprise production releases.
+- **Affected Area:** [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md)
+
+
+## [2026-10-16] Add NATS Python SDK Standards to JetStream and Client Guides
+
+- **Change:** Extended Python SDK (`nats-py`) reference standards across documentation:
+  - Updated [docs/nats-jetstream-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-jetstream-guide.md) to add Python references for JetStream context initialization (`Client.jetstream`, `JetStreamContext`), publishing and acknowledgment (`JetStreamContext.publish`, `PubAck`, header-based deduplication/concurrency), and pull/push consumers (`pull_subscribe`, `PullSubscription.fetch`, `ConsumerConfig`, `Msg.ack`/`nak`/`term`/`in_progress`, `Msg.metadata`).
+  - Updated [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md) to add Python SDK prerequisites (Python 3.8+, `pip install nats-py`), expanded the SDK reference lookup table with Python links for connect/status/TLS/draining/JetStream, and added Python JetStream references.
+- **Reason:** Provide comprehensive, validated Python SDK reference standards across all core, client connection, and JetStream evaluation guides.
+- **Affected Area:** [docs/nats-jetstream-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-jetstream-guide.md), [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md)
+
+
+## [2026-10-16] Add NATS Python SDK Standards and References to Core Guide
+
+- **Change:** Updated [docs/nats-core-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-core-guide.md) to incorporate official NATS Python SDK (`nats-py`) reference standards alongside Go and Java: added verified Python examples (`natsbyexample.com`), Sphinx API documentation links (`Client.publish`, `Client.subscribe`, `Client.request`, `Msg.respond`), and repository code references across Publish-Subscribe, Request-Reply, and Queue Groups sections. Updated the Best Practices table to include Python `asyncio.Queue` worker dispatching and `asyncio.run_coroutine_threadsafe` cross-thread patterns.
+- **Reason:** Provide accurate, verified Python SDK documentation standards for Core NATS evaluation and enterprise reference adoption.
+- **Affected Area:** [docs/nats-core-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-core-guide.md)
+
+
+## [2026-10-16] Implement JetStream Stream Management REST APIs
+
+- **Change:** Implemented REST API endpoints for JetStream stream lifecycle management: created [services/api/stream_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/stream_handler.go) defining `POST /api/v1/streams` (`CreateStreamHandler`) and `DELETE /api/v1/streams` (`DeleteStreamHandler`); added `CreateStream` and `DeleteStream` methods to [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go) delegating to [services/messaging/stream.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/stream.go); added `DeleteStreamRequest` in [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go); added `limits` retention case and default in [services/messaging/util.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/util.go); wired routes in [services/cmd/order-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/order-service/main.go); added "Streams" folder to [nats_platform.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_platform.postman_collection.json); and updated [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md).
+- **Reason:** Enable programmatic HTTP REST creation and deletion of JetStream persistent streams alongside existing consumer management and publishing APIs.
+- **Affected Area:** [services/api/stream_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/stream_handler.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go), [services/messaging/util.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/util.go), [services/cmd/order-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/order-service/main.go), [nats_platform.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_platform.postman_collection.json), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md)
+
+
 ## [2026-10-15] Consolidate Consumer Deletion to JSON Body Only
 
 - **Change:** Removed route `DELETE /api/v1/consumers/:stream/:consumer` and path-parameter parsing from `DeleteConsumerHandler` in [services/api/consumer_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/consumer_handler.go), standardizing on `DELETE /api/v1/consumers` with JSON request body (`streamName`, `consumerName`). Updated [nats_platform.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_platform.postman_collection.json) and [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) to reflect the unified deletion endpoint.

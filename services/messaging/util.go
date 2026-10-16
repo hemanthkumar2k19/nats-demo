@@ -9,6 +9,41 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+func ResolveStorageType(s string) jetstream.StorageType {
+	switch s {
+	case "memory":
+		return jetstream.MemoryStorage
+	case "file":
+		return jetstream.FileStorage
+	default:
+		return jetstream.FileStorage
+	}
+}
+
+func ResolveDiscardPolicy(s string) jetstream.DiscardPolicy {
+	switch s {
+	case "old":
+		return jetstream.DiscardOld
+	case "new":
+		return jetstream.DiscardNew
+	default:
+		return jetstream.DiscardOld
+	}
+}
+
+func ResolveRetentionPolicy(s string) jetstream.RetentionPolicy {
+	switch s {
+	case "interest":
+		return jetstream.InterestPolicy
+	case "workqueue":
+		return jetstream.WorkQueuePolicy
+	case "limits":
+		return jetstream.LimitsPolicy
+	default:
+		return jetstream.LimitsPolicy
+	}
+}
+
 func ResolveAckPolicy(policy string) jetstream.AckPolicy {
 	switch policy {
 	case "explicit":

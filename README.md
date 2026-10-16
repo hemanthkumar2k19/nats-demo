@@ -21,12 +21,13 @@ This repository is a production-like **NATS evaluation platform and reference im
 +-----------+-----------+  +-----------------------+  +-----------------------+
             |
     +-------+-------+
-    |               |
-    v               v
-Publish (JS)    Consumers (CRUD)
+    |       |       |
+    v       v       v
+ Streams Consumers Publish
+ (CRUD)   (CRUD)    (JS)
 ```
 
-- **Order Service (`services/cmd/order-service`)**: Exposed on port `:8080`. Provides REST APIs for publishing messages to JetStream and managing consumer lifecycles.
+- **Order Service (`services/cmd/order-service`)**: Exposed on port `:8080`. Provides REST APIs for publishing messages to JetStream and managing stream and consumer lifecycles.
 - **Payment Worker (`services/cmd/payment-worker`)**: Background worker that pulls and processes payment events from the `PAYMENTS` stream (`payments-pull` consumer).
 - **Notification Worker (`services/cmd/notification-worker`)**: Background worker that consumes payment notifications from the `PAYMENTS` stream (`payments-push` consumer).
 
@@ -34,8 +35,12 @@ Publish (JS)    Consumers (CRUD)
 
 ## 2. JetStream Stream Setup
 
-Before running the workers or publishing messages, ensure the target stream exists. Create the `PAYMENTS` stream using the NATS CLI:
+Before running the workers or publishing messages, ensure the target stream exists. You can create the stream via the REST API or using the NATS CLI:
 
+**Option A: Via REST API**
+`POST http://localhost:8080/api/v1/streams` with body `{"name": "PAYMENTS", "subjects": ["payments.>"], "storage": "file"}`
+
+**Option B: Via NATS CLI**
 ```bash
 nats stream add PAYMENTS --subjects "payments.>" --storage file --default
 ```
@@ -53,7 +58,7 @@ nats stream add PAYMENTS --subjects "payments.>" --storage file --default
 nats-server -js
 ```
 
-### 2. Start Order Service (API Publisher & Consumer Management)
+### 2. Start Order Service (API Publisher, Stream & Consumer Management)
 ```bash
 go run ./services/cmd/order-service
 ```
@@ -79,6 +84,8 @@ All endpoints, pre-configured variables, and sample payloads can be imported dir
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `POST` | `/api/v1/publish/js` | Publishes a message to JetStream synchronously and returns `PubAck`. |
+| `POST` | `/api/v1/streams` | Creates or retrieves a JetStream stream. |
+| `DELETE` | `/api/v1/streams` | Deletes a JetStream stream using a JSON body (`name`). |
 | `POST` | `/api/v1/consumers` | Creates or retrieves a JetStream consumer (pull or push). |
 | `DELETE` | `/api/v1/consumers` | Deletes a JetStream consumer using a JSON body (`streamName`, `consumerName`). |
 
@@ -105,16 +112,18 @@ Logging is managed by **Zerolog** (`github.com/rs/zerolog`).
 `-- services/                           # Go Application Backend
     |-- api/                            # Gin REST Handlers
     |   |-- consumer_handler.go         # Consumer management endpoints
-    |   `-- publisher_handler.go        # JetStream publish endpoint
+    |   |-- publisher_handler.go        # JetStream publish endpoint
+    |   `-- stream_handler.go           # Stream management endpoints
     |-- cmd/                            # Application Entrypoints (3 Services)
     |   |-- notification-worker/main.go # Push Consumer Worker
-    |   |-- order-service/main.go       # REST API Publisher & Consumer Manager (:8080)
+    |   |-- order-service/main.go       # REST API Publisher, Stream & Consumer Manager (:8080)
     |   `-- payment-worker/main.go      # Pull Consumer Worker
     |-- config/                         # Environment Configuration
     |-- logger/                         # Zerolog Console/JSON Formatting
     |-- messaging/                      # NATS JetStream Drivers & Utilities
     |   |-- consumer.go                 # Consumer create/delete logic
     |   |-- js.go                       # JetStream publish logic
+    |   |-- stream.go                   # Stream create/delete logic
     |   `-- util.go                     # Policy resolvers and handlers
     |-- model/                          # Shared Models and DTOs
     |-- natsclient/                     # Connection Lifecycle & Recovery

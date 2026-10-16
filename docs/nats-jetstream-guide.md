@@ -34,6 +34,9 @@ JetStream is not required for:
 1. **JetStream Interface:** [JetStream API](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/JetStream.html)
 2. **Context Initialization:** [Connection.jetStream() API](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Connection.html#jetStream())
 
+#### Python
+1. **JetStream Context API:** [Client.jetstream API](https://nats-io.github.io/nats.py/modules.html#nats.aio.client.Client.jetstream)
+
 ---
 
 ## 2. Publishing
@@ -99,6 +102,12 @@ For high-throughput applications, data integrity guarantees, and fine-grained li
 4. **Publish Options Builder (Concurrency & Deduplication via messageId):** [PublishOptions.Builder API](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/PublishOptions.Builder.html)
 5. **Message Interface & Headers (TTL & Metadata):** [Message API](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Message.html#getHeaders()) and [Headers Model Source](https://github.com/nats-io/nats.java/blob/main/src/main/java/io/nats/client/impl/Headers.java)
 6. **Publish Acknowledgment Model:** [PublishAck Model](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/api/PublishAck.html)
+
+#### Python
+1. **Publishing Method:** [JetStreamContext.publish API](https://nats-io.github.io/nats.py/modules.html#nats.js.client.JetStreamContext.publish)
+2. **Publish Acknowledgment Model:** [PubAck Model](https://nats-io.github.io/nats.py/modules.html#nats.js.api.PubAck)
+3. **Message Headers & Deduplication:** [Msg.headers API](https://nats-io.github.io/nats.py/modules.html#nats.aio.msg.Msg) and [JetStream Headers Reference](https://docs.nats.io/reference/jetstream/api/headers) (supplying `Nats-Msg-Id` in the headers dictionary)
+4. **Asynchronous Pipelined Publishing:** [JetStream Publishing in nats.py](https://github.com/nats-io/nats.py#jetstream) using coroutines with [asyncio.gather](https://docs.python.org/3/library/asyncio-task.html#asyncio.gather)
 
 ---
 
@@ -229,3 +238,10 @@ Scaling consumer throughput in JetStream is achieved by attaching multiple concu
 6. **Ordered Consumer:** [StreamContext.createOrderedConsumer API](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/StreamContext.html#createOrderedConsumer(io.nats.client.api.OrderedConsumerConfiguration)), [OrderedConsumerContext API](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/OrderedConsumerContext.html), and [OrderedConsumerConfiguration Model](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/api/OrderedConsumerConfiguration.html)
 7. **Message Interface (Ack Signals):** [Message API](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/Message.html)
 8. **Message Metadata Model:** [NatsJetStreamMetaData Model](https://javadoc.io/doc/io.nats/jnats/latest/io/nats/client/impl/NatsJetStreamMetaData.html)
+
+#### Python
+1. **Pull Subscription (Fetch & Batching):** [JetStreamContext.pull_subscribe API](https://nats-io.github.io/nats.py/modules.html#nats.js.client.JetStreamContext.pull_subscribe) and [PullSubscription.fetch API](https://nats-io.github.io/nats.py/modules.html#nats.js.client.JetStreamContext.PullSubscription.fetch)
+2. **Push Subscription:** [JetStreamContext.subscribe API](https://nats-io.github.io/nats.py/modules.html#nats.js.client.JetStreamContext.subscribe)
+3. **Consumer Configuration Model (Filters, Deliver & Ack Policies):** [ConsumerConfig Model](https://nats-io.github.io/nats.py/modules.html#nats.js.api.ConsumerConfig)
+4. **Message Interface & Ack Signals:** [Msg.ack](https://nats-io.github.io/nats.py/modules.html#nats.aio.msg.Msg.ack), [Msg.nak](https://nats-io.github.io/nats.py/modules.html#nats.aio.msg.Msg.nak), [Msg.term](https://nats-io.github.io/nats.py/modules.html#nats.aio.msg.Msg.term), and [Msg.in_progress](https://nats-io.github.io/nats.py/modules.html#nats.aio.msg.Msg.in_progress)
+5. **Message Metadata Property:** [Msg.metadata API](https://nats-io.github.io/nats.py/modules.html#nats.aio.msg.Msg.metadata)
