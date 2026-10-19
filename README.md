@@ -117,6 +117,7 @@ For full evaluation notes, graceful/ungraceful crash results, and delivery seman
 |-- nats_platform.postman_collection.json # Ready-to-import Postman Collection v2.1.0
 |-- docs/                               # Developer Guides and Changelog
 |   |-- CHANGELOG.md
+|   |-- nats-delivery-semantics.md      # Delivery Semantics Guide (At-Most-Once vs At-Least-Once)
 |   |-- nats-publisher-guide.md
 |   `-- nats-consumer-guide.md
 `-- services/                           # Go Application Backend
