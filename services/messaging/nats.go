@@ -16,6 +16,11 @@ func PublishMsg(nc *nats.Conn, msg *model.Message) error {
 		Data:    []byte(msg.Data),
 	}
 
+	// Check for Reply Subject
+	if msg.Reply != "" {
+		natsMsg.Reply = msg.Reply
+	}
+
 	err := nc.PublishMsg(natsMsg)
 	if err != nil {
 		log.Error().Err(err).Str("subject", msg.Subject).Msg("Failed to publish message on NATS")
@@ -27,34 +32,6 @@ func PublishMsg(nc *nats.Conn, msg *model.Message) error {
 		Interface("headers", msg.Headers).
 		Str("data", msg.Data).
 		Msg("Successfully published message on NATS")
-	return nil
-}
-
-// Publish with Reply Subject
-func PublishMsgWithReply(nc *nats.Conn, msg *model.Message) error {
-	natsMsg := &nats.Msg{
-		Subject: msg.Subject,
-		Reply:   msg.Reply,
-		Header:  toNatsHeader(msg.Headers),
-		Data:    []byte(msg.Data),
-	}
-
-	err := nc.PublishMsg(natsMsg)
-	if err != nil {
-		log.Error().
-			Err(err).
-			Str("subject", msg.Subject).
-			Str("reply", msg.Reply).
-			Msg("Failed to publish message with reply on NATS")
-		return fmt.Errorf("error while publishing on NATS: %w", err)
-	}
-
-	log.Info().
-		Str("subject", msg.Subject).
-		Str("reply", msg.Reply).
-		Interface("headers", msg.Headers).
-		Str("data", msg.Data).
-		Msg("Successfully published message with reply subject on NATS")
 	return nil
 }
 

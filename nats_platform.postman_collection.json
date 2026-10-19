@@ -88,6 +88,83 @@
               "body": "{\n  \"stream\": \"PAYMENTS\",\n  \"sequence\": 1,\n  \"domain\": \"\",\n  \"duplicate\": false\n}"
             }
           ]
+        },
+        {
+          "name": "Publish to Core NATS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"delivery.atmost-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1002\\\", \\\"status\\\": \\\"dispatched\\\"}\",\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/publish",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "publish"
+              ]
+            },
+            "description": "Publishes a message to Core NATS (at-most-once fire-and-forget)."
+          },
+          "response": [
+            {
+              "name": "200 OK - Successful Publish",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"subject\": \"delivery.atmost-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1002\\\", \\\"status\\\": \\\"dispatched\\\"}\",\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/publish",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "publish"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"status\": \"published\",\n  \"subject\": \"delivery.atmost-once\"\n}"
+            }
+          ]
         }
       ]
     },

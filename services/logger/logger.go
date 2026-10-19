@@ -24,3 +24,15 @@ func Init(jsonFormat bool) {
 		}).With().Timestamp().Logger()
 	}
 }
+
+// Countdown logs a second-by-second countdown for demonstrating in-flight execution and crash recovery.
+func Countdown(seconds int, label string) {
+	for i := seconds; i > 0; i-- {
+		log.Info().
+			Str("label", label).
+			Int("remaining_sec", i).
+			Msgf("[%s] %d seconds remaining before ACK (crash now to test unacked redelivery)", label, i)
+		time.Sleep(1 * time.Second)
+	}
+}
+

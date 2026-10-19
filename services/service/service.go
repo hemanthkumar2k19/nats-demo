@@ -29,6 +29,11 @@ func NewService(nc *nats.Conn) *Service {
 	}
 }
 
+// Publish publishes a message to Core NATS.
+func (s *Service) Publish(ctx context.Context, msg *model.Message) error {
+	return messaging.PublishMsg(s.nc, msg)
+}
+
 // JSPublish publishes a message to JetStream synchronously.
 func (s *Service) JSPublish(ctx context.Context, msg *model.Message) (*jetstream.PubAck, error) {
 	if s.js == nil {

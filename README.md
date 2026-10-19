@@ -83,6 +83,7 @@ All endpoints, pre-configured variables, and sample payloads can be imported dir
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
+| `POST` | `/api/v1/publish` | Publishes a message to Core NATS (at-most-once fire-and-forget). |
 | `POST` | `/api/v1/publish/js` | Publishes a message to JetStream synchronously and returns `PubAck`. |
 | `POST` | `/api/v1/streams` | Creates or retrieves a JetStream stream. |
 | `DELETE` | `/api/v1/streams` | Deletes a JetStream stream using a JSON body (`name`). |
@@ -93,9 +94,18 @@ All endpoints, pre-configured variables, and sample payloads can be imported dir
 
 ## 5. Logging & Observability
 
+### Application Logging
 Logging is managed by **Zerolog** (`github.com/rs/zerolog`).
 - Development: Human-friendly colorful console output (`logger.Init(false)`).
 - Production: Formatted structured JSON output (`logger.Init(true)`).
+
+### JetStream System Advisories (Poison Messages & Max Deliveries)
+Monitor real-time JetStream system advisories when consumers exhaust retries:
+```bash
+nats sub '$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>'
+```
+
+For full evaluation notes, graceful/ungraceful crash results, and delivery semantic tests, see [services/report.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/report.md).
 
 ---
 
@@ -110,16 +120,18 @@ Logging is managed by **Zerolog** (`github.com/rs/zerolog`).
 |   |-- nats-publisher-guide.md
 |   `-- nats-consumer-guide.md
 `-- services/                           # Go Application Backend
+    |-- report.md                       # Delivery Semantics & Failure Handling Report
     |-- api/                            # Gin REST Handlers
     |   |-- consumer_handler.go         # Consumer management endpoints
-    |   |-- publisher_handler.go        # JetStream publish endpoint
+    |   |-- publisher_handler.go        # Publish endpoints (Core & JetStream)
     |   `-- stream_handler.go           # Stream management endpoints
-    |-- cmd/                            # Application Entrypoints (3 Services)
+    |-- cmd/                            # Application Entrypoints
     |   |-- notification-worker/main.go # Push Consumer Worker
     |   |-- order-service/main.go       # REST API Publisher, Stream & Consumer Manager (:8080)
-    |   `-- payment-worker/main.go      # Pull Consumer Worker
+    |   |-- payment-worker/main.go      # Pull Consumer Worker
+    |   `-- processing-service/main.go  # Delivery Semantics & Failure Testing Worker
     |-- config/                         # Environment Configuration
-    |-- logger/                         # Zerolog Console/JSON Formatting
+    |-- logger/                         # Zerolog Console/JSON Formatting & Countdown
     |-- messaging/                      # NATS JetStream Drivers & Utilities
     |   |-- consumer.go                 # Consumer create/delete logic
     |   |-- js.go                       # JetStream publish logic

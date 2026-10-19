@@ -2,6 +2,55 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-19] Restructure NATS Local Setup Guide
+
+- **Change:** Restructured [docs/nats-local-setup-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-local-setup-guide.md) to streamline developer onboarding: consolidated all prerequisites into a single lookup table with an explicit note that only a subset is required per workflow; added an upfront repository file structure breakdown for `deploy/`; moved the Single-Node setup to the top as the primary 80% developer workflow with low-level execution options (Container vs Native Binary); separated the 3-Node Multi-Node Cluster setup into its own dedicated advanced section at the end (20% use case for replication/failover); updated SDK connection examples to include Python alongside Go and Java; and aligned layout to avoid nested tab structures.
+- **Reason:** Improve document readability, prevent tool prerequisite confusion, and prioritize the single-node setup used by the vast majority of application developers.
+- **Affected Area:** [docs/nats-local-setup-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-local-setup-guide.md)
+
+
+## [2026-10-19] Create Delivery Semantics & Failure Handling Evaluation Report
+
+- **Change:** Authored compact evaluation report in [services/report.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/report.md) consolidating test details directly into a self-contained Test Summary Matrix covering 7 delivery and failure scenarios (At-Most-Once, At-Least-Once happy path, single Ctrl+C graceful shutdown, double Ctrl+C crash and redelivery, prefetching batching control, poison message abandonment after `MaxDeliver: 5`, and system advisory capture). Followed by Section 2 summarizing core architectural observations (persistence tap, subject isolation, in-flight tracking, Raft consistency, DLQ strategy). Updated [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) with system advisory subscription command and report link.
+- **Reason:** Keep evaluation report concise, easily readable, and presentation-ready without redundant sub-sections.
+- **Affected Area:** [services/report.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/report.md), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md)
+
+
+## [2026-10-19] Support Double Ctrl+C Force Exit in Processing Service
+
+- **Change:** Updated signal handling in [services/cmd/processing-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/processing-service/main.go): increased `sigChan` buffer to 2 and added a background listener that intercepts a second `Ctrl+C` / `SIGINT` to trigger immediate ungraceful exit via `os.Exit(1)` without waiting for in-flight handlers or sending JetStream message acknowledgments.
+- **Reason:** Enable effortless terminal-driven crash testing during live demonstrations to prove JetStream unacknowledged message redelivery without relying on obscure terminal keybindings.
+- **Affected Area:** [services/cmd/processing-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/processing-service/main.go)
+
+
+## [2026-10-19] Add Countdown Logger Utility for Live Demo Crash Testing
+
+- **Change:** Added `Countdown(seconds int, label string)` function in [services/logger/logger.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/logger/logger.go) providing second-by-second countdown logs; updated [services/cmd/processing-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/processing-service/main.go) to use `logger.Countdown(5, "Processing Message")` before sending `msg.Ack()`.
+- **Reason:** Provide clear visual terminal telemetry during live presentations indicating the exact remaining window to abort/crash the process and verify JetStream unacknowledged message redelivery.
+- **Affected Area:** [services/logger/logger.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/logger/logger.go), [services/cmd/processing-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/processing-service/main.go)
+
+
+## [2026-10-19] Modularize Processing Service with Independent Delivery Processors
+
+- **Change:** Refactored [services/cmd/processing-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/processing-service/main.go): split monolithic `StartProcessor` into two distinct functions (`startAtMostOnce` for Core NATS fire-and-forget on `delivery.atmost-once`, and `startAtLeastOnce` for JetStream pull consumer on `delivery.atleast-once`); initialized each processor independently in `main()` with safe rollback cleanup on startup failures; and ensured `cleanup` cleanly stops the JetStream fetch loop (`cc.Stop()`), drains the subscription (`sub.Drain()`), waits on in-flight tasks (`wg.Wait()`), and drains the connection (`nc.Drain()`).
+- **Reason:** Eliminate cross-coupling and subscription orphaning during startup, enforce single responsibility across delivery semantic patterns, and establish modular foundations for future delivery guarantees.
+- **Affected Area:** [services/cmd/processing-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/processing-service/main.go)
+
+
+## [2026-10-19] Implement Core NATS Publish REST API
+
+- **Change:** Added REST API endpoint `POST /api/v1/publish` in [services/api/publisher_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/publisher_handler.go) (`PublishHandler`) calling `Publish` on [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go) and delegating to [services/messaging/nats.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/nats.go) (`PublishMsg`). Returns `model.PublishResponse` (`{"status": "published", "subject": "..."}`). Added `Publish to Core NATS` request to [nats_platform.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_platform.postman_collection.json) and updated [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md).
+- **Reason:** Provide parity for Core NATS publishing over REST alongside JetStream publishing.
+- **Affected Area:** [services/api/publisher_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/publisher_handler.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [nats_platform.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_platform.postman_collection.json), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md)
+
+
+## [2026-10-19] Implement Graceful Subscription Cleanup in Processing Service
+
+- **Change:** Refactored [services/cmd/processing-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/processing-service/main.go): updated `StartProcessor` to return `(*nats.Subscription, error)` and tracked message callbacks using `sync.WaitGroup`; updated `cleanup` to accept `*nats.Subscription` and execute `sub.Drain()` before waiting on in-flight handlers and draining the NATS connection; corrected `ClientName` constant to `"processing-service"`; and removed unused `jetstream` import.
+- **Reason:** Provide proper graceful lifecycle and shutdown for Core NATS subscriptions, ensuring in-flight messages finish processing without loss when the service terminates.
+- **Affected Area:** [services/cmd/processing-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/processing-service/main.go)
+
+
 ## [2026-10-16] Update Client SDK Prerequisites to Latest Stable Versions
 
 - **Change:** Updated [docs/nats-client-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-guide.md) Section 4 with latest verified stable releases: Go client `nats.go` pinned to `v1.54.0` (`go get github.com/nats-io/nats.go@v1.54.0`), Java client `jnats` bumped from `2.20.0` to `2.26.4` across Maven and Gradle configurations, and Python client `nats-py` pinned to `2.16.0` (`pip install nats-py==2.16.0`) with NKeys authentication extra command. Added official GitHub/PyPI release references for each SDK.

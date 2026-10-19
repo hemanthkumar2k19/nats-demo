@@ -20,8 +20,32 @@ func NewPublisherHandler(pubService *service.Service) *PublisherHandler {
 	}
 }
 
-// PublishHandler handles HTTP POST /api/v1/publish and /api/v1/publish/js.
+// PublishHandler handles HTTP POST /api/v1/publish for Core NATS.
 func (h *PublisherHandler) PublishHandler(c *gin.Context) {
+	var msg model.Message
+	if err := c.ShouldBindJSON(&msg); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON body: " + err.Error()})
+		return
+	}
+
+	if msg.Subject == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Field 'subject' is required"})
+		return
+	}
+
+	if err := h.pubService.Publish(c.Request.Context(), &msg); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, model.PublishResponse{
+		Status:  "published",
+		Subject: msg.Subject,
+	})
+}
+
+// JSPublishHandler handles HTTP POST /api/v1/publish/js for JetStream.
+func (h *PublisherHandler) JSPublishHandler(c *gin.Context) {
 	var msg model.Message
 	if err := c.ShouldBindJSON(&msg); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON body: " + err.Error()})
@@ -44,5 +68,6 @@ func (h *PublisherHandler) PublishHandler(c *gin.Context) {
 
 // RegisterRoutes registers publisher API routes on the Gin router group.
 func (h *PublisherHandler) RegisterRoutes(rg *gin.RouterGroup) {
-	rg.POST("/publish/js", h.PublishHandler)
+	rg.POST("/publish", h.PublishHandler)
+	rg.POST("/publish/js", h.JSPublishHandler)
 }

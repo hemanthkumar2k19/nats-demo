@@ -97,3 +97,12 @@
   - Intereset: == Stream Replicas
   - WorkQueue: == Stream Replicas
 
+
+* Subject to Stream Mappping
+- If Subject Test is added to a Stream then what ever publish you use the message is stored in stream.
+- Only difference in publishing would be the Publish Ack received.
+
+* Add Rule: Keep strict Isolation Between Persistant Subjects and Non Persistant Subjects in Subject Design Guide
+
+
+
