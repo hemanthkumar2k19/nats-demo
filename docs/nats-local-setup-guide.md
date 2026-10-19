@@ -3,7 +3,7 @@
 Developer guide for running and testing NATS locally with JetStream persistence enabled.
 
 This guide is structured to prioritize day-to-day development:
-1. **Prerequisites** -- Unified tool requirements.
+1. **Prerequisites & NATS Tools** -- Foundational runtimes and NATS components.
 2. **Repository File Structure** -- Common configuration and deployment layout.
 3. **Single-Node Setup (Primary Dev Workflow)** -- Recommended for 80% of application development and integration testing.
 4. **Multi-Node Cluster Setup (3-Node Replication & Failover)** -- Advanced setup for evaluating JetStream R3 replication, leader election, and high availability.
@@ -12,22 +12,40 @@ This guide is structured to prioritize day-to-day development:
 
 ---
 
-## 1. Prerequisites
+## 1. Prerequisites & NATS Tools
 
-The table below lists all tools used across the various setup and testing workflows:
+To keep setup explicit and easy to navigate, requirements are separated into **System Prerequisites & Runtimes** (foundational tools on your machine) and **NATS Components & Utilities** (broker binaries, container images, and CLI tools).
 
-| Tool | Purpose | Installation |
-|------|---------|--------------|
-| Podman or Docker | Container engine for isolated container execution | [podman.io](https://podman.io/getting-started/installation) or [docker.com](https://docs.docker.com/get-docker/) |
-| podman-compose or docker-compose | Multi-container compose orchestration (optional) | `pip install podman-compose` or `brew install podman-compose` / `docker compose` |
-| NATS Server (`nats-server`) | Native local NATS server binary (optional) | `brew install nats-server` |
-| NATS CLI (`nats`) | Management, inspection, and messaging CLI (optional) | `brew tap nats-io/nats-tools && brew install nats-io/nats-tools/nats` |
-| Application SDK Client | Application interaction with NATS | Go (`nats.go`), Java (`jnats`), Python (`nats-py`), etc. |
+### 1.1 System Prerequisites & Runtimes
+
+| Prerequisite | Status | Purpose | Installation / Check |
+|--------------|--------|---------|----------------------|
+| **Podman** | Required (Container Workflow) | OCI container runtime for running isolated NATS instances | [podman.io](https://podman.io/getting-started/installation) (`podman --version`) |
+| **Homebrew (`brew`)** | Required (Native Binary Workflow) | Package manager to install native NATS binaries on macOS / Linux | [brew.sh](https://brew.sh/) (`brew --version`) |
+| **Application Runtimes** (Go / Java / Python) | Optional (Application Testing) | Language runtimes needed if building or running application code | Go 1.22+, Java 17+, or Python 3.8+ |
+
+### 1.2 NATS Components & Utilities
+
+| Component / Tool | Status | Purpose | Installation / Source |
+|------------------|--------|---------|-----------------------|
+| **NATS Container Image (`nats:latest`)** | Required (Container Workflow) | Official NATS server container image | `podman pull nats:latest` |
+| **podman-compose** | Optional (Container Workflow) | Multi-container compose runner (alternative to raw `podman run`) | `pip install podman-compose` or `brew install podman-compose` |
+| **NATS Server (`nats-server`)** | Required (Native Binary Workflow) | Native local NATS server binary | `brew install nats-server` |
+| **NATS CLI (`nats`)** | Optional (CLI Utilities) | Command-line tool for context management, monitoring, and pub/sub verification | `brew tap nats-io/nats-tools && brew install nats-io/nats-tools/nats` |
+| **Application Client SDKs** | Optional (Application Testing) | Official language libraries for connecting from application code | Go (`nats.go`), Java (`jnats`), Python (`nats-py`) |
 
 > [!NOTE]
-> You do not need to install all of these tools. You only need a subset based on your preferred execution workflow below:
-> - **Container Workflow:** Requires only Podman (or Docker) and your Application SDK. Native NATS binaries are not required.
-> - **Local Binary Workflow:** Requires only `nats-server` (and optionally `nats` CLI) installed locally. No container engine needed.
+> **Which tools do you actually need?**
+> - **If using the Container Workflow (Podman):**
+>   - System Prerequisite: **Podman**
+>   - NATS Component: **`nats:latest` container image** (and optionally `podman-compose`)
+>   - *Homebrew, native `nats-server`, and the `nats` CLI are not required.*
+> - **If using the Native Binary Workflow (Local Process):**
+>   - System Prerequisite: **Homebrew**
+>   - NATS Component: **`nats-server`** (and optionally `nats` CLI)
+>   - *Podman and container tools are not required.*
+> - **If developing applications:**
+>   - Only install the specific runtime (Go, Java, or Python) and SDK required for your service.
 
 ---
 
@@ -63,11 +81,11 @@ A single NATS instance with JetStream enabled is the recommended environment for
 
 Choose one of the two execution options below:
 
-### Option A: Container Workflow (Podman / Docker)
+### Option A: Container Workflow (Podman)
 
 Run a single NATS container without installing local Go or NATS binaries.
 
-**1. Start via podman-compose (or docker compose):**
+**1. Start via podman-compose:**
 From the repository root:
 ```bash
 cd deploy/local-nats
@@ -176,7 +194,7 @@ This section is for developers testing JetStream stream replication (R3 streams)
 
 Choose one of the two execution options below:
 
-### Option A: Container Workflow (Podman / Docker)
+### Option A: Container Workflow (Podman)
 
 **1. Start via podman-compose:**
 From the repository root:
@@ -366,9 +384,9 @@ nats request demo.greet ""
 
 ## 6. Quick Reference Summary
 
-| Property | Single-Node (Container) | Single-Node (Native Binary) | 3-Node Cluster (Container) | 3-Node Cluster (Native Binary) |
-|----------|-------------------------|-----------------------------|----------------------------|--------------------------------|
-| **Primary Requirement** | Podman or Docker | `nats-server` (Brew / Binary) | Podman / Compose | `nats-server` (Brew / Binary) |
+| Property | Single-Node (Podman Container) | Single-Node (Native Binary) | 3-Node Cluster (Podman Container) | 3-Node Cluster (Native Binary) |
+|----------|--------------------------------|-----------------------------|-----------------------------------|--------------------------------|
+| **Primary Requirement** | Podman | `nats-server` (Brew) | Podman (Compose optional) | `nats-server` (Brew) |
 | **Start Command** | `podman-compose up -d` in `deploy/local-nats` | `nats-server -js` or `nats-server -c deploy/local-nats/nats.conf` | `podman-compose up -d` in `deploy/local-nats-cluster` | 3 `nats-server` instances with `-cluster` and `-routes` |
 | **Stop Command** | `podman-compose down` | `Ctrl+C` or `pkill nats-server` | `podman-compose down` | `Ctrl+C` or `pkill nats-server` |
 | **Client URL** | `localhost:4222` | `localhost:4222` | `localhost:4222, 4223, 4224` | `localhost:4222, 4223, 4224` |
