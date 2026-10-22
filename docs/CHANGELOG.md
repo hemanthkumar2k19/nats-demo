@@ -2,6 +2,13 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-22] Author At Least Once Delivery Semantics Guide
+
+- **Change:** Authored developer reference guide in [docs/nats-delivery-semantics/atleast-once.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-delivery-semantics/atleast-once.md) documenting the At Least Once delivery pattern using NATS JetStream: structured with purpose and use cases, sequence flow anchor diagram, publisher (`PubAck`) and consumer (`Ack`, `Nak`, `InProgress`, `Term`) implementation snippets across Go, Java, and Python, pattern constraints and contracts, comprehensive failure handling matrix covering 8 scenarios, and architectural decision signals.
+- **Reason:** Provide an actionable, production-ready reference standard for implementing durable At Least Once messaging in NATS JetStream aligned with the tested platform patterns.
+- **Affected Area:** [docs/nats-delivery-semantics/atleast-once.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-delivery-semantics/atleast-once.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+
 ## [2026-10-22] Convert At Most Once Guide to Language-Agnostic Usable Configurations
 
 - **Change:** Updated [docs/developer-guide/usage-patterns/delivery/atmost-once.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-guide/usage-patterns/delivery/atmost-once.md): replaced Go code snippets in Section 4 with language-agnostic, NATS-specific usable configuration tables for both publisher (`Order-Service`) and subscriber (`Processor-Service`). Added structured parameters covering client connection options, environment variables, concrete publishing subjects, message headers and payloads, outbound buffer flush timeouts, Core NATS subscription options (standard vs queue group), flow control pending limits, and graceful drain timeouts. Replaced non-ASCII characters to maintain strict ASCII compliance.
