@@ -2,6 +2,13 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-22] Author Exactly Once Delivery Semantics Guide
+
+- **Change:** Authored developer reference guide in [docs/nats-delivery-semantics/exacty-once.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-delivery-semantics/exacty-once.md) documenting the Exactly Once delivery pattern using NATS JetStream: structured with purpose and use cases, sequence flow anchor diagram illustrating `Nats-Msg-Id` duplicate window checking and consumer `DoubleAck()` server confirmation, publisher (`PubAck.Duplicate`) and subscriber (`DoubleAck` / `ackSync`) implementation snippets across Go, Java, and Python, pattern constraints covering sliding duplicate windows, comprehensive failure handling matrix covering 8 scenarios, and architectural decision signals.
+- **Reason:** Provide an actionable, production-ready reference standard for implementing Exactly Once message delivery in NATS JetStream combining publisher deduplication with synchronous consumer acknowledgements.
+- **Affected Area:** [docs/nats-delivery-semantics/exacty-once.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-delivery-semantics/exacty-once.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+
 ## [2026-10-22] Author At Least Once Delivery Semantics Guide
 
 - **Change:** Authored developer reference guide in [docs/nats-delivery-semantics/atleast-once.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-delivery-semantics/atleast-once.md) documenting the At Least Once delivery pattern using NATS JetStream: structured with purpose and use cases, sequence flow anchor diagram, publisher (`PubAck`) and consumer (`Ack`, `Nak`, `InProgress`, `Term`) implementation snippets across Go, Java, and Python, pattern constraints and contracts, comprehensive failure handling matrix covering 8 scenarios, and architectural decision signals.
