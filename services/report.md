@@ -15,6 +15,7 @@ This report summarizes the empirical evaluation of NATS Core and JetStream deliv
 | **Consumer Prefetching & Batch Control** | JetStream `PullMaxMessages(1)` | Publish batch of 3 messages | Default batching prefetches downstream messages into client RAM buffer (`Ack Pending: 2`). Setting `PullMaxMessages(1)` forces strictly 1-by-1 pull from server. | Verified (1-by-1 stream processing) |
 | **Poison Message & Retry Exhaustion** | JetStream `MaxDeliver: 5`<br>`AckWait: 30s` | Repeatedly crash worker across 5 successive attempts | Redelivered exactly 5 times. On 5th unacknowledged failure, consumer abandons message and advances cursor to next sequence. Original message remains in stream. | Verified (Pipeline unblocked) |
 | **Dead Letter Advisory Notification** | System Advisory Subject<br>`$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>` | Message exhausts all 5 delivery attempts | NATS server broadcasts JSON advisory event containing `stream`, `consumer`, `stream_seq: 12`, and `deliveries: 5` in real time. | Verified (Native DLQ event) |
+| **Exactly-Once Delivery** | JetStream Pull Consumer (`exactly-once`)<br>`delivery.exactly-once`<br>+ `msg.DoubleAck(ctx)` | Publish with `Nats-Msg-Id`, countdown completes, `DoubleAck` sent | Server verifies deduplication window on publish; consumer `DoubleAck` sends request-reply to verify server recorded acknowledgment before completion. | Verified (Deduplication + DoubleAck) |
 
 ---
 
@@ -23,7 +24,7 @@ This report summarizes the empirical evaluation of NATS Core and JetStream deliv
 ### Observation 1: Subject-to-Stream Namespace Binding ("Persistence Tap")
 * In NATS, there is a **single unified subject namespace**. There are no separate "Core NATS subjects" versus "JetStream subjects".
 * If a stream is configured with subject `delivery.>`, the JetStream engine attaches an internal persistence tap to that subject pattern on the server.
-* **Critical Rule:** Any message published to that subject—whether sent via `nc.Publish()` (Core NATS client) or `js.Publish()` (JetStream client)—is automatically captured and committed to stream storage.
+* **Critical Rule:** Any message published to that subject--whether sent via `nc.Publish()` (Core NATS client) or `js.Publish()` (JetStream client)--is automatically captured and committed to stream storage.
 * **The Only Difference in Publishing:**
   - `nc.Publish()`: Fire-and-forget over TCP. Server still captures the message if a stream matches, but the publisher receives no confirmation or sequence number.
   - `js.Publish()`: Synchronous `PubAck` returned to the publisher containing `stream`, `sequence`, and deduplication status.
@@ -54,3 +55,8 @@ This report summarizes the empirical evaluation of NATS Core and JetStream deliv
   1. Build a lightweight DLQ worker that subscribes to `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>`.
   2. Read the referenced `stream_seq` via `js.GetMsg(ctx, stream, seq)`.
   3. Archive the message into a dedicated DLQ stream (`DELIVERY_DLQ`).
+
+### Observation 6: Synchronous DoubleAck vs. Asynchronous Ack
+* `msg.Ack()` transmits `+ACK` asynchronously (fire-and-forget over the TCP connection).
+* `msg.DoubleAck(ctx)` performs a synchronous request-reply protocol with the JetStream cluster. It blocks until the cluster leader commits the consumer acknowledgment into the Raft log and responds with confirmation.
+* Combined with publisher message deduplication (`Nats-Msg-Id`), `DoubleAck(ctx)` provides end-to-end exactly-once processing guarantees by ensuring a worker never proceeds under false assumptions if a network partition or cluster failover occurs.

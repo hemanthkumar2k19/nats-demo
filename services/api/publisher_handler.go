@@ -33,6 +33,13 @@ func (h *PublisherHandler) PublishHandler(c *gin.Context) {
 		return
 	}
 
+	if httpMsgID := c.GetHeader("Nats-Msg-Id"); httpMsgID != "" {
+		if msg.Headers == nil {
+			msg.Headers = make(map[string]any)
+		}
+		msg.Headers["Nats-Msg-Id"] = httpMsgID
+	}
+
 	if err := h.pubService.Publish(c.Request.Context(), &msg); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -55,6 +62,13 @@ func (h *PublisherHandler) JSPublishHandler(c *gin.Context) {
 	if msg.Subject == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Field 'subject' is required"})
 		return
+	}
+
+	if httpMsgID := c.GetHeader("Nats-Msg-Id"); httpMsgID != "" {
+		if msg.Headers == nil {
+			msg.Headers = make(map[string]any)
+		}
+		msg.Headers["Nats-Msg-Id"] = httpMsgID
 	}
 
 	ack, err := h.pubService.JSPublish(c.Request.Context(), &msg)

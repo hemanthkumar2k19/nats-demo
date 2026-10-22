@@ -2,95 +2,16 @@
   "info": {
     "_postman_id": "b3e41419-4fc3-4fae-9d2a-89a3f25c7981",
     "name": "NATS Reference Platform",
-    "description": "Production-like Postman collection for NATS JetStream Publisher and Consumer APIs.\n\n### Prerequisites\n1. Ensure NATS server is running with JetStream enabled (`nats-server -js`).\n2. Ensure the stream exists (`nats stream add PAYMENTS --subjects 'payments.>' --storage file --default`).\n3. Ensure Order Service is running on `http://localhost:8080` (`go run ./services/cmd/order-service`).",
+    "description": "Production-like Postman collection for NATS JetStream Publisher and Consumer APIs.\n\n### Prerequisites\n1. Ensure NATS server is running with JetStream enabled (`nats-server -js`).\n2. Ensure required streams exist via NATS CLI:\n   - PAYMENTS: `nats stream add PAYMENTS --subjects 'payments.>' --storage file --retention limits --discard old --replicas 3 --defaults`\n   - DELIVERY: `nats stream add DELIVERY --subjects 'delivery.>' --storage file --retention limits --discard old --dupe-window 2m --replicas 3 --defaults`\n3. Ensure Order Service is running on `http://localhost:8080` (`go run ./services/cmd/order-service`).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
       "name": "Publishing",
-      "description": "Endpoints for publishing messages to NATS JetStream streams.",
+      "description": "Endpoints for publishing messages demonstrating At-Most-Once, At-Least-Once, and Exactly-Once delivery semantics.",
       "item": [
         {
-          "name": "Publish to JetStream",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"subject\": \"payments.created\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1001\\\", \\\"amount\\\": 250.00, \\\"currency\\\": \\\"USD\\\"}\",\n  \"headers\": {\n    \"Correlation-ID\": \"c8f9a2b1-4e20-411a-b33c-58e39f72a123\",\n    \"Source\": \"checkout-service\"\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/publish/js",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "publish",
-                "js"
-              ]
-            },
-            "description": "Publishes a message to JetStream synchronously and returns the native PubAck object containing the stream name, sequence number, domain, and duplicate status."
-          },
-          "response": [
-            {
-              "name": "200 OK - Successful Publish",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"subject\": \"payments.created\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1001\\\", \\\"amount\\\": 250.00, \\\"currency\\\": \\\"USD\\\"}\",\n  \"headers\": {\n    \"Correlation-ID\": \"c8f9a2b1-4e20-411a-b33c-58e39f72a123\",\n    \"Source\": \"checkout-service\"\n  }\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/publish/js",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "publish",
-                    "js"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json; charset=utf-8"
-                }
-              ],
-              "body": "{\n  \"stream\": \"PAYMENTS\",\n  \"sequence\": 1,\n  \"domain\": \"\",\n  \"duplicate\": false\n}"
-            }
-          ]
-        },
-        {
-          "name": "Publish to Core NATS",
+          "name": "NATS Publish (AtMost Once)",
           "request": {
             "method": "POST",
             "header": [
@@ -119,7 +40,7 @@
                 "publish"
               ]
             },
-            "description": "Publishes a message to Core NATS (at-most-once fire-and-forget)."
+            "description": "Publishes a message to Core NATS with at-most-once delivery semantics (fire-and-forget, non-persistent subject)."
           },
           "response": [
             {
@@ -163,6 +84,223 @@
                 }
               ],
               "body": "{\n  \"status\": \"published\",\n  \"subject\": \"delivery.atmost-once\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "JetStream Publish (AtLeast Once)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"delivery.atleast-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1001\\\", \\\"amount\\\": 250.00, \\\"currency\\\": \\\"USD\\\"}\",\n  \"headers\": {\n    \"Correlation-ID\": \"c8f9a2b1-4e20-411a-b33c-58e39f72a123\",\n    \"Source\": \"checkout-service\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/publish/js",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "publish",
+                "js"
+              ]
+            },
+            "description": "Publishes a message to JetStream synchronously with at-least-once delivery semantics and returns the native PubAck object containing the stream name, sequence number, domain, and duplicate status. Target subject can be delivery.atleast-once (processing-service) or payments.created (payment-worker)."
+          },
+          "response": [
+            {
+              "name": "200 OK - Successful Publish",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"subject\": \"delivery.atleast-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1001\\\", \\\"amount\\\": 250.00, \\\"currency\\\": \\\"USD\\\"}\",\n  \"headers\": {\n    \"Correlation-ID\": \"c8f9a2b1-4e20-411a-b33c-58e39f72a123\",\n    \"Source\": \"checkout-service\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/publish/js",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "publish",
+                    "js"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"stream\": \"DELIVERY\",\n  \"sequence\": 1,\n  \"domain\": \"\",\n  \"duplicate\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "JetStream Publish (Exactly Once)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Nats-Msg-Id",
+                "value": "msg-eo-001",
+                "type": "text",
+                "description": "Unique message identifier for publisher deduplication in JetStream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"delivery.exactly-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1003\\\", \\\"amount\\\": 500.00, \\\"status\\\": \\\"settled\\\"}\",\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/publish/js",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "publish",
+                "js"
+              ]
+            },
+            "description": "Publishes a message to JetStream on delivery.exactly-once with Nats-Msg-Id header for publisher deduplication and DoubleAck consumer verification."
+          },
+          "response": [
+            {
+              "name": "200 OK - Successful Publish (First Delivery)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Nats-Msg-Id",
+                    "value": "msg-eo-001",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"subject\": \"delivery.exactly-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1003\\\", \\\"amount\\\": 500.00, \\\"status\\\": \\\"settled\\\"}\",\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/publish/js",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "publish",
+                    "js"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"stream\": \"DELIVERY\",\n  \"sequence\": 2,\n  \"domain\": \"\",\n  \"duplicate\": false\n}"
+            },
+            {
+              "name": "200 OK - Duplicate Detected",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Nats-Msg-Id",
+                    "value": "msg-eo-001",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"subject\": \"delivery.exactly-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1003\\\", \\\"amount\\\": 500.00, \\\"status\\\": \\\"settled\\\"}\",\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/publish/js",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "publish",
+                    "js"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"stream\": \"DELIVERY\",\n  \"sequence\": 2,\n  \"domain\": \"\",\n  \"duplicate\": true\n}"
             }
           ]
         }
@@ -400,166 +538,6 @@
                 }
               ],
               "body": "{\n  \"status\": \"deleted\",\n  \"streamName\": \"PAYMENTS\",\n  \"consumerName\": \"payments-pull\"\n}"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Streams",
-      "description": "Endpoints for creating and deleting JetStream streams.",
-      "item": [
-        {
-          "name": "Create Stream",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"PAYMENTS\",\n  \"description\": \"Stream for payment transaction events\",\n  \"subjects\": [\n    \"payments.>\"\n  ],\n  \"storage\": \"file\",\n  \"retention\": \"limits\",\n  \"discard\": \"old\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/streams",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "streams"
-              ]
-            },
-            "description": "Creates or retrieves an existing JetStream stream. Supported storage values: 'file', 'memory'. Supported retention values: 'limits', 'interest', 'workqueue'. Supported discard values: 'old', 'new'."
-          },
-          "response": [
-            {
-              "name": "200 OK - Stream Created",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"name\": \"PAYMENTS\",\n  \"description\": \"Stream for payment transaction events\",\n  \"subjects\": [\n    \"payments.>\"\n  ],\n  \"storage\": \"file\",\n  \"retention\": \"limits\",\n  \"discard\": \"old\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/streams",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "streams"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json; charset=utf-8"
-                }
-              ],
-              "body": "{\n  \"config\": {\n    \"name\": \"PAYMENTS\",\n    \"subjects\": [\n      \"payments.>\"\n    ],\n    \"retention\": \"limits\",\n    \"discard\": \"old\",\n    \"storage\": \"file\"\n  },\n  \"created\": \"2026-10-16T09:00:00Z\"\n}"
-            }
-          ]
-        },
-        {
-          "name": "Delete Stream",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"PAYMENTS\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/streams",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "streams"
-              ]
-            },
-            "description": "Deletes a JetStream stream by name using a JSON request body."
-          },
-          "response": [
-            {
-              "name": "200 OK - Stream Deleted",
-              "originalRequest": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"name\": \"PAYMENTS\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/streams",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "v1",
-                    "streams"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json; charset=utf-8"
-                }
-              ],
-              "body": "{\n  \"status\": \"deleted\",\n  \"name\": \"PAYMENTS\"\n}"
             }
           ]
         }

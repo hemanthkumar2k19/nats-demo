@@ -12,14 +12,23 @@ import (
 
 // Publish Msg
 func JSPublishMsg(ctx context.Context, js jetstream.JetStream, msg *model.Message) (*jetstream.PubAck, error) {
-
+	header := toNatsHeader(msg.Headers)
 	natsMsg := &nats.Msg{
 		Subject: msg.Subject,
-		Header:  toNatsHeader(msg.Headers),
+		Header:  header,
 		Data:    []byte(msg.Data),
 	}
 
-	ack, err := js.PublishMsg(ctx, natsMsg)
+	var opts []jetstream.PublishOpt
+	var msgID string
+	if header != nil {
+		msgID = header.Get(nats.MsgIdHdr)
+		if msgID != "" {
+			opts = append(opts, jetstream.WithMsgID(msgID))
+		}
+	}
+
+	ack, err := js.PublishMsg(ctx, natsMsg, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to publish message: %v", err)
 	}
@@ -29,6 +38,7 @@ func JSPublishMsg(ctx context.Context, js jetstream.JetStream, msg *model.Messag
 		Str("stream", ack.Stream).
 		Uint64("sequence", ack.Sequence).
 		Bool("duplicate", ack.Duplicate).
+		Str("msgId", msgID).
 		Msg("Successfully published message to JetStream")
 
 	return ack, nil
@@ -36,14 +46,23 @@ func JSPublishMsg(ctx context.Context, js jetstream.JetStream, msg *model.Messag
 
 // Publish Msg Async
 func JSPublishAsync(ctx context.Context, js jetstream.JetStream, msg *model.Message) (*jetstream.PubAck, error) {
-
+	header := toNatsHeader(msg.Headers)
 	natsMsg := &nats.Msg{
 		Subject: msg.Subject,
-		Header:  toNatsHeader(msg.Headers),
+		Header:  header,
 		Data:    []byte(msg.Data),
 	}
 
-	future, err := js.PublishMsgAsync(natsMsg)
+	var opts []jetstream.PublishOpt
+	var msgID string
+	if header != nil {
+		msgID = header.Get(nats.MsgIdHdr)
+		if msgID != "" {
+			opts = append(opts, jetstream.WithMsgID(msgID))
+		}
+	}
+
+	future, err := js.PublishMsgAsync(natsMsg, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to publish message: %v", err)
 	}
@@ -55,6 +74,7 @@ func JSPublishAsync(ctx context.Context, js jetstream.JetStream, msg *model.Mess
 			Str("stream", ack.Stream).
 			Uint64("sequence", ack.Sequence).
 			Bool("duplicate", ack.Duplicate).
+			Str("msgId", msgID).
 			Msg("Successfully published async message to JetStream")
 		return ack, nil
 	case err := <-future.Err():

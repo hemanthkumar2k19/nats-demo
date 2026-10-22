@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -75,7 +76,11 @@ func toNatsHeader(headers map[string]any) nats.Header {
 	}
 	h := make(nats.Header)
 	for k, v := range headers {
-		h.Set(k, fmt.Sprintf("%v", v))
+		if strings.EqualFold(k, nats.MsgIdHdr) {
+			h.Set(nats.MsgIdHdr, fmt.Sprintf("%v", v))
+		} else {
+			h.Set(k, fmt.Sprintf("%v", v))
+		}
 	}
 	return h
 }

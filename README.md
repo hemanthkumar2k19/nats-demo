@@ -1,6 +1,6 @@
 # NATS Reference Platform & Microservices Architecture
 
-This repository is a production-like **NATS evaluation platform and reference implementation** built with Go, Gin, and Zerolog. It demonstrates JetStream stream persistence, pull and push consumer workers, and message publishing across segregated microservices.
+This repository is a production-like NATS evaluation platform and reference implementation built with Go, Gin, and Zerolog. It demonstrates JetStream stream persistence, pull and push consumer workers, delivery semantics (at-most-once, at-least-once, exactly-once), and message publishing across segregated microservices.
 
 ---
 
@@ -12,22 +12,26 @@ This repository is a production-like **NATS evaluation platform and reference im
                              |  nats://localhost |
                              +---------+---------+
                                        ^
-            +--------------------------+--------------------------+
-            |                          |                          |
-            v                          v                          v
-+-----------------------+  +-----------------------+  +-----------------------+
-|     Order Service     |  |    Payment Worker     |  |  Notification Worker  |
-| http://localhost:8080 |  |  (JetStream Pull)     |  |  (JetStream Push)     |
-+-----------+-----------+  +-----------------------+  +-----------------------+
+            +--------------------------+--------------------------+--------------------------+
+            |                          |                          |                          |
+            v                          v                          v                          v
++-----------------------+  +-----------------------+  +-----------------------+  +-----------------------+
+|     Order Service     |  |  Processing Service   |  |    Payment Worker     |  |  Notification Worker  |
+| http://localhost:8080 |  |  (Delivery Semantics) |  |  (JetStream Pull)     |  |  (JetStream Push)     |
++-----------+-----------+  +-----------------------+  +-----------------------+  +-----------------------+
             |
     +-------+-------+
-    |       |       |
-    v       v       v
- Streams Consumers Publish
- (CRUD)   (CRUD)    (JS)
+    |               |
+    v               v
+Consumers        Publish
+ (CRUD)      (NATS / JS)
 ```
 
-- **Order Service (`services/cmd/order-service`)**: Exposed on port `:8080`. Provides REST APIs for publishing messages to JetStream and managing stream and consumer lifecycles.
+- **Order Service (`services/cmd/order-service`)**: Exposed on port `:8080`. Provides REST APIs for publishing messages to Core NATS and JetStream (supporting at-most-once, at-least-once, and deduplicated exactly-once publishing) and managing consumer lifecycles.
+- **Processing Service (`services/cmd/processing-service`)**: Worker evaluating message delivery semantics across three patterns:
+  - At-Most-Once: Core NATS subscriber on `delivery.atmost-once`
+  - At-Least-Once: JetStream pull consumer on `delivery.atleast-once` (stream `DELIVERY`)
+  - Exactly-Once: JetStream pull consumer on `delivery.exactly-once` (stream `DELIVERY`) with `msg.DoubleAck()` and publisher deduplication
 - **Payment Worker (`services/cmd/payment-worker`)**: Background worker that pulls and processes payment events from the `PAYMENTS` stream (`payments-pull` consumer).
 - **Notification Worker (`services/cmd/notification-worker`)**: Background worker that consumes payment notifications from the `PAYMENTS` stream (`payments-push` consumer).
 
@@ -35,14 +39,18 @@ This repository is a production-like **NATS evaluation platform and reference im
 
 ## 2. JetStream Stream Setup
 
-Before running the workers or publishing messages, ensure the target stream exists. You can create the stream via the REST API or using the NATS CLI:
+Before running the workers or publishing messages, create the target streams using the NATS CLI. Streams persist messages and govern retention, storage, and deduplication tracking.
 
-**Option A: Via REST API**
-`POST http://localhost:8080/api/v1/streams` with body `{"name": "PAYMENTS", "subjects": ["payments.>"], "storage": "file"}`
-
-**Option B: Via NATS CLI**
+### Stream 1: PAYMENTS (Payment Processing & Notifications)
+Used by `payment-worker` and `notification-worker` on subject pattern `payments.>`:
 ```bash
-nats stream add PAYMENTS --subjects "payments.>" --storage file --default
+nats stream add PAYMENTS --subjects "payments.>" --storage file --retention limits --discard old --replicas 1 --defaults
+```
+
+### Stream 2: DELIVERY (Delivery Semantics & Failure Testing)
+Used by `processing-service` on subject pattern `delivery.>` for at-least-once and exactly-once delivery testing. The `--dupe-window 2m` flag enables JetStream publisher message deduplication based on `Nats-Msg-Id`:
+```bash
+nats stream add DELIVERY --subjects "delivery.>" --storage file --retention limits --discard old --dupe-window 2m --replicas 1 --defaults
 ```
 
 ---
@@ -52,23 +60,32 @@ nats stream add PAYMENTS --subjects "payments.>" --storage file --default
 ### Prerequisites
 - Go 1.22+
 - NATS Server with JetStream enabled (`nats-server -js`)
+- NATS CLI (`nats`)
 
 ### 1. Start NATS Server
 ```bash
 nats-server -js
 ```
 
-### 2. Start Order Service (API Publisher, Stream & Consumer Management)
+### 2. Create Required Streams
+Execute the stream creation commands from Section 2 for `PAYMENTS` and `DELIVERY`.
+
+### 3. Start Order Service (REST API Publisher & Consumer Manager)
 ```bash
 go run ./services/cmd/order-service
 ```
 
-### 3. Start Payment Worker (Pull Consumer)
+### 4. Start Processing Service (Delivery Semantics Worker)
+```bash
+go run ./services/cmd/processing-service
+```
+
+### 5. Start Payment Worker (Pull Consumer)
 ```bash
 go run ./services/cmd/payment-worker
 ```
 
-### 4. Start Notification Worker (Push Consumer)
+### 6. Start Notification Worker (Push Consumer)
 ```bash
 go run ./services/cmd/notification-worker
 ```
@@ -79,23 +96,22 @@ go run ./services/cmd/notification-worker
 
 The Order Service exposes REST endpoints under `/api/v1` on port `:8080`.
 
-All endpoints, pre-configured variables, and sample payloads can be imported directly into Postman via [nats_platform.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_platform.postman_collection.json).
+All endpoints, pre-configured variables, and sample payloads can be imported directly into Postman via `nats_platform.postman_collection.json`.
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/v1/publish` | Publishes a message to Core NATS (at-most-once fire-and-forget). |
-| `POST` | `/api/v1/publish/js` | Publishes a message to JetStream synchronously and returns `PubAck`. |
-| `POST` | `/api/v1/streams` | Creates or retrieves a JetStream stream. |
-| `DELETE` | `/api/v1/streams` | Deletes a JetStream stream using a JSON body (`name`). |
-| `POST` | `/api/v1/consumers` | Creates or retrieves a JetStream consumer (pull or push). |
-| `DELETE` | `/api/v1/consumers` | Deletes a JetStream consumer using a JSON body (`streamName`, `consumerName`). |
+| Method | Endpoint | Description | Postman Item Name |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/publish` | Publishes to Core NATS with at-most-once delivery (fire-and-forget). | `NATS Publish (AtMost Once)` |
+| `POST` | `/api/v1/publish/js` | Publishes to JetStream synchronously with at-least-once delivery; returns `PubAck`. | `JetStream Publish (AtLeast Once)` |
+| `POST` | `/api/v1/publish/js` | Publishes to JetStream with `Nats-Msg-Id` header for deduplication (exactly-once flow). | `JetStream Publish (Exactly Once)` |
+| `POST` | `/api/v1/consumers` | Creates or retrieves a JetStream consumer (pull or push). | `Create Pull Consumer` / `Create Push Consumer` |
+| `DELETE` | `/api/v1/consumers` | Deletes a JetStream consumer using a JSON body (`streamName`, `consumerName`). | `Delete Consumer` |
 
 ---
 
 ## 5. Logging & Observability
 
 ### Application Logging
-Logging is managed by **Zerolog** (`github.com/rs/zerolog`).
+Logging is managed by Zerolog (`github.com/rs/zerolog`).
 - Development: Human-friendly colorful console output (`logger.Init(false)`).
 - Production: Formatted structured JSON output (`logger.Init(true)`).
 
@@ -105,40 +121,4 @@ Monitor real-time JetStream system advisories when consumers exhaust retries:
 nats sub '$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>'
 ```
 
-For full evaluation notes, graceful/ungraceful crash results, and delivery semantic tests, see [services/report.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/report.md).
-
----
-
-## 6. Repository Layout
-
-```text
-.
-|-- README.md                           # Platform Overview and Run Guide
-|-- nats_platform.postman_collection.json # Ready-to-import Postman Collection v2.1.0
-|-- docs/                               # Developer Guides and Changelog
-|   |-- CHANGELOG.md
-|   |-- nats-delivery-semantics.md      # Delivery Semantics Guide (At-Most-Once vs At-Least-Once)
-|   |-- nats-publisher-guide.md
-|   `-- nats-consumer-guide.md
-`-- services/                           # Go Application Backend
-    |-- report.md                       # Delivery Semantics & Failure Handling Report
-    |-- api/                            # Gin REST Handlers
-    |   |-- consumer_handler.go         # Consumer management endpoints
-    |   |-- publisher_handler.go        # Publish endpoints (Core & JetStream)
-    |   `-- stream_handler.go           # Stream management endpoints
-    |-- cmd/                            # Application Entrypoints
-    |   |-- notification-worker/main.go # Push Consumer Worker
-    |   |-- order-service/main.go       # REST API Publisher, Stream & Consumer Manager (:8080)
-    |   |-- payment-worker/main.go      # Pull Consumer Worker
-    |   `-- processing-service/main.go  # Delivery Semantics & Failure Testing Worker
-    |-- config/                         # Environment Configuration
-    |-- logger/                         # Zerolog Console/JSON Formatting & Countdown
-    |-- messaging/                      # NATS JetStream Drivers & Utilities
-    |   |-- consumer.go                 # Consumer create/delete logic
-    |   |-- js.go                       # JetStream publish logic
-    |   |-- stream.go                   # Stream create/delete logic
-    |   `-- util.go                     # Policy resolvers and handlers
-    |-- model/                          # Shared Models and DTOs
-    |-- natsclient/                     # Connection Lifecycle & Recovery
-    `-- service/                        # Service Layer Orchestration
-```
+For full evaluation notes, graceful/ungraceful crash results, and delivery semantic tests, see `services/report.md`.

@@ -31,8 +31,7 @@ func Countdown(seconds int, label string) {
 		log.Info().
 			Str("label", label).
 			Int("remaining_sec", i).
-			Msgf("[%s] %d seconds remaining before ACK (crash now to test unacked redelivery)", label, i)
+			Msgf("[%s] %d seconds remaining before ACK", label, i)
 		time.Sleep(1 * time.Second)
 	}
 }
-

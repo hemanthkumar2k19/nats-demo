@@ -27,6 +27,7 @@ const (
 
 	Stream    = "DELIVERY"
 	Consumer1 = "at-least-once"
+	Consumer2 = "exactly-once"
 )
 
 func main() {
@@ -66,9 +67,9 @@ func main() {
 			Msg("Failed to start at-most-once processor")
 	}
 
-	cc, err := startAtLeastOnce(ctx, js, &wg)
+	cc1, err := startAtLeastOnce(ctx, js, &wg)
 	if err != nil {
-		cleanup(sub, nil, nc, &wg)
+		cleanup(sub, nc, &wg)
 		log.Fatal().
 			Err(err).
 			Str("client", Client).
@@ -77,10 +78,22 @@ func main() {
 			Msg("Failed to start at-least-once processor")
 	}
 
+	cc2, err := startExactlyOnce(ctx, js, &wg)
+	if err != nil {
+		cleanup(sub, nc, &wg, cc1)
+		log.Fatal().
+			Err(err).
+			Str("client", Client).
+			Str("stream", Stream).
+			Str("consumer", Consumer2).
+			Msg("Failed to start exactly-once processor")
+	}
+
 	log.Info().
 		Str("client", Client).
 		Str("sub1", Sub1).
 		Str("consumer1", Consumer1).
+		Str("consumer2", Consumer2).
 		Msg("All processors started successfully and listening for messages")
 
 	// 5. Wait for OS shutdown signal (Ctrl+C / SIGINT / SIGTERM)
@@ -102,7 +115,7 @@ func main() {
 	}()
 
 	// 6. Graceful shutdown of consumer, subscription, and NATS connection
-	cleanup(sub, cc, nc, &wg)
+	cleanup(sub, nc, &wg, cc1, cc2)
 }
 
 // startAtMostOnce subscribes to Sub1 using Core NATS (at-most-once delivery).
@@ -117,6 +130,22 @@ func startAtMostOnce(nc *nats.Conn, wg *sync.WaitGroup) (*nats.Subscription, err
 			Str("subject", msg.Subject).
 			Str("message", string(msg.Data)).
 			Msg("Received message")
+
+		log.Info().
+			Str("client", Client).
+			Str("delivery", "at-most-once").
+			Str("subject", msg.Subject).
+			Str("message", string(msg.Data)).
+			Msg("Processing message...")
+
+		time.Sleep(2 * time.Second)
+
+		log.Info().
+			Str("client", Client).
+			Str("delivery", "at-most-once").
+			Str("subject", msg.Subject).
+			Str("message", string(msg.Data)).
+			Msg("Message processed successfully")
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to subscribe to %s: %w", Sub1, err)
@@ -165,8 +194,12 @@ func startAtLeastOnce(ctx context.Context, js jetstream.JetStream, wg *sync.Wait
 				Str("client", Client).
 				Str("consumer", Consumer1).
 				Msg("Failed to ACK message")
+			return
 		}
-		log.Info().Msg("ACK sent successfully")
+		log.Info().
+			Str("client", Client).
+			Str("consumer", Consumer1).
+			Msg("ACK sent successfully")
 
 	},
 		jetstream.PullMaxMessages(1), // Limits the number of messages fetched at once
@@ -186,13 +219,73 @@ func startAtLeastOnce(ctx context.Context, js jetstream.JetStream, wg *sync.Wait
 	return cc, nil
 }
 
-// cleanup performs graceful shutdown of the consume context, subscription, waits for in-flight tasks, and drains NATS.
-func cleanup(sub *nats.Subscription, cc jetstream.ConsumeContext, nc *nats.Conn, wg *sync.WaitGroup) {
-	// 1. Stop JetStream consume context fetch loop
-	if cc != nil {
-		cc.Stop()
-		log.Info().Str("client", Client).Msg("Stopped JetStream consumer message fetch loop")
+func startExactlyOnce(ctx context.Context, js jetstream.JetStream, wg *sync.WaitGroup) (jetstream.ConsumeContext, error) {
+	consumer, err := js.CreateOrUpdateConsumer(ctx, Stream, jetstream.ConsumerConfig{
+		Durable:       Consumer2,
+		FilterSubject: Sub3,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		AckWait:       30 * time.Second,
+		MaxDeliver:    5,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create or update consumer %s on stream %s: %w", Consumer2, Stream, err)
 	}
+
+	cc, err := consumer.Consume(func(msg jetstream.Msg) {
+		wg.Add(1)
+		defer wg.Done()
+
+		log.Info().
+			Str("client", Client).
+			Str("delivery", "exactly-once").
+			Str("consumer", Consumer2).
+			Str("subject", msg.Subject()).
+			Str("payload", string(msg.Data())).
+			Msg("Received message")
+
+		logger.Countdown(10, "Processing Message")
+
+		// Acknowledge message processing completion back to JetStream using DoubleAck (synchronous server confirmation)
+		if err := msg.DoubleAck(ctx); err != nil {
+			log.Error().
+				Err(err).
+				Str("client", Client).
+				Str("consumer", Consumer2).
+				Msg("Failed to DoubleACK message")
+			return
+		}
+		log.Info().
+			Str("client", Client).
+			Str("consumer", Consumer2).
+			Msg("DoubleACK sent and confirmed by server successfully")
+
+	},
+		jetstream.PullMaxMessages(1), // Limits the number of messages fetched at once
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to start consume on %s: %w", Consumer2, err)
+	}
+
+	log.Info().
+		Str("client", Client).
+		Str("delivery", "exactly-once").
+		Str("stream", Stream).
+		Str("consumer", Consumer2).
+		Msg("Consumer created and consuming")
+
+	return cc, nil
+}
+
+// cleanup performs graceful shutdown of consume contexts, subscription, waits for in-flight tasks, and drains NATS.
+func cleanup(sub *nats.Subscription, nc *nats.Conn, wg *sync.WaitGroup, ccs ...jetstream.ConsumeContext) {
+	// 1. Stop JetStream consume context fetch loops
+	for _, cc := range ccs {
+		if cc != nil {
+			cc.Stop()
+		}
+	}
+	log.Info().Str("client", Client).Msg("Stopped JetStream consumer message fetch loop(s)")
 
 	// 2. Drain Core NATS subscription to stop receiving new messages while completing in-flight processing
 	if sub != nil {
