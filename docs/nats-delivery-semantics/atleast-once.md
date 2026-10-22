@@ -7,7 +7,7 @@ At Least Once delivery uses NATS JetStream to persist published messages and red
 At Least Once delivery prioritizes **message durability and recoverability while allowing duplicate deliveries**. Applications must handle duplicates safely, typically through idempotent processing.
 
 **Suitable use cases**
-- Order lifecycle events where message loss is unacceptable and duplicate processing can be handled safely.
+- Business lifecycle events where message loss is unacceptable and duplicate processing can be handled safely.
 - Asynchronous task queues and background jobs that must survive worker interruptions, subject to stream retention and delivery configuration.
 - State synchronization across distributed services where missed events must be recoverable.
 - Audit and event-processing workflows requiring durable message storage and replay, subject to stream retention policies.
@@ -130,6 +130,9 @@ if err != nil {
 }
 
 cc, err := consumer.Consume(func(msg jetstream.Msg) {
+    // For long-running operations, periodically reset the AckWait timer
+    _ = msg.InProgress()
+
     if err := process(msg.Data()); err != nil {
         if isRetryable(err) {
             _ = msg.Nak() // Request immediate redelivery
@@ -160,6 +163,9 @@ ConsumerContext cc = js.getStreamContext(streamName).createOrUpdateConsumer(conf
 
 MessagesContext mc = cc.consume(msg -> {
     try {
+        // Reset the AckWait timer during long-running operations
+        msg.inProgress();
+
         process(msg.getData());
         msg.ack();
     } catch (RetryableException e) {
@@ -186,6 +192,9 @@ consumer = await js.create_or_update_consumer(
 
 async def handler(msg):
     try:
+        # Reset the AckWait timer during long-running operations
+        await msg.in_progress()
+
         await process(msg.data)
         await msg.ack()
     except RetryableError:
