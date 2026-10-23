@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-23] Add SDK Connection Configuration Entities and Examples to Client Connection Options Standard
+
+- **Change:** Updated [docs/nats-client-con-opts.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-con-opts.md): added Section 3 ("Language Configuration Entities & SDK Connection Examples") providing complete typed configuration models and SDK connection implementations across Go (`caarlos0/env` struct binding with `nats.Option` builder), Java (Spring Boot `@ConfigurationProperties` entity and `@Bean` connection factory), and Python (`pydantic-settings` `BaseSettings` model and async `nats.connect` factory). Renumbered downstream sections and updated next steps.
+- **Reason:** Provide application developers with actionable, standardized reference patterns for externalizing NATS connection options via environment variables and mapping them into native SDK client options across Go, Java, and Python.
+- **Affected Area:** [docs/nats-client-con-opts.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-con-opts.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-22] Author Exactly Once Delivery Semantics Guide
 
 - **Change:** Authored developer reference guide in [docs/nats-delivery-semantics/exacty-once.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-delivery-semantics/exacty-once.md) documenting the Exactly Once delivery pattern using NATS JetStream: structured with purpose and use cases, sequence flow anchor diagram illustrating `Nats-Msg-Id` duplicate window checking and consumer `DoubleAck()` server confirmation, publisher (`PubAck.Duplicate`) and subscriber (`DoubleAck` / `ackSync`) implementation snippets across Go, Java, and Python, pattern constraints covering sliding duplicate windows, comprehensive failure handling matrix covering 8 scenarios, and architectural decision signals.
