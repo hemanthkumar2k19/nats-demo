@@ -11,7 +11,7 @@ This document identifies the essential options to standardize and proposes envir
 **Configuration principles**
 
 - Externalize deployment-specific connection settings through environment variables.
-- Use a consistent connection identity for each application or service.
+- Use a consistent client identity for each application or service.
 - Define standard connection, reconnection, and shutdown behavior.
 - Enforce the approved TLS and authentication policies.
 - Retrieve credentials and private keys through the approved secrets-management mechanism.
@@ -22,7 +22,7 @@ This document identifies the essential options to standardize and proposes envir
 | Category | Option | Description | Recommended ENV Name | Recommended Value |
 |---|---|---|---|---|
 | Connectivity | `Servers` | List of NATS server URLs used by the client to establish connections. | `NATS_SERVERS` | |
-| Connectivity | `Name` | Identifies the client connection on the NATS server. | `NATS_CONNECTION_NAME` | |
+| Connectivity | `Name` | Identifies the client on the NATS server. | `NATS_CLIENT_NAME` | |
 | Connectivity | `Timeout` | Maximum time allowed for a connection dial operation. | `NATS_CONNECT_TIMEOUT` | |
 | Resilience | `AllowReconnect` | Enables reconnection after an established connection is disconnected. | `NATS_ALLOW_RECONNECT` | |
 | Resilience | `MaxReconnect` | Maximum number of reconnection attempts; a negative value allows unlimited attempts. | `NATS_MAX_RECONNECT_ATTEMPTS` | |
@@ -62,7 +62,7 @@ import (
 // NATSClientConfig maps externalized enterprise connection variables.
 type NATSClientConfig struct {
 	Servers              []string      `env:"NATS_SERVERS" envSeparator:"," envDefault:"nats://localhost:4222"`
-	ConnectionName       string        `env:"NATS_CONNECTION_NAME" envDefault:"order-service"`
+	ClientName           string        `env:"NATS_CLIENT_NAME" envDefault:"order-service"`
 	ConnectTimeout       time.Duration `env:"NATS_CONNECT_TIMEOUT" envDefault:"2s"`
 	AllowReconnect       bool          `env:"NATS_ALLOW_RECONNECT" envDefault:"true"`
 	MaxReconnectAttempts int           `env:"NATS_MAX_RECONNECT_ATTEMPTS" envDefault:"10"`
@@ -94,7 +94,7 @@ func LoadFromEnv() (*NATSClientConfig, error) {
 // BuildOptions translates the configuration entity into a nats.Option slice.
 func (c *NATSClientConfig) BuildOptions() ([]nats.Option, error) {
 	opts := []nats.Option{
-		nats.Name(c.ConnectionName),
+		nats.Name(c.ClientName),
 		nats.Timeout(c.ConnectTimeout),
 		nats.ReconnectWait(c.ReconnectWait),
 		nats.PingInterval(c.PingInterval),
@@ -177,7 +177,7 @@ import java.util.List;
 public class NatsConnectionConfig {
 
     private List<String> servers = List.of("nats://localhost:4222");
-    private String connectionName = "order-service";
+    private String clientName = "order-service";
     private Duration connectTimeout = Duration.ofSeconds(2);
     private boolean allowReconnect = true;
     private int maxReconnectAttempts = 10;
@@ -200,8 +200,8 @@ public class NatsConnectionConfig {
 
     public List<String> getServers() { return servers; }
     public void setServers(List<String> servers) { this.servers = servers; }
-    public String getConnectionName() { return connectionName; }
-    public void setConnectionName(String connectionName) { this.connectionName = connectionName; }
+    public String getClientName() { return clientName; }
+    public void setClientName(String clientName) { this.clientName = clientName; }
     public Duration getConnectTimeout() { return connectTimeout; }
     public void setConnectTimeout(Duration connectTimeout) { this.connectTimeout = connectTimeout; }
     public boolean isAllowReconnect() { return allowReconnect; }
@@ -244,7 +244,7 @@ public class NatsConnectionConfig {
     public Connection natsConnection() throws IOException, InterruptedException, GeneralSecurityException {
         Options.Builder builder = new Options.Builder()
                 .servers(servers.toArray(new String[0]))
-                .connectionName(connectionName)
+                .connectionName(clientName)
                 .connectionTimeout(connectTimeout)
                 .reconnectWait(reconnectWait)
                 .pingInterval(pingInterval)
@@ -311,9 +311,9 @@ class NATSClientConfig(BaseSettings):
         default=["nats://localhost:4222"],
         alias="NATS_SERVERS",
     )
-    connection_name: str = Field(
+    client_name: str = Field(
         default="order-service",
-        alias="NATS_CONNECTION_NAME",
+        alias="NATS_CLIENT_NAME",
     )
     connect_timeout: float = Field(
         default=2.0,
@@ -388,7 +388,7 @@ class NATSClientConfig(BaseSettings):
         """Translates the configuration entity into nats-py connect kwargs."""
         kwargs = {
             "servers": self.servers,
-            "name": self.connection_name,
+            "name": self.client_name,
             "connect_timeout": self.connect_timeout,
             "allow_reconnect": self.allow_reconnect,
             "max_reconnect_attempts": self.max_reconnect_attempts,
