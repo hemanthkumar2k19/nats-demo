@@ -1,4 +1,4 @@
-# NATS Subject Design
+# NATS Subject Guide
 
 ## 1. Overview
 

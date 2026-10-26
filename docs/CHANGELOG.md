@@ -2,6 +2,18 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-26] Modernize NATS Consumer Guide Code Snippets
+
+- **Change:** Updated [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md): replaced legacy Go push consumer subscription (`js.Subscribe` with `nats.Bind`) with the modern Go `jetstream` package pattern (`js.Consumer` handle bound to provisioned consumer with `consumer.Consume()` callback loop and `consumeCtx.Stop()`); removed legacy tags on Python 3 pull batch fetch and push subscription snippets; clarified that `js.subscribe(..., ordered_consumer=True)` is the standard modern API pattern in `nats-py` with automated ephemeral consumer management; and updated the coverage matrix to reflect modern SDK consumption patterns across Go and Python 3.
+- **Reason:** Eliminate legacy and deprecated API references in developer guidance, standardizing all language examples on modern, actively supported JetStream SDK interfaces.
+- **Affected Area:** [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-26] Author Developer Onboarding Journey and Documentation Roadmap
+
+- **Change:** Created [docs/developer-docs/roadmap.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/roadmap.md) defining a 9-step sequential reading journey matrix. Structured with a Category column, concise Scope, separated rows for Core NATS and JetStream, distinct Delivery Semantics rows (At-Most-Once, At-Least-Once, Exactly-Once), and intent-oriented architectural self-check questions for developer adoption.
+- **Reason:** Transform standalone reference documentation into a structured, journey-based developer onboarding roadmap with verifiable, architectural knowledge checkpoints.
+- **Affected Area:** [docs/developer-docs/roadmap.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/roadmap.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-23] Add SDK Connection Configuration Entities and Examples to Client Connection Options Standard
 
 - **Change:** Updated [docs/nats-client-con-opts.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/nats-client-con-opts.md): standardized client identity naming from connection name to client name (`NATS_CLIENT_NAME`, `ClientName`, `clientName`, `client_name`) across the configuration standard; added Section 3 ("Language Configuration Entities & SDK Connection Examples") providing complete typed configuration models and SDK connection implementations across Go (`caarlos0/env` struct binding with `nats.Option` builder), Java (Spring Boot `@ConfigurationProperties` entity and `@Bean` connection factory), and Python (`pydantic-settings` `BaseSettings` model and async `nats.connect` factory). Renumbered downstream sections and updated next steps.
