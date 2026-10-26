@@ -1,6 +1,6 @@
-# NATS Reference Platform & Microservices Architecture
+# NATS Demo
 
-This repository is a production-like NATS evaluation platform and reference implementation built with Go, Gin, and Zerolog. It demonstrates JetStream stream persistence, pull and push consumer workers, delivery semantics (at-most-once, at-least-once, exactly-once), and message publishing across segregated microservices.
+This repository is a NATS evaluation demo and reference implementation built with Go, Gin, and Zerolog. It demonstrates JetStream stream persistence, consumer configurations, delivery semantics.
 
 ---
 
@@ -62,9 +62,15 @@ nats stream add DELIVERY --subjects "delivery.>" --storage file --retention limi
 - NATS Server with JetStream enabled (`nats-server -js`)
 - NATS CLI (`nats`)
 
-### 1. Start NATS Server
+### 1. Start NATS Locally
+- Single Node
 ```bash
 nats-server -js
+```
+- Local Cluster using compose.yaml
+```bash
+cd deploy/local-nats-cluster
+podman-compose up -d
 ```
 
 ### 2. Create Required Streams
@@ -96,7 +102,7 @@ go run ./services/cmd/notification-worker
 
 The Order Service exposes REST endpoints under `/api/v1` on port `:8080`.
 
-All endpoints, pre-configured variables, and sample payloads can be imported directly into Postman via `nats_platform.postman_collection.json`.
+All endpoints, pre-configured variables, and sample payloads can be imported directly into Postman via `nats_demo.postman_collection.json`.
 
 | Method | Endpoint | Description | Postman Item Name |
 | :--- | :--- | :--- | :--- |
