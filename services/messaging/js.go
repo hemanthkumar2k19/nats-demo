@@ -95,17 +95,19 @@ func JSPublishAsyncPending(js jetstream.JetStream) map[string]any {
 	}
 }
 
-// Publish N Messages with distinct order numbers and indices for concurrency testing
+// Publish N Messages with distinct, consistent order numbers for concurrency testing
 func JSPublishN(ctx context.Context, js jetstream.JetStream, messages []model.Message) error {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	orderBatch := r.Intn(9000) + 1000
 
 	for i := range messages {
 		msg := &messages[i]
+		orderID := fmt.Sprintf("ORD-%d-%02d", orderBatch, i+1)
+
 		if msg.Data == "" {
-			msg.Data = fmt.Sprintf("Order ORD-%d-%02d is received for processing", orderBatch, i+1)
+			msg.Data = fmt.Sprintf("Order %s is received for processing", orderID)
 		} else {
-			msg.Data = fmt.Sprintf("Order ORD-%d-%02d is received: %s", orderBatch, i+1, msg.Data)
+			msg.Data = fmt.Sprintf("Order %s: %s", orderID, msg.Data)
 		}
 
 		_, err := JSPublishAsync(ctx, js, msg)

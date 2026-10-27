@@ -92,12 +92,26 @@ func (h *PublisherHandler) JSPublishBatchHandler(c *gin.Context) {
 	}
 
 	var messages []model.Message
-	if err := json.Unmarshal(bodyBytes, &messages); err != nil {
+
+	// 1. Support dynamic batch publish by count: {"subject": "payments.created", "count": 6}
+	var countReq struct {
+		Subject string `json:"subject"`
+		Count   int    `json:"count"`
+	}
+	if err := json.Unmarshal(bodyBytes, &countReq); err == nil && countReq.Subject != "" && countReq.Count > 0 {
+		messages = make([]model.Message, countReq.Count)
+		for i := 0; i < countReq.Count; i++ {
+			messages[i] = model.Message{
+				Subject: countReq.Subject,
+			}
+		}
+	} else if err := json.Unmarshal(bodyBytes, &messages); err != nil {
+		// 2. Fallback to array of messages or {"messages": [...]}
 		var req struct {
 			Messages []model.Message `json:"messages"`
 		}
 		if err := json.Unmarshal(bodyBytes, &req); err != nil || len(req.Messages) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: expected an array of messages or an object with 'messages' key"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: provide {'subject': '...', 'count': N}, an array of messages, or {'messages': [...]}"})
 			return
 		}
 		messages = req.Messages

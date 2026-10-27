@@ -316,7 +316,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "[\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #1\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #2\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #3\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #4\"\n  }\n]",
+              "raw": "{\n  \"subject\": \"payments.created\",\n  \"count\": 6\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -336,7 +336,7 @@
                 "batch"
               ]
             },
-            "description": "Publishes a batch of messages to JetStream asynchronously for testing worker concurrency and competing consumers. If data is provided or omitted, each message is tagged with an identifiable order random number and index (e.g. Order ORD-<rand>-<index>) to easily distinguish them in worker logs."
+            "description": "Publishes a batch of messages to JetStream asynchronously for testing worker concurrency and competing consumers. Accepts {\"subject\": \"...\", \"count\": N} or an array of message objects. Each message is stamped with a consistent order ID (e.g. Order ORD-<rand>-<index>) so they can be easily tracked across competing workers."
           },
           "response": [
             {
@@ -351,7 +351,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "[\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #1\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #2\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #3\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #4\"\n  }\n]",
+                  "raw": "{\n  \"subject\": \"payments.created\",\n  \"count\": 6\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -381,7 +381,7 @@
                   "value": "application/json; charset=utf-8"
                 }
               ],
-              "body": "{\n  \"count\": 4,\n  \"status\": \"published\"\n}"
+              "body": "{\n  \"count\": 6,\n  \"status\": \"published\"\n}"
             }
           ]
         }
