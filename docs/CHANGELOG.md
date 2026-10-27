@@ -2,10 +2,15 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
-## [2026-10-26] Modernize NATS Consumer Guide Code Snippets
+## [2026-10-27] Standardize NATS Consumer Guide on Modern SDKs and Accurate Delivery Semantics
 
-- **Change:** Updated [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md): replaced legacy Go push consumer subscription (`js.Subscribe` with `nats.Bind`) with the modern Go `jetstream` package pattern (`js.Consumer` handle bound to provisioned consumer with `consumer.Consume()` callback loop and `consumeCtx.Stop()`); removed legacy tags on Python 3 pull batch fetch and push subscription snippets; clarified that `js.subscribe(..., ordered_consumer=True)` is the standard modern API pattern in `nats-py` with automated ephemeral consumer management; and updated the coverage matrix to reflect modern SDK consumption patterns across Go and Python 3.
-- **Reason:** Eliminate legacy and deprecated API references in developer guidance, standardizing all language examples on modern, actively supported JetStream SDK interfaces.
+- **Change:** Overhauled [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md):
+  - Corrected architectural distinction between Pull and Push consumers: clarified that `consumer.Consume()` is a Pull Consumer continuous processing loop (preventing runtime `ErrNotPullConsumer` failures).
+  - Expanded Pull Consumers (Section 3.1) into two clear patterns: continuous callback processing (`consumer.Consume` in Go `nats.go/jetstream`, `consumerContext.consume` in modern Java `jnats` 2.17+ Simplified API) and on-demand batch retrieval (`consumer.Fetch` in Go, `consumerContext.fetchMessages` in Java, `sub.fetch` in Python `nats-py`).
+  - Added consumer handle initialization bindings across Go (`js.Consumer`), Java (`StreamContext`/`ConsumerContext`), and Python (`js.pull_subscribe`).
+  - Corrected Push Consumers (Section 3.2): documented that Push Consumers deliver to a server-configured `DeliverSubject`, and updated Go, Java, and Python examples to subscribe to the `DeliverSubject` directly via Core NATS subscriptions with JetStream message acknowledgements.
+  - Updated Section 1 Coverage Matrix to accurately reflect modern SDK methods.
+- **Reason:** Eliminate architectural conflation between callback styles and NATS consumer delivery types, replace legacy SDK snippets with active modern SDK interfaces, and ensure code snippets reflect verified reference patterns.
 - **Affected Area:** [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
 
 ## [2026-10-26] Author Developer Onboarding Journey and Documentation Roadmap

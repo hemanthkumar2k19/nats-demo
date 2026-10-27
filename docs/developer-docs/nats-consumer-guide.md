@@ -12,8 +12,9 @@ Read this guide first to understand how to consume messages. Then review the **D
 
 | Topic | Go | Java | Python 3 |
 |---|---|---|---|
-| Pull consumer | Bind and fetch | Bind and fetch | Bind and fetch |
-| Push consumer | Bind and `Consume` | Bind and subscribe | Bind and subscribe |
+| Pull consumer (Continuous) | `consumer.Consume` | `consumerContext.consume` | Loop with `fetch` |
+| Pull consumer (Batch) | `consumer.Fetch` | `consumerContext.fetchMessages` | `psub.fetch` |
+| Push consumer | Core `Subscribe` to deliver subject | Core `subscribe` to deliver subject | Core `subscribe` to deliver subject |
 | Acknowledgements | `Ack`, `Nak`, `Term`, `InProgress` | `ack`, `nak`, `term`, `inProgress` | `ack`, `nak`, `term`, `in_progress` |
 | Sequential processing | Sequential message loop | Sequential message loop | Sequential async loop |
 | Concurrent processing | Goroutines with bounded workers | Executor or worker pool | Bounded `asyncio` workers |
@@ -31,6 +32,7 @@ Obtain the following details from the platform team:
 - Stream name and provisioned consumer name.
 - Subject filter, where applicable.
 - Delivery mode: pull or push.
+- Deliver subject, where applicable (required for Push Consumers).
 - Acknowledgement policy and retry expectations.
 - Approved SDK and runtime versions.
 
@@ -42,7 +44,10 @@ The provisioned consumer determines the delivery mode your application should us
 
 ### 3.1 Pull Consumers
 
-A pull consumer lets the application request messages when it is ready to process them.
+A pull consumer lets the application request messages when it is ready to process them. It has no server-configured delivery subject. Modern SDKs support two pull consumption models:
+
+1. **Continuous processing (`Consume`)**: An asynchronous client-managed loop that pulls messages and invokes a callback handler with client-side backpressure and flow control.
+2. **On-demand batch retrieval (`Fetch`)**: Explicitly pulls a bounded batch of messages on schedule or demand.
 
 **When to use pull**
 
@@ -51,71 +56,14 @@ A pull consumer lets the application request messages when it is ready to proces
 - The application needs backpressure or controlled concurrency.
 - The workload requires explicit retry and failure handling.
 
-Pull consumers are the recommended starting point for most new applications.
+Pull consumers are the recommended starting point for almost all modern application workloads.
 
-**Go — Fetch a batch**
+#### Continuous Processing (Callback-driven Pull)
 
-```go
-msgs, err := consumer.Fetch(10)
-if err != nil {
-    return err
-}
-
-for msg := range msgs.Messages() {
-    if err := process(msg.Data()); err != nil {
-        _ = msg.Nak()
-        continue
-    }
-    _ = msg.Ack()
-}
-```
-
-**Java — Fetch a batch**
-
-```java
-List<Message> messages = sub.fetch(10, Duration.ofSeconds(2));
-
-for (Message msg : messages) {
-    try {
-        process(msg.getData());
-        msg.ack();
-    } catch (Exception e) {
-        msg.nak();
-    }
-}
-```
-
-**Python 3 — Fetch a batch**
-
-```python
-messages = await sub.fetch(batch=10, timeout=2)
-
-for msg in messages:
-    try:
-        await process(msg.data)
-        await msg.ack()
-    except Exception:
-        await msg.nak()
-```
-
-In each example, `consumer` or `sub` represents a handle bound to the existing pull consumer. Handle fetch timeouts and SDK-specific fetch errors according to the approved version.
-
-### 3.2 Push Consumers
-
-A push consumer delivers messages to the application through a configured delivery subject. The application handles each message through a callback or subscription.
-
-**When to use push**
-
-- The platform has provisioned a push consumer for the application.
-- The application needs continuous delivery without explicitly requesting each batch.
-- The existing push configuration meets the application's flow-control and processing requirements.
-
-Use pull when the application needs finer control over how much work it accepts. Use push when it fits the provisioned design and the application can safely handle incoming delivery.
-
-**Go — Consume from an existing push consumer**
+**Go — Continuous consumption (`Consume`)**
 
 ```go
-consumer, err := js.Consumer(ctx, "ORDERS", "orders-push")
+consumer, err := js.Consumer(ctx, "ORDERS", "orders-pull")
 if err != nil {
     return err
 }
@@ -133,17 +81,124 @@ if err != nil {
 defer consumeCtx.Stop()
 ```
 
-**Java — Subscribe to an existing push consumer**
+**Java — Continuous consumption (`consume`)**
 
 ```java
-PushSubscribeOptions options =
-    PushSubscribeOptions.builder()
-        .stream("ORDERS")
-        .durable("orders-push")
-        .build();
+StreamContext streamContext = nc.getStreamContext("ORDERS");
+ConsumerContext consumerContext = streamContext.getConsumerContext("orders-pull");
 
-js.subscribe(
+MessageConsumer consumer = consumerContext.consume(msg -> {
+    try {
+        process(msg.getData());
+        msg.ack();
+    } catch (Exception e) {
+        msg.nak();
+    }
+});
+```
+
+#### On-Demand Batch Retrieval (`Fetch`)
+
+**Go — Fetch a batch**
+
+```go
+consumer, err := js.Consumer(ctx, "ORDERS", "orders-pull")
+if err != nil {
+    return err
+}
+
+msgs, err := consumer.Fetch(10)
+if err != nil {
+    return err
+}
+
+for msg := range msgs.Messages() {
+    if err := process(msg.Data()); err != nil {
+        _ = msg.Nak()
+        continue
+    }
+    _ = msg.Ack()
+}
+```
+
+**Java — Fetch a batch**
+
+```java
+StreamContext streamContext = nc.getStreamContext("ORDERS");
+ConsumerContext consumerContext = streamContext.getConsumerContext("orders-pull");
+
+try (FetchConsumer fetchConsumer = consumerContext.fetchMessages(10)) {
+    Message msg;
+    while ((msg = fetchConsumer.nextMessage()) != null) {
+        try {
+            process(msg.getData());
+            msg.ack();
+        } catch (Exception e) {
+            msg.nak();
+        }
+    }
+}
+```
+
+**Python 3 — Fetch a batch**
+
+```python
+sub = await js.pull_subscribe(
     "orders.created",
+    durable="orders-pull",
+    stream="ORDERS",
+)
+
+messages = await sub.fetch(batch=10, timeout=2)
+
+for msg in messages:
+    try:
+        await process(msg.data)
+        await msg.ack()
+    except Exception:
+        await msg.nak()
+```
+
+### 3.2 Push Consumers
+
+A push consumer is configured on the NATS server with a mandatory `DeliverSubject` (for example, `orders.delivery`). JetStream proactively forwards incoming stream messages to that `DeliverSubject`.
+
+The application handles messages by subscribing directly to the consumer's `DeliverSubject`.
+
+> [!NOTE]
+> Do not call pull methods like `consumer.Consume()` or `consumer.Fetch()` on a Push Consumer; the SDK will return an error (such as `ErrNotPullConsumer`). For callback-driven event handling with modern flow control, use a **Pull Consumer** with `consumer.Consume()`.
+
+**When to use push**
+
+- The platform has provisioned an existing push consumer with a designated `DeliverSubject`.
+- The application needs real-time delivery without initiating client pull requests.
+- The existing push configuration meets the application's flow-control and delivery requirements.
+
+**Go — Subscribe to DeliverSubject**
+
+```go
+// In Go, subscribe directly to the push consumer's configured DeliverSubject.
+// Use nc.QueueSubscribe when running multiple worker instances for load balancing.
+sub, err := nc.Subscribe("orders.delivery", func(msg *nats.Msg) {
+    if err := process(msg.Data); err != nil {
+        _ = msg.Nak()
+        return
+    }
+    _ = msg.Ack()
+})
+if err != nil {
+    return err
+}
+defer sub.Drain()
+```
+
+**Java — Subscribe to DeliverSubject**
+
+```java
+// In Java, listen on the DeliverSubject using a Dispatcher.
+Dispatcher dispatcher = nc.createDispatcher();
+Subscription sub = nc.subscribe(
+    "orders.delivery",
     dispatcher,
     msg -> {
         try {
@@ -152,13 +207,11 @@ js.subscribe(
         } catch (Exception e) {
             msg.nak();
         }
-    },
-    false,
-    options
+    }
 );
 ```
 
-**Python 3 — Subscribe to an existing push consumer**
+**Python 3 — Subscribe to DeliverSubject**
 
 ```python
 async def handle_message(msg):
@@ -168,15 +221,14 @@ async def handle_message(msg):
     except Exception:
         await msg.nak()
 
-sub = await js.subscribe(
-    "orders.created",
+# In Python, subscribe directly to the push consumer's deliver_subject
+sub = await nc.subscribe(
+    "orders.delivery",
     cb=handle_message,
-    durable="orders-push",
-    stream="ORDERS",
 )
 ```
 
-In Go, the modern `jetstream` package retrieves the consumer handle and starts continuous consumption using `consumer.Consume()`. In Java and Python 3, push subscriptions deliver incoming messages to callbacks configured on the subscription. Verify binding behaviour and options against the approved SDK version.
+In all languages, messages received on a JetStream push consumer delivery subject are standard NATS messages that support explicit JetStream acknowledgements (`msg.Ack()`, `msg.Nak()`, `msg.Term()`).
 
 ### 3.3 Quick Comparison
 
