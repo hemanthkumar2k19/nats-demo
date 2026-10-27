@@ -2,6 +2,58 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-27] Consolidate Consumer Documentation into Unified Developer Guide and Align Roadmap
+
+- **Change:**
+  - Consolidated all consumer documentation into a single authoritative guide: [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md):
+    - **Foundational Standards & Matrices:** Preserved naming conventions, subject filtering rules, durable vs. ephemeral lifecycles, acknowledgement policies, and delivery start policies with structured tables and compliant/non-compliant examples.
+    - **Enterprise Principle ("Get, Do Not Create"):** Established that application developers do not create or mutate consumers in code; consumers are provisioned by Platform/SRE via governance.
+    - **SDK Consumption Samples:** Added minimal, idiomatic Go, Java, and Python code samples demonstrating how to bind to a provisioned consumer (`js.Consumer(...)` / `getConsumerContext(...)` / `pull_subscribe(...)`) and consume via continuous pull, batch fetch, and message acknowledgements (`Ack`, `Nak`, `Term`, `InProgress`).
+    - **Lifecycle Governance:** Concluded with a step-by-step workflow for requesting consumer provisioning and access using [docs/developer-docs/nats-resources/consumer-intake.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-resources/consumer-intake.md).
+    - **Stream Architecture References:** Linked to [docs/developer-docs/nats-jetstream-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-jetstream-guide.md) for stream-level storage, retention, and cluster persistence mechanics.
+  - Updated [docs/developer-docs/roadmap.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/roadmap.md):
+    - Aligned consumers to the exact paired structure used by subjects: Step 10 is [Consumer Guide](nats-consumer-guide.md) (Design & Consumption) immediately followed by Step 11: [Consumer Intake](nats-resources/consumer-intake.md) (Provisioning), followed by Steps 12-14 for Delivery Semantics.
+- **Reason:** Provide developers with a single, end-to-end guide that teaches consumer design standards, demonstrates how to bind and consume in code without provisioning, and explains how to obtain access through the platform intake process.
+- **Affected Area:** [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md), [docs/developer-docs/roadmap.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/roadmap.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-27] Add Cross-References to Consumer Guide v2 and Update Developer Onboarding Roadmap
+
+- **Change:**
+  - Updated [docs/developer-docs/nats-consumer-guide-v2.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide-v2.md):
+    - Added explicit reference links to [docs/developer-docs/nats-jetstream-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-jetstream-guide.md) for implementation architecture and persistence mechanics in Purpose, Section 3.2, and Section 6.
+    - Added explicit reference links to [docs/developer-docs/nats-resources/consumer-intake.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-resources/consumer-intake.md) for guiding through the formal lifecycle and provisioning process in Purpose, Section 3.1, Section 3.2, and Section 6.
+  - Updated [docs/developer-docs/roadmap.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/roadmap.md):
+    - Added Step 10: [Consumer Guide](nats-consumer-guide-v2.md) under "Consumer Standards" covering naming conventions, subject filtering rules, lifecycle governance, acknowledgement policies, and delivery start positions with 5 dedicated self-check questions.
+    - Repositioned [Consumer Usage Guide](nats-consumer-guide.md) to Step 11 under "Consumer Implementation" (Go/Java/Python SDK mechanics).
+    - Repositioned [Consumer Intake](nats-resources/consumer-intake.md) to Step 12 under "Resource Provisioning", and shifted Delivery Semantics to Steps 13-15.
+- **Reason:** Formally connect Consumer architectural standards with Stream implementation mechanics and platform intake governance, ensuring a clear progression in the developer onboarding journey.
+- **Affected Area:** [docs/developer-docs/nats-consumer-guide-v2.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide-v2.md), [docs/developer-docs/roadmap.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/roadmap.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-27] Standardize Consumer Guide v2 with Tabular Layout and Compliance Examples
+
+- **Change:** Refactored [docs/developer-docs/nats-consumer-guide-v2.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide-v2.md) to adopt a consistent tabular layout and compliance reference tables:
+  - Replaced bullet points with structured markdown tables across all sections (Naming Standards, Subject Filtering Standards, Durable vs. Ephemeral Lifecycle Matrix, Acknowledgement Policy Operational Standards, and Delivery Policy Standards).
+  - Added four **Compliant and Non-Compliant Examples** tables modeled after `subject-guide.md`:
+    1. Consumer Naming (kebab-case, uppercase rejection, timestamp avoidance, pod/instance ID avoidance, environment prefix elimination).
+    2. Subject Filtering (narrowest scope, wildcard boundaries, stream space constraints).
+    3. Consumer Lifecycle (durable business workers vs ephemeral diagnostic tools, explicit cleanup, shared worker naming).
+    4. Acknowledgement Policies (`AckExplicit` vs `AckNone` data loss, deduplication idempotency, `AckAll` concurrency hazards).
+    5. Delivery Policies (`DeliverAll` historical audits vs `DeliverNew` live banners, replay consumer isolation).
+  - Enforced strict ASCII-only formatting across all tables and text.
+- **Reason:** Align document presentation with existing platform developer standards (such as `subject-guide.md`), replacing text-heavy lists with scannable tables and explicit compliance examples.
+- **Affected Area:** [docs/developer-docs/nats-consumer-guide-v2.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide-v2.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-27] Create NATS Consumer Design and Configuration Standards Guide (v2)
+
+- **Change:** Created [docs/developer-docs/nats-consumer-guide-v2.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide-v2.md) focusing purely on consumer architecture standards and governance:
+  - **Consumer Naming Standards:** Defined `<application>-<processing-purpose>` format, naming invariants (kebab-case, lowercase, no instance/pod IDs to prevent inactive consumer leaks, unique within stream, treat renames as migrations).
+  - **Subject Filtering Standards:** Defined narrowest-filter rule, wildcard boundaries, independent responsibilities per consumer, and decoupling filters from authorization.
+  - **Durable vs. Ephemeral Consumer Management:** Established enterprise baseline for durable ongoing business processing vs. ephemeral diagnostic/replay use cases with cleanup responsibilities.
+  - **Acknowledgement Policy Standards:** Documented `Explicit` (recommended default), `All`, and `None` policies with redelivery awareness and business idempotency requirements.
+  - **Delivery Policy Matrix:** Tabulated `DeliverAll`, `DeliverNew`, `DeliverLast`, `DeliverLastPerSubject`, `DeliverByStartSequence`, and `DeliverByStartTime` with operational behaviors and use cases.
+- **Reason:** Provide a clean, dedicated reference document focusing on enterprise consumer design and configuration standards without mixing operational SDK code samples.
+- **Affected Area:** [docs/developer-docs/nats-consumer-guide-v2.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide-v2.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-27] Add Durable Ordered Consumer Pattern (MaxAckPending = 1) to Consumer Guide
 
 - **Change:** Updated [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md) Section 5.3 to document the canonical solution for ordered processing with durable JetStream consumers:

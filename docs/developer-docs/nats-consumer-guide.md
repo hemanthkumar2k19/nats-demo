@@ -1,715 +1,424 @@
-# NATS JetStream Consumer Usage Guide
+# NATS Consumer Guide
 
-## 1. Overview
+## Purpose
 
-This guide explains how application developers consume messages from NATS JetStream using provisioned consumers. It covers pull and push delivery, message acknowledgement, processing concurrency, ordering, and common issues.
+This guide establishes enterprise standards for designing, naming, filtering, and consuming messages from NATS JetStream Consumers.
 
-Streams and Consumers are provisioned and managed through the approved platform process. Subject usage and filtering follow the platform's naming and configuration conventions. Developers should request new resources or configuration changes through the approved [Consumer Intake Form](nats-resources/consumer-intake.md) and use the resulting configuration in their applications.
+In this platform architecture, **application developers do not create or update Consumers in application code**. JetStream Consumers are platform-governed infrastructure resources provisioned by Platform/SRE. Application services only bind to ("get") existing provisioned Consumers to consume and acknowledge messages.
 
-Read this guide first to understand how to consume messages. Then review the **Delivery Semantics** guide to understand At-Most-Once, At-Least-Once, and Exactly-Once delivery guarantees.
+This guide provides:
+1. **Design & Configuration Standards:** Naming conventions, subject filtering rules, durable lifecycles, acknowledgement policies, and delivery start positions.
+2. **Developer Consumption Patterns:** How application code gets a provisioned consumer and processes messages across Go, Java, and Python.
+3. **Provisioning & Access Workflow:** How to request consumer access and configuration changes through the [Consumer Intake Form](nats-resources/consumer-intake.md).
 
-### Coverage Matrix
+For stream storage models, retention policies, and cluster-level persistence architecture, refer to the [JetStream Guide](nats-jetstream-guide.md).
 
-| Topic | Go | Java | Python 3 |
+---
+
+## 1. Consumer Naming Standards
+
+Consumer names must describe the owning application and its processing purpose.
+
+### 1.1 Standard Format
+
+```text
+<application>-<processing-purpose>
+```
+
+| Token | Purpose | Example |
+|---|---|---|
+| `<application>` | Identifies the owning service, application, or business domain | `order-service`, `payment-service` |
+| `<processing-purpose>` | Identifies the business responsibility or processing role | `fulfillment`, `audit`, `reconciliation` |
+
+### 1.2 Naming Standards
+
+| Rule | Requirement | Operational Rationale |
+|---|---|---|
+| Character Set | Lowercase alphanumeric characters and hyphens only (`kebab-case`). | Prevents casing mismatches and CLI parsing issues across operating systems. |
+| Stability | Use stable, meaningful names for Durable Consumers across deployments. | Preserves server-side delivery sequence and acknowledgement state across restarts. |
+| Uniqueness | Consumer names must be unique within the associated parent Stream. | Prevents naming collisions and unintended message routing between consumers. |
+| No Instance IDs | Do not include pod IDs, UUIDs, hostnames, or container hashes. | Prevents abandoned durable state and resource leaks on the NATS cluster. |
+| No Timestamps | Avoid timestamps or date strings in Durable Consumer names. | Breaks delivery state continuity; forces consumers to re-read or skip messages. |
+| Rename as Migration | Treat any rename as a formal migration, not an in-place edit. | A new name initializes a new consumer with its own delivery state. |
+| Workload Sharing | Multiple worker replicas must share the same Consumer name. | Enables competing consumer patterns and predictable horizontal scale-out. |
+
+### 1.3 Compliant and Non-Compliant Naming Examples
+
+| Compliant | Non-compliant | Reason |
+|---|---|---|
+| `order-service-fulfillment` | `order_service_fulfillment` | Uses underscores instead of hyphens. |
+| `order-service-audit` | `ORDER-SERVICE-AUDIT` | Uses uppercase characters; must be lowercase kebab-case. |
+| `payment-service-reconciliation` | `payment-service-reconciliation-20261027` | Contains a timestamp; breaks delivery state continuity across deployments. |
+| `payment-service-worker` | `payment-service-worker-pod-8f2a1` | Appends pod/instance ID; creates abandoned durable consumers on pod restart. |
+| `invoice-service-indexer` | `invoice-service-indexer-temp-uuid-9a8b` | Uses temporary/random UUIDs in a durable consumer name. |
+| `order-service-fulfillment` | `prod-order-service-fulfillment` | Embeds environment prefix; environment isolation belongs to accounts/streams. |
+
+---
+
+## 2. Subject Filtering Standards
+
+Consumer subject filters determine which messages captured by the parent Stream are eligible for delivery to the Consumer.
+
+### 2.1 Filtering Standards
+
+| Rule | Requirement | Operational Rationale |
+|---|---|---|
+| Stream Boundary | Filter must fall strictly within the parent Stream subject space. | Out-of-boundary subjects are rejected by the server or receive no messages. |
+| Principle of Least Scope | Use the narrowest specific subject filter required. | Avoids delivering unwanted messages and consuming unnecessary network bandwidth. |
+| Controlled Wildcards | Use wildcards (`*`, `>`) only when multi-subject matching is intentional. | Overly broad wildcards deliver unintended schemas and cause consumer contention. |
+| Independent Roles | Separate distinct processing responsibilities into dedicated Consumers. | Ensures independent delivery positions, sequence tracking, and scaling characteristics. |
+| Security Boundary | Enforce permissions via NATS authorization, not consumer filters. | Filters are client routing criteria, not an access control mechanism. |
+
+### 2.2 Compliant and Non-Compliant Subject Filter Examples
+
+The following examples assume a parent Stream `ORDERS` capturing `orders.>`:
+
+| Compliant | Non-compliant | Reason |
+|---|---|---|
+| `orders.created` | `orders.*` (when only processing creation events) | Overly broad wildcard; delivers cancellation, payment, and refund events unnecessarily. |
+| `orders.us.fulfilled` | `orders.>` (when only handling US fulfillment) | Captures all downstream tokens instead of the specific regional operation. |
+| `orders.created` | `payments.received` (on Stream `ORDERS`) | Falls outside parent Stream subject space; messages will never arrive. |
+| `orders.service.audit.*` | `*` | Single token wildcard at the root ignores namespace hierarchy and parent stream scope. |
+
+---
+
+## 3. Durable and Ephemeral Consumer Management
+
+NATS JetStream supports Durable and Ephemeral Consumers. The choice depends on the workload's lifecycle and requirements for retaining Consumer state.
+
+### 3.1 Consumer Lifecycle Matrix
+
+| Dimension | Durable Consumer | Ephemeral Consumer |
+|---|---|---|
+| Primary Use Case | Ongoing business workloads, microservices, background workers. | Diagnostic inspection, ad hoc debugging, developer testing. |
+| State Persistence | Preserved on server across client disconnects and restarts. | Deleted by server after client disconnects or inactivity timeout. |
+| Naming Standard | Explicit, stable, meaningful kebab-case name. | Auto-generated or temporary session identifier. |
+| Lifecycle Management | Managed via [Consumer Intake Form](nats-resources/consumer-intake.md) and formal change review. | Created dynamically; cleaned up immediately upon task completion. |
+| Reconnection Behavior | Resumes from last acknowledged stream sequence. | Loses delivery state; creates new sequence tracking upon recreation. |
+| Production Policy | Mandatory standard for production microservices. | Prohibited for persistent production message processing. |
+
+### 3.2 Management Standards
+
+| Rule | Requirement | Operational Rationale |
+|---|---|---|
+| Production Standard | Durable Consumers are mandatory for ongoing business workloads. | Retains delivery tracking and unacknowledged messages during service restarts. |
+| Change Governance | Manage Durable Consumer lifecycle through the approved [Consumer Intake Form](nats-resources/consumer-intake.md). | Prevents accidental delivery sequence resets and uncoordinated consumer deletions. |
+| Ephemeral Cleanup | Explicitly remove Ephemeral Consumers immediately after task completion. | Avoids lingering consumer state; does not rely solely on inactive threshold timers. |
+| State Evaluation | Assess pending acknowledgements and stream backlog before modifying. | Prevents message re-reads, duplicate processing, and downstream overload. |
+| Implementation Base | Understand persistence mechanics and stream configurations prior to consumer rollout. | Refer to the [JetStream Guide](nats-jetstream-guide.md) for stream setup and consumer pull/push models. |
+
+### 3.3 Compliant and Non-Compliant Lifecycle Examples
+
+| Compliant | Non-compliant | Reason |
+|---|---|---|
+| Durable Consumer for order fulfillment worker | Ephemeral Consumer for order fulfillment worker | Application restart causes loss of delivery tracking and missed messages. |
+| Ephemeral Consumer for local CLI debugging tool | Durable Consumer without cleanup for ad-hoc debugging | Leaves orphaned durable state and unacknowledged message backlog on the server. |
+| Explicit consumer deletion after diagnostic session | Relying solely on `InactiveThreshold` for ephemeral cleanup | Delays server resource reclamation until threshold timer expires. |
+| Sharing durable consumer across scaled worker replicas | Creating unique durable consumer per pod replica | Creates split delivery sequences and multiplies stream message retention burden. |
+
+---
+
+## 4. Acknowledgement Policy Standards
+
+The acknowledgement policy defines how the Consumer records message-processing acknowledgements and how acknowledgement state affects redelivery.
+
+### 4.1 Acknowledgement Policies Matrix
+
+| Policy | Server Behavior | Typical Use Case | Operational Risk / Trade-off |
 |---|---|---|---|
-| Pull consumer (Continuous) | `consumer.Consume` | `consumerContext.consume` | Loop with `fetch` |
-| Pull consumer (Batch) | `consumer.Fetch` | `consumerContext.fetchMessages` | `psub.fetch` |
-| Push consumer | Core `Subscribe` to deliver subject | Core `subscribe` to deliver subject | Core `subscribe` to deliver subject |
-| Acknowledgements | `Ack`, `Nak`, `Term`, `InProgress` | `ack`, `nak`, `term`, `inProgress` | `ack`, `nak`, `term`, `in_progress` |
-| Sequential processing | Sequential message loop | Sequential message loop | Sequential async loop |
-| Concurrent processing | Goroutines with bounded workers | Executor or worker pool | Bounded `asyncio` workers |
-| Ordered Consumer | `OrderedConsumer` | Ordered subscription | Ordered subscription (`ordered_consumer=True`) |
+| `AckExplicit` (Enterprise Default) | Server requires individual ACK per message before marking it complete. | Business-critical processing, financial workflows, order pipelines. | Client must manage ACK latency and handle timeouts (`AckWait`). |
+| `AckAll` | Acknowledging a message acknowledges that message and all preceding unacked messages. | Strictly ordered, single-threaded batch processing. | An accidental ACK prematurely confirms prior failed or unprocessed messages. |
+| `AckNone` | Server considers message acknowledged the instant it is delivered to client. | Best-effort metrics, high-throughput non-critical telemetry. | Unacknowledged messages are never redelivered on client crash; high loss risk. |
 
-The code snippets focus on consumer operations and processing behaviour. They assume that the NATS connection and JetStream client are already available, and that the consumer has been provisioned or is an Ordered Consumer created through the supported client API.
+### 4.2 Operational Standards
 
-SDK APIs differ by version. Confirm the signatures against the versions approved by your platform before using the snippets as copy-and-run examples.
+| Consideration | Enterprise Standard | Implementation Guidance |
+|---|---|---|
+| Default Policy | `AckExplicit` is mandatory for business workloads. | Alternative policies require documented platform exception approval. |
+| Redelivery Tolerance | Consumers must expect and tolerate duplicate deliveries. | Set explicit `AckWait` and configure `MaxDeliver` with dead-letter streams. |
+| Processing Idempotency | Business logic must be idempotent. | Use unique transaction IDs, DB constraints, or idempotency keys. |
+| Flow Control | Align `MaxAckPending` with worker processing capacity. | Avoids overwhelming worker memory and triggering unintended redelivery timeouts. |
 
-## 2. Before You Start
+### 4.3 Compliant and Non-Compliant Acknowledgement Examples
 
-Obtain the following details from the platform team:
+| Compliant | Non-compliant | Reason |
+|---|---|---|
+| `AckExplicit` for payment processing worker | `AckNone` for payment processing worker | Network glitch or pod crash leads to silent, unrecoverable payment data loss. |
+| `AckExplicit` with idempotent deduplication key | `AckExplicit` assuming exactly-once delivery without deduplication | NATS guarantees at-least-once delivery; downstream duplicate side effects will occur. |
+| `AckAll` in single-threaded strictly sequential stream | `AckAll` with concurrent out-of-order worker routines | A later message worker acknowledging completes earlier messages that are still failing. |
 
-- NATS endpoint and authentication method.
-- Stream name and provisioned consumer name.
-- Subject filter, where applicable.
-- Delivery mode: pull or push.
-- Deliver subject, where applicable (required for Push Consumers).
-- Acknowledgement policy and retry expectations.
-- Approved SDK and runtime versions.
+---
 
-If the required consumer is unavailable, submit a request through the approved [Consumer Intake Form](nats-resources/consumer-intake.md). Do not create, update, reset, or delete shared resources from application code.
+## 5. Delivery Policy Standards
 
-## 3. Pull and Push Consumers
+The delivery policy determines the starting point for a Consumer when it is created. It should be selected according to the application's historical-data and replay requirements.
 
-The provisioned consumer determines the delivery mode your application should use.
+### 5.1 Delivery Policies Matrix
 
-### 3.1 Pull Consumers
+| Policy | Server Behavior | Typical Use Case |
+|---|---|---|
+| `DeliverAll` | Starts with all retained messages available in the Stream, from the beginning of history. | Rebuilding read models or processing retained historical events. |
+| `DeliverNew` | Starts with messages published after the Consumer is created. | Live processing when earlier messages can safely be skipped. |
+| `DeliverLast` | Starts with the most recent message in the Stream. | Reading the latest message when that is sufficient for the application. |
+| `DeliverLastPerSubject` | Starts with the latest available message for each matching subject. | Initializing views that require the latest message across multiple subjects. |
+| `DeliverByStartSequence` | Starts at a specified Stream sequence using `OptStartSeq`. | Replaying from a known sequence or recovery checkpoint. |
+| `DeliverByStartTime` | Starts from a specified timestamp using `OptStartTime`. | Replaying messages from a defined time window. |
 
-A pull consumer lets the application request messages when it is ready to process them. It has no server-configured delivery subject. Modern SDKs support two pull consumption models:
+### 5.2 Delivery Standards
 
-1. **Continuous processing (`Consume`)**: An asynchronous client-managed loop that pulls messages and invokes a callback handler with client-side backpressure and flow control.
-2. **On-demand batch retrieval (`Fetch`)**: Explicitly pulls a bounded batch of messages on schedule or demand.
+| Rule | Requirement | Operational Consideration |
+|---|---|---|
+| Requirements-Driven | Choose policy based on data contract, not convenience. | Prevents silent data omission or unexpected multi-gigabyte re-reads. |
+| Historical Processing | Use `DeliverAll` when rebuilding state or event-sourcing. | Ensure consumers can handle initial delivery load from stream start. |
+| Live Consumption | Use `DeliverNew` only when historical records are safe to skip. | Earlier unconsumed messages in the stream will never be delivered to this consumer. |
+| Latest Message | Use `DeliverLast` only when a single latest event represents full state. | Intermediate state transitions are skipped. |
+| Replay Safety | Dedicated replay consumer for ad hoc investigations. | Never alter the starting sequence or replay over an active production consumer. |
+| Bounded Time Replay | Use `DeliverByStartTime` / `DeliverByStartSequence` for targeted recovery. | Isolate to the affected failure window using defined timestamps or sequences. |
 
-**When to use pull**
+### 5.3 Compliant and Non-Compliant Delivery Policy Examples
 
-- Use pull consumers when the application needs control over message consumption rate, batch size, and processing concurrency.
-- Suitable for batch processing, background workers, and workloads where messages should be fetched only when the application is ready to process them.
-- Example: An Order Processing Service fetches 10 orders at a time and processes them based on available database connections and worker capacity.
+| Compliant | Non-compliant | Reason |
+|---|---|---|
+| `DeliverAll` for new audit log service populating datastore | `DeliverNew` for new audit service expecting complete historical audit trail | Omits all pre-existing events, creating permanent gaps in the audit database. |
+| `DeliverNew` for real-time live notification alert banner | `DeliverAll` for real-time banner on high-volume stream | Deluges newly connected clients with years of obsolete historical alerts. |
+| Creating dedicated temporary consumer for replay debugging | Modifying delivery sequence on active production consumer | Corrupts active consumer sequence tracking and causes duplicate processing across all workers. |
+| `DeliverByStartTime` specifying exact incident window | `DeliverAll` to recover a 15-minute outage on a 90-day stream | Unnecessarily replays 90 days of traffic instead of targeting the 15-minute failure window. |
 
-Pull consumers are the recommended starting point for almost all modern application workloads.
+---
 
-#### Continuous Processing (Callback-driven Pull)
+## 6. How Application Developers Consume Messages
 
-**Go — Continuous consumption (`Consume`)**
+### 6.1 Enterprise Governance: Get, Do Not Create
+
+In production and staging environments, application services **MUST NOT** execute consumer creation or mutation calls (such as `CreateConsumer`, `CreateOrUpdateConsumer`, or `AddConsumer`).
+
+- **Platform Invariant:** Streams and Consumers are provisioned via Terraform, GitOps, or SRE tooling following an approved [Consumer Intake Form](nats-resources/consumer-intake.md).
+- **Application Responsibility:** Application code is given the `stream` and `consumer` names via configuration (e.g., environment variables). The code simply obtains a reference to the existing provisioned consumer ("get" operation) and starts consuming.
+
+### 6.2 Binding to a Provisioned Consumer
+
+#### Go (jetstream package)
 
 ```go
-consumer, err := js.Consumer(ctx, "ORDERS", "orders-pull")
-if err != nil {
-    return err
-}
+package main
 
-consumeCtx, err := consumer.Consume(func(msg jetstream.Msg) {
-    if err := process(msg.Data()); err != nil {
-        _ = msg.Nak()
-        return
-    }
-    _ = msg.Ack()
-})
-if err != nil {
-    return err
-}
-defer consumeCtx.Stop()
-```
+import (
+    "context"
+    "log"
+    "os"
+    "time"
 
-**Java — Continuous consumption (`consume`)**
-
-```java
-StreamContext streamContext = nc.getStreamContext("ORDERS");
-ConsumerContext consumerContext = streamContext.getConsumerContext("orders-pull");
-
-MessageConsumer consumer = consumerContext.consume(msg -> {
-    try {
-        process(msg.getData());
-        msg.ack();
-    } catch (Exception e) {
-        msg.nak();
-    }
-});
-```
-
-**Python 3 — Continuous consumption (`asyncio` loop with `fetch`)**
-
-In Python (`nats-py`), continuous pull consumption is driven via an explicit `asyncio` task loop rather than a background thread callback, ensuring execution remains cooperative, non-blocking, and cancellation-safe within the application's event loop:
-
-```python
-sub = await js.pull_subscribe(
-    "orders.created",
-    durable="orders-pull",
-    stream="ORDERS",
+    "github.com/nats-io/nats.go"
+    "github.com/nats-io/nats.go/jetstream"
 )
 
-while True:
-    try:
-        messages = await sub.fetch(batch=10, timeout=2)
-        for msg in messages:
-            try:
-                await process(msg.data)
-                await msg.ack()
-            except Exception:
-                await msg.nak()
-    except asyncio.TimeoutError:
-        # Timeout occurs when no messages are available in the window; continue loop
-        continue
-```
-
-#### On-Demand Batch Retrieval (`Fetch`)
-
-**Go — Fetch a batch**
-
-```go
-consumer, err := js.Consumer(ctx, "ORDERS", "orders-pull")
-if err != nil {
-    return err
-}
-
-msgs, err := consumer.Fetch(10)
-if err != nil {
-    return err
-}
-
-for msg := range msgs.Messages() {
-    if err := process(msg.Data()); err != nil {
-        _ = msg.Nak()
-        continue
+func main() {
+    nc, err := nats.Connect(os.Getenv("NATS_URL"))
+    if err != nil {
+        log.Fatalf("NATS connect error: %v", err)
     }
-    _ = msg.Ack()
-}
-```
+    defer nc.Close()
 
-**Java — Fetch a batch**
+    js, err := jetstream.New(nc)
+    if err != nil {
+        log.Fatalf("JetStream init error: %v", err)
+    }
 
-```java
-StreamContext streamContext = nc.getStreamContext("ORDERS");
-ConsumerContext consumerContext = streamContext.getConsumerContext("orders-pull");
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-try (FetchConsumer fetchConsumer = consumerContext.fetchMessages(10)) {
-    Message msg;
-    while ((msg = fetchConsumer.nextMessage()) != null) {
-        try {
-            process(msg.getData());
-            msg.ack();
-        } catch (Exception e) {
-            msg.nak();
+    streamName := os.Getenv("NATS_STREAM_NAME")     // e.g. "ORDERS"
+    consumerName := os.Getenv("NATS_CONSUMER_NAME") // e.g. "order-service-fulfillment"
+
+    // Bind to the existing platform-provisioned Consumer (DO NOT call CreateConsumer)
+    cons, err := js.Consumer(ctx, streamName, consumerName)
+    if err != nil {
+        log.Fatalf("Failed to bind to provisioned consumer %q on stream %q: %v", consumerName, streamName, err)
+    }
+
+    // Start consuming messages
+    cc, err := cons.Consume(func(msg jetstream.Msg) {
+        if err := processOrder(msg.Data()); err != nil {
+            log.Printf("Processing error, sending NAK: %v", err)
+            msg.Nak()
+            return
         }
+        msg.Ack()
+    })
+    if err != nil {
+        log.Fatalf("Consume start failed: %v", err)
     }
+    defer cc.Stop()
+
+    select {} // Block until shutdown
+}
+
+func processOrder(data []byte) error {
+    // Idempotent business processing logic
+    return nil
 }
 ```
 
-**Python 3 — Fetch a batch**
-
-```python
-sub = await js.pull_subscribe(
-    "orders.created",
-    durable="orders-pull",
-    stream="ORDERS",
-)
-
-messages = await sub.fetch(batch=10, timeout=2)
-
-for msg in messages:
-    try:
-        await process(msg.data)
-        await msg.ack()
-    except Exception:
-        await msg.nak()
-```
-
-### 3.2 Push Consumers
-
-A push consumer is configured on the NATS server with a mandatory `DeliverSubject` (for example, `orders.delivery`). JetStream proactively forwards incoming stream messages to that `DeliverSubject`.
-
-The application handles messages by subscribing directly to the consumer's `DeliverSubject`.
-
-> [!NOTE]
-> Do not call pull methods like `consumer.Consume()` or `consumer.Fetch()` on a Push Consumer; the SDK will return an error (such as `ErrNotPullConsumer`). For callback-driven event handling with modern flow control, use a **Pull Consumer** with `consumer.Consume()`.
-
-**When to use push**
-
-- Use push consumers when the application needs messages to be delivered automatically as they become available, without explicitly requesting each batch.
-- Suitable for event-driven applications that need continuous message delivery and can manage incoming messages within their processing capacity.
-- Example: A Notification Service receives order confirmation events and sends email or SMS notifications as events arrive.
-
-**Go — Subscribe to DeliverSubject**
-
-```go
-// In Go, subscribe directly to the push consumer's configured DeliverSubject.
-// Use nc.QueueSubscribe when running multiple worker instances for load balancing.
-sub, err := nc.Subscribe("orders.delivery", func(msg *nats.Msg) {
-    if err := process(msg.Data); err != nil {
-        _ = msg.Nak()
-        return
-    }
-    _ = msg.Ack()
-})
-if err != nil {
-    return err
-}
-defer sub.Drain()
-```
-
-**Java — Subscribe to DeliverSubject**
+#### Java (io.nats.client)
 
 ```java
-// In Java, listen on the DeliverSubject using a Dispatcher.
-Dispatcher dispatcher = nc.createDispatcher();
-Subscription sub = nc.subscribe(
-    "orders.delivery",
-    dispatcher,
-    msg -> {
-        try {
-            process(msg.getData());
-            msg.ack();
-        } catch (Exception e) {
-            msg.nak();
-        }
-    }
-);
-```
+package com.example.service;
 
-**Python 3 — Subscribe to DeliverSubject**
+import io.nats.client.*;
+import io.nats.client.api.ConsumerInfo;
 
-```python
-async def handle_message(msg):
-    try:
-        await process(msg.data)
-        await msg.ack()
-    except Exception:
-        await msg.nak()
+public class OrderWorker {
+    public static void main(String[] args) throws Exception {
+        String natsUrl = System.getenv().getOrDefault("NATS_URL", Options.DEFAULT_URL);
+        String streamName = System.getenv("NATS_STREAM_NAME");     // e.g. "ORDERS"
+        String consumerName = System.getenv("NATS_CONSUMER_NAME"); // e.g. "order-service-fulfillment"
 
-# In Python, subscribe directly to the push consumer's deliver_subject
-sub = await nc.subscribe(
-    "orders.delivery",
-    cb=handle_message,
-)
-```
+        Connection nc = Nats.connect(natsUrl);
+        JetStream js = nc.jetStream();
 
-In all languages, messages received on a JetStream push consumer delivery subject are standard NATS messages that support explicit JetStream acknowledgements (`msg.Ack()`, `msg.Nak()`, `msg.Term()`).
+        // Bind to existing platform-provisioned Consumer (DO NOT call createConsumer)
+        ConsumerContext cons = js.getConsumerContext(streamName, consumerName);
 
-### 3.3 Quick Comparison
-
-| Requirement | Recommended approach |
-|---|---|
-| Control when and how many messages are requested | Pull |
-| Apply backpressure based on processing capacity | Pull |
-| Receive messages continuously through a configured delivery subject | Push |
-| Observe messages in sequence without application acknowledgements | Ordered Consumer |
-| Process independent messages concurrently | Pull is often a good starting point |
-
-## 4. Message Acknowledgements
-
-For consumers configured to require acknowledgements, acknowledge a message after the relevant business operation succeeds. An acknowledgement tells JetStream how the application handled the message; it does not automatically make the business operation exactly-once.
-
-### 4.1 Acknowledgement Actions
-
-| Outcome | Go | Java | Python 3 |
-|---|---|---|---|
-| Processing succeeded | `msg.Ack()` | `msg.ack()` | `await msg.ack()` |
-| Retry the message | `msg.Nak()` | `msg.nak()` | `await msg.nak()` |
-| Do not redeliver | `msg.Term()` | `msg.term()` | `await msg.term()` |
-| Processing is still in progress | `msg.InProgress()` | `msg.inProgress()` | `await msg.in_progress()` |
-
-Use `Term` only when the application has decided that the message should not be retried. Use `InProgress` for work that may exceed the configured acknowledgement wait period, where supported by the consumer configuration.
-
-### 4.2 Example: Success, Retry, or Permanent Failure
-
-**Go**
-
-```go
-switch {
-case isValid(msg.Data()):
-    if err := process(msg.Data()); err != nil {
-        _ = msg.Nak()
-        return
-    }
-    _ = msg.Ack()
-
-case isPermanentlyInvalid(msg.Data()):
-    logInvalidMessage(msg.Data())
-    _ = msg.Term()
-
-default:
-    _ = msg.Nak()
-}
-```
-
-**Java**
-
-```java
-if (isPermanentlyInvalid(msg.getData())) {
-    logInvalidMessage(msg.getData());
-    msg.term();
-} else {
-    try {
-        process(msg.getData());
-        msg.ack();
-    } catch (Exception e) {
-        msg.nak();
-    }
-}
-```
-
-**Python 3**
-
-```python
-if is_permanently_invalid(msg.data):
-    log_invalid_message(msg.data)
-    await msg.term()
-else:
-    try:
-        await process(msg.data)
-        await msg.ack()
-    except Exception:
-        await msg.nak()
-```
-
-The validation and processing functions are application-specific. Classify failures deliberately rather than treating every error as permanent or retryable.
-
-### 4.3 Long-running Processing
-
-If processing may exceed the acknowledgement wait period, send progress acknowledgements while work continues, where supported.
-
-**Go**
-
-```go
-_ = msg.InProgress()
-
-if err := process(msg.Data()); err != nil {
-    _ = msg.Nak()
-    return
-}
-_ = msg.Ack()
-```
-
-**Java**
-
-```java
-msg.inProgress();
-
-try {
-    process(msg.getData());
-    msg.ack();
-} catch (Exception e) {
-    msg.nak();
-}
-```
-
-**Python 3**
-
-```python
-await msg.in_progress()
-
-try:
-    await process(msg.data)
-    await msg.ack()
-except Exception:
-    await msg.nak()
-```
-
-For long-running work, progress acknowledgements may need to be sent repeatedly until processing completes. Configure acknowledgement timing with the platform team if the existing settings do not fit the workload.
-
-### 4.4 Prevent Duplicate Business Effects
-
-Messages can be redelivered if JetStream does not receive an acknowledgement, even if the application completed its business operation. Make processing idempotent where practical, using business identifiers, database constraints, or deduplication records.
-
-Review the **Delivery Semantics** guide for the implications of acknowledgements, redelivery, and exactly-once guarantees.
-
-## 5. Message Ordering and Processing Concurrency
-
-Stream sequence, delivery order, processing order, and completion order are not interchangeable. Choose a processing pattern based on the application's business requirements.
-
-### 5.1 Sequential Processing
-
-Sequential processing starts the next message only after the current message has finished processing.
-
-**When to use sequential processing**
-
-- Each operation depends on the preceding operation.
-- Business state must be updated in a defined order.
-- Simpler processing and failure handling are more important than maximum parallel throughput.
-
-**Go**
-
-```go
-for msg := range msgs.Messages() {
-    if err := process(msg.Data()); err != nil {
-        _ = msg.Nak()
-        continue
-    }
-    _ = msg.Ack()
-}
-```
-
-**Java**
-
-```java
-for (Message msg : messages) {
-    try {
-        process(msg.getData());
-        msg.ack();
-    } catch (Exception e) {
-        msg.nak();
-    }
-}
-```
-
-**Python 3**
-
-```python
-for msg in messages:
-    try:
-        await process(msg.data)
-        await msg.ack()
-    except Exception:
-        await msg.nak()
-```
-
-These examples process each batch sequentially. Sequential processing within one application loop does not guarantee global ordering across multiple instances, and redelivery may affect the order in which business operations complete.
-
-### 5.2 Concurrent Processing
-
-Concurrent processing allows multiple messages to be processed at the same time. This can increase throughput, but messages may complete in a different order from the order in which they were received.
-
-**When to use concurrent processing**
-
-- Messages are independent.
-- The application benefits from parallel processing.
-- The business logic can tolerate completion order differing from delivery order.
-
-**Go — Bounded worker pattern**
-
-```go
-workers := 4
-jobs := make(chan jetstream.Msg)
-
-for i := 0; i < workers; i++ {
-    go func() {
-        for msg := range jobs {
-            if err := process(msg.Data()); err != nil {
-                _ = msg.Nak()
-                continue
+        // Consume messages continuously
+        ConsumerContext.Consumer consumer = cons.consume(msg -> {
+            try {
+                processOrder(msg.getData());
+                msg.ack();
+            } catch (Exception e) {
+                msg.nak();
             }
-            _ = msg.Ack()
-        }
-    }()
-}
+        });
 
-for msg := range msgs.Messages() {
-    jobs <- msg
-}
-```
+        Thread.currentThread().join();
+    }
 
-**Java — Executor pattern**
-
-```java
-ExecutorService workers = Executors.newFixedThreadPool(4);
-
-for (Message msg : messages) {
-    workers.submit(() -> {
-        try {
-            process(msg.getData());
-            msg.ack();
-        } catch (Exception e) {
-            msg.nak();
-        }
-    });
+    private static void processOrder(byte[] data) {
+        // Idempotent business processing logic
+    }
 }
 ```
 
-**Python 3 — Bounded worker pattern**
+#### Python (nats.aio.client)
 
 ```python
-async def worker(queue):
+import asyncio
+import os
+import nats
+
+async def main():
+    nc = await nats.connect(os.getenv("NATS_URL", "nats://localhost:4222"))
+    js = nc.jetstream()
+
+    stream_name = os.getenv("NATS_STREAM_NAME", "ORDERS")
+    consumer_name = os.getenv("NATS_CONSUMER_NAME", "order-service-fulfillment")
+
+    # Bind to existing platform-provisioned Pull Consumer
+    sub = await js.pull_subscribe("", durable=consumer_name, stream=stream_name)
+
+    print(f"Connected to provisioned consumer {consumer_name} on stream {stream_name}")
+
     while True:
-        msg = await queue.get()
         try:
-            await process(msg.data)
-            await msg.ack()
-        except Exception:
-            await msg.nak()
-        finally:
-            queue.task_done()
+            # Batch fetch from provisioned consumer
+            msgs = await sub.fetch(batch=10, timeout=2.0)
+            for msg in msgs:
+                try:
+                    await process_order(msg.data)
+                    await msg.ack()
+                except Exception:
+                    await msg.nak()
+        except nats.errors.TimeoutError:
+            continue
+
+async def process_order(data: bytes):
+    # Idempotent business processing logic
+    pass
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
-These are illustrative processing patterns, not complete worker-pool implementations. Production code should bound queued work, propagate errors, and coordinate worker lifecycle. In particular, do not acknowledge a message before its business operation succeeds.
+### 6.3 Message Acknowledgement Signals
 
-### 5.3 Ordered Consumers
+When consuming from a Consumer configured with `AckExplicit`, the application must signal message completion using one of four supported verbs:
 
-An Ordered Consumer is intended for applications that need to observe a Stream sequentially, such as inspecting or analysing events in order. It is not a general replacement for an acknowledged work-processing consumer.
+| Method | Signal | Server Action | When to Use |
+|---|---|---|---|
+| `Ack()` | Positive Ack | Server records successful completion and will not redeliver this message sequence. | Message processing succeeded and downstream side effects are safely committed. |
+| `Nak()` | Negative Ack | Server marks message for redelivery according to consumer backoff configuration. | Transient, recoverable errors (e.g. database connection timeout, rate limit exceeded). |
+| `Term()` | Terminate | Server permanently marks message as failed; no further redeliveries will occur. | Poison messages, corrupted payloads, or unrecoverable business rule violations. |
+| `InProgress()` | In Progress | Server resets the `AckWait` timer, granting more time before redelivery triggers. | Long-running operations exceeding standard `AckWait` duration. |
 
-**When to use an Ordered Consumer**
+### 6.4 Strict Sequential Ordering with Durable Consumers
 
-- You need sequential observation of a Stream.
-- You are inspecting, replaying, or analysing event history.
-- You do not need application-controlled acknowledgements or load balancing across workers.
+When an application requires strict message-by-message ordered processing alongside durable state retention and failure recovery:
 
-Ordered Consumers are ephemeral, do not require acknowledgements, and are not designed to distribute work across multiple workers. Client libraries can recreate the underlying consumer when they detect a sequence gap.
+1. Configure the Durable Consumer with `AckExplicit` and `MaxAckPending = 1`.
+2. This ensures the NATS server delivers exactly one unacknowledged message at a time.
+3. The application must process and `Ack()` (or retry and resolve) the message before the next message in the sequence will be released.
+4. Scale only as a single active worker instance (or active-passive standby) for that specific partition/subject.
 
-**Go — Create and consume from an Ordered Consumer**
+---
 
-```go
-consumer, err := js.OrderedConsumer(
-    ctx,
-    "ORDERS",
-    jetstream.OrderedConsumerConfig{},
-)
-if err != nil {
-    return err
-}
+## 7. Resource Provisioning & Access via Consumer Intake
 
-consumeCtx, err := consumer.Consume(func(msg jetstream.Msg) {
-    inspect(msg.Data())
-})
-if err != nil {
-    return err
-}
-defer consumeCtx.Stop()
+Because application services do not create or modify Consumers directly, teams follow a formal intake and governance workflow for all consumer requirements.
+
+### 7.1 How to Request Consumer Access
+
+```text
+[ Application Team ]
+         |
+         | 1. Fill Intake Form (nats-resources/consumer-intake.md)
+         v
+[ Platform / SRE Team ]
+         |
+         | 2. Validate Stream Subject Mapping & Quotas
+         | 3. Provision Consumer via IaC / SRE Tooling
+         v
+[ NATS JetStream Cluster ]
+         |
+         | 4. Consumer is Active and Bound to Stream
+         v
+[ Application Service ]
+         |
+         | 5. Configures NATS_CONSUMER_NAME in Environment
+         | 6. Calls js.Consumer(ctx, stream, consumer) ("Get")
+         v
+   [ Message Processing Begins ]
 ```
 
-**Java — Ordered push subscription**
+1. **Review Standards:** Check sections 1 through 5 of this guide for naming, filtering, lifecycle, acknowledgement, and delivery start positions.
+2. **Submit Form:** Complete the [Consumer Intake Form](nats-resources/consumer-intake.md) with:
+   - Proposed Consumer Name (e.g., `order-service-fulfillment`)
+   - Owning Team & Service Name
+   - Required Subject Filter(s) (e.g., `orders.created`)
+   - Delivery Model (Pull or Push)
+   - Acknowledgement Policy (`AckExplicit`) and `MaxAckPending`
+   - Replay / Start Policy (`DeliverNew`, `DeliverAll`, etc.)
+3. **Platform Provisioning:** Platform/SRE verifies stream capacity, provisions the Consumer via GitOps/Terraform, and attaches the approved configuration.
+4. **Service Configuration:** The application team injects the provisioned Consumer name and Stream name into service configuration (`NATS_STREAM_NAME`, `NATS_CONSUMER_NAME`).
+5. **Runtime Binding:** The service starts up and retrieves the consumer using `js.Consumer(...)` or equivalent SDK call.
 
-```java
-PushSubscribeOptions options =
-    PushSubscribeOptions.builder()
-        .stream("ORDERS")
-        .ordered(true)
-        .build();
+---
 
-js.subscribe(
-    "orders.created",
-    dispatcher,
-    msg -> inspect(msg.getData()),
-    false,
-    options
-);
-```
+## 8. Summary & Best Practices
 
-Ordered push subscriptions have specific restrictions: they are ephemeral, do not use normal acknowledgements, and cannot be used as queue-group load-balanced subscriptions. Confirm the supported options for the Java SDK version in use.
+| Phase | Developer Responsibility | Anti-Pattern to Avoid |
+|---|---|---|
+| **Design** | Select kebab-case purpose name, narrowest subject filter, and `AckExplicit`. | Appending pod IDs, random UUIDs, or timestamps to consumer names. |
+| **Provisioning** | Submit [Consumer Intake Form](nats-resources/consumer-intake.md) to Platform/SRE. | Calling `CreateConsumer` or `AddConsumer` in application initialization code. |
+| **Consumption** | Bind to provisioned consumer using `js.Consumer(...)` ("get" only). | Modifying consumer configuration dynamically at runtime. |
+| **Processing** | Design idempotent handlers; explicitly signal `Ack()`, `Nak()`, or `Term()`. | Assuming exactly-once delivery without duplicate protection. |
+| **Maintenance** | Request consumer modifications or retirement through formal intake. | Abandoning unused durable consumers on the cluster. |
 
-**Python 3 — Ordered Consumer**
+---
 
-```python
-sub = await js.subscribe(
-    "orders.created",
-    ordered_consumer=True,
-)
+## 9. References
 
-while True:
-    try:
-        msg = await sub.next_msg(timeout=2)
-        inspect(msg.data)
-    except asyncio.TimeoutError:
-        break
-```
-
-In `nats-py`, an Ordered Consumer is configured directly via `ordered_consumer=True` on `js.subscribe()`, which transparently manages ephemeral consumer lifecycle, heartbeats, flow control, and sequence recovery under the hood.
-
-Ordered Consumers are suitable for ordered observation, not for application-controlled retries or acknowledged work distribution. If business operations require acknowledgements, retry handling, or multiple workers, use the appropriate provisioned application consumer.
-
-#### Ordered Processing for Durable Use Cases
-
-Native Ordered Consumers are ephemeral and designed solely for observation without explicit acknowledgements. For durable business use cases that require persistent delivery, explicit acknowledgements, and retry handling while guaranteeing strict sequential processing:
-
-1. **Consumer Configuration**:
-   - Use a provisioned JetStream **Durable Consumer**.
-   - Set `AckPolicy` to `AckExplicit`.
-   - Set `MaxAckPending = 1`. This instructs the NATS JetStream server to allow only one unacknowledged message at a time across the entire consumer.
-
-2. **Application Processing Discipline**:
-   - The application must process and ACK each message before processing the next, with retry handling that prevents later messages from overtaking failed messages.
-   - On transient failure, retry locally or use explicit backoff to prevent downstream messages from being processed ahead of failed ones.
-
-3. **Instance Concurrency**:
-   - Run a single active consumer worker instance. Multiple competing instances on the same consumer will cause messages to complete out of order.
-
-**Go — Durable Ordered Processing (`MaxAckPending = 1`)**
-
-```go
-// Consumer provisioned via Consumer Intake Form with:
-// Durable: "orders-ordered-worker"
-// AckPolicy: jetstream.AckExplicitPolicy
-// MaxAckPending: 1
-
-consumer, err := js.Consumer(ctx, "ORDERS", "orders-ordered-worker")
-if err != nil {
-    return err
-}
-
-cc, err := consumer.Consume(func(msg jetstream.Msg) {
-    // Process message strictly in order
-    if err := process(msg.Data()); err != nil {
-        _ = msg.Nak() // Reprocess in order
-        return
-    }
-
-    // Acknowledge current message to permit JetStream to deliver the next message
-    _ = msg.Ack()
-}, jetstream.PullMaxMessages(1))
-if err != nil {
-    return err
-}
-defer cc.Stop()
-```
-
-**Java — Durable Ordered Processing (`maxAckPending = 1`)**
-
-```java
-// Consumer provisioned with AckExplicit and maxAckPending(1)
-StreamContext streamContext = nc.getStreamContext("ORDERS");
-ConsumerContext consumerContext = streamContext.getConsumerContext("orders-ordered-worker");
-
-MessageConsumer consumer = consumerContext.consume(msg -> {
-    try {
-        process(msg.getData());
-        msg.ack(); // Release server lock to permit next message delivery
-    } catch (Exception e) {
-        msg.nak(); // Retry message in order
-    }
-});
-```
-
-**Python 3 — Durable Ordered Processing (`max_ack_pending = 1`)**
-
-```python
-# Consumer provisioned with ack_policy="explicit" and max_ack_pending=1
-sub = await js.pull_subscribe(
-    "orders.created",
-    durable="orders-ordered-worker",
-    stream="ORDERS",
-)
-
-while True:
-    try:
-        # Fetch strictly 1 message at a time
-        messages = await sub.fetch(batch=1, timeout=2)
-        for msg in messages:
-            try:
-                await process(msg.data)
-                await msg.ack()  # Allows next message to be fetched
-            except Exception:
-                await msg.nak()
-    except asyncio.TimeoutError:
-        continue
-```
-
-## 6. Common Consumer Issues
-
-| Symptom | What to check |
-|---|---|
-| No messages received | Verify Stream, consumer, subject filter, and delivery mode. |
-| Messages are redelivered | Check acknowledgement handling and processing duration. |
-| Duplicate business effects | Make processing idempotent and review acknowledgement failure scenarios. |
-| Messages complete out of order | Check concurrent handlers, multiple instances, and redelivery. |
-| Processing falls behind | Review processing latency, worker limits, pending messages, and downstream dependencies. |
-| Push subscription does not work | Confirm that the provisioned consumer is push-based and that the SDK binds to the correct configuration. |
-| Consumer configuration appears incorrect | Contact the platform team through the approved process; do not modify shared consumers directly. |
-
-## 7. Related Documentation
-
-- **JetStream Guide:** [JetStream Guide](nats-jetstream-guide.md)
-- **Consumer Intake Form:** [Consumer Intake Form](nats-resources/consumer-intake.md)
-- **JetStream Consumers:** https://docs.nats.io/nats-concepts/jetstream/consumers
-- **Go JetStream SDK:** https://github.com/nats-io/nats.go/tree/main/jetstream
-- **Java NATS SDK:** https://github.com/nats-io/nats.java
-- **Python NATS SDK:** https://github.com/nats-io/nats.py
-
-## 8. Developer Readiness Checklist
-
-### A. Provisioning and Configuration
-
-- [ ] The required consumer has been provisioned through the approved platform process.
-- [ ] The application uses the correct Stream, consumer, and subject configuration.
-- [ ] The application uses an approved SDK and runtime version.
-- [ ] Required credentials and permissions are configured.
-
-### B. Message Consumption
-
-- [ ] The application uses the provisioned delivery mode.
-- [ ] Acknowledgements follow the consumer's configured policy.
-- [ ] Messages are acknowledged only after relevant business processing succeeds.
-- [ ] Retryable and permanent failures have defined handling behaviour.
-- [ ] Long-running processing accounts for acknowledgement timing.
-
-### C. Reliability and Ordering
-
-- [ ] Processing can safely handle duplicate deliveries where required.
-- [ ] Concurrent processing is not assumed to preserve completion order.
-- [ ] Ordering requirements have been addressed in the application design.
-- [ ] Redelivery and failure handling have been considered.
-
-### D. Operational Readiness
-
-- [ ] Processing and acknowledgement errors have useful diagnostic logs.
-- [ ] Logs do not expose credentials or sensitive payloads.
-- [ ] The team knows how to investigate common consumer issues.
-- [ ] The team has reviewed the JetStream Guide and Delivery Semantics guide.
-
-**Before release:** Confirm that the application uses the provisioned consumer as intended and that its acknowledgement, failure-handling, and ordering behaviour match the application's requirements.
+- [NATS JetStream Guide (Stream & Persistence Architecture)](nats-jetstream-guide.md)
+- [NATS Consumer Intake Form (Lifecycle & Provisioning)](nats-resources/consumer-intake.md)
+- [NATS Subject Design Guide](subject-guide.md)
+- [NATS Resource Lifecycle Management](nats-resources/resource-management.md)
+- [NATS JetStream Consumers Documentation](https://docs.nats.io/concepts/jetstream/consumers)
+- [Synadia: NATS 101 - JetStream Consumers](https://www.synadia.com/videos/nats-101-jetstream-consumers)

@@ -1,848 +1,715 @@
-# NATS JetStream Consumer Guide
+# NATS JetStream Consumer Usage Guide
 
-## Purpose
+## 1. Overview
 
-This guide defines application-level practices for consuming persistent messages from NATS JetStream streams.
+This guide explains how application developers consume messages from NATS JetStream using provisioned consumers. It covers pull and push delivery, message acknowledgement, processing concurrency, ordering, and common issues.
 
-It covers the consumer lifecycle from stream prerequisites through consumer creation, configuration (mandatory vs updatable vs immutable fields, default values), consumption execution models (Pull, Ordered, Worker Pools), message acknowledgement semantics (`Ack`, `Nak`, `Term`, `InProgress`), redelivery backoff, message replay mechanisms, consumer pointer manipulation use cases, and graceful shutdown.
+Streams and Consumers are provisioned and managed through the approved platform process. Subject usage and filtering follow the platform's naming and configuration conventions. Developers should request new resources or configuration changes through the approved [Consumer Intake Form](nats-resources/consumer-intake.md) and use the resulting configuration in their applications.
 
----
+Read this guide first to understand how to consume messages. Then review the **Delivery Semantics** guide to understand At-Most-Once, At-Least-Once, and Exactly-Once delivery guarantees.
 
-## 1. JetStream Consumer Architecture & Prerequisites
+### Coverage Matrix
 
-### 1.1 Prerequisites
+| Topic | Go | Java | Python 3 |
+|---|---|---|---|
+| Pull consumer (Continuous) | `consumer.Consume` | `consumerContext.consume` | Loop with `fetch` |
+| Pull consumer (Batch) | `consumer.Fetch` | `consumerContext.fetchMessages` | `psub.fetch` |
+| Push consumer | Core `Subscribe` to deliver subject | Core `subscribe` to deliver subject | Core `subscribe` to deliver subject |
+| Acknowledgements | `Ack`, `Nak`, `Term`, `InProgress` | `ack`, `nak`, `term`, `inProgress` | `ack`, `nak`, `term`, `in_progress` |
+| Sequential processing | Sequential message loop | Sequential message loop | Sequential async loop |
+| Concurrent processing | Goroutines with bounded workers | Executor or worker pool | Bounded `asyncio` workers |
+| Ordered Consumer | `OrderedConsumer` | Ordered subscription | Ordered subscription (`ordered_consumer=True`) |
 
-Consuming messages from JetStream requires:
-1. An active NATS connection (`*nats.Conn`).
-2. A JetStream API context (`jetstream.JetStream`).
-3. An existing target Stream configured on the NATS server.
+The code snippets focus on consumer operations and processing behaviour. They assume that the NATS connection and JetStream client are already available, and that the consumer has been provisioned or is an Ordered Consumer created through the supported client API.
 
----
+SDK APIs differ by version. Confirm the signatures against the versions approved by your platform before using the snippets as copy-and-run examples.
 
-### 1.2 Resource Hierarchy & Stream vs. Consumer Relationship
+## 2. Before You Start
 
-In NATS JetStream, resources follow a strict top-down parent-child hierarchy:
+Obtain the following details from the platform team:
 
-```text
-NATS Server
-  └── Account
-       └── Stream (Parent Data Store: Ingests, Sequences, & Retains Raw Messages)
-            ├── Child Consumer A ("order-worker-v1") [Read Pointer & ACK State Machine]
-            └── Child Consumer B ("audit-logger")    [Read Pointer & ACK State Machine]
-```
+- NATS endpoint and authentication method.
+- Stream name and provisioned consumer name.
+- Subject filter, where applicable.
+- Delivery mode: pull or push.
+- Deliver subject, where applicable (required for Push Consumers).
+- Acknowledgement policy and retry expectations.
+- Approved SDK and runtime versions.
 
-#### Hierarchy Rules & Signals
+If the required consumer is unavailable, submit a request through the approved [Consumer Intake Form](nats-resources/consumer-intake.md). Do not create, update, reset, or delete shared resources from application code.
 
-* **Parent Data Store vs. Child View**: The **Stream** is the physical message storage engine. A **Consumer** is a lightweight, stateful child view / read-pointer attached to that stream.
-* **1:N Cardinality**: One parent Stream can host multiple ($N$) independent child Consumers simultaneously.
-* **Lifespan Dependency**: Deleting a parent Stream automatically cascades and deletes all child Consumers attached to it. Conversely, deleting a Consumer has no effect on stored messages in the parent Stream.
-* **State Tracking**: The Consumer tracks delivery sequence counters (`NumPending`, `NumAckPending`, `NumDelivered`) per subscriber without duplicating stream storage.
+## 3. Pull and Push Consumers
 
-#### Fan-Out Delivery Across Consumers vs. Load-Balanced Workers
+The provisioned consumer determines the delivery mode your application should use.
 
-* **Multiple Consumers on Same Stream (Fan-Out / Broadcast)**:
-  If Consumer A (`"order-worker-v1"`) and Consumer B (`"audit-logger"`) are both configured on stream `"ORDERS"` listening to subject `"orders.created"`, **every published message is delivered to BOTH consumers**. Each consumer maintains its own independent sequence pointer and pending ACK state.
-* **Multiple Workers on the Same Consumer (Point-to-Point / Load Balanced)**:
-  If multiple worker nodes subscribe to the **same consumer** (`"order-worker-v1"`), JetStream **load-balances** in-flight messages across those workers so each message is processed by only one worker node.
+### 3.1 Pull Consumers
 
----
+A pull consumer lets the application request messages when it is ready to process them. It has no server-configured delivery subject. Modern SDKs support two pull consumption models:
 
-## 2. Consumer Configuration & Lifecycle Management
+1. **Continuous processing (`Consume`)**: An asynchronous client-managed loop that pulls messages and invokes a callback handler with client-side backpressure and flow control.
+2. **On-demand batch retrieval (`Fetch`)**: Explicitly pulls a bounded batch of messages on schedule or demand.
 
-### 2.1 Durable vs. Ephemeral Consumers
+**When to use pull**
 
-* **Durable Consumer**: A named, persistent consumer configuration stored by the JetStream server. It retains its delivery state and sequence position across client restarts or network disconnects.
-* **Ephemeral Consumer**: A temporary consumer created dynamically by a client. When the client disconnects or becomes inactive, the JetStream server automatically deletes the consumer. Ideal for real-time tailing or short-lived diagnostic tasks.
+- Use pull consumers when the application needs control over message consumption rate, batch size, and processing concurrency.
+- Suitable for batch processing, background workers, and workloads where messages should be fetched only when the application is ready to process them.
+- Example: An Order Processing Service fetches 10 orders at a time and processes them based on available database connections and worker capacity.
 
----
+Pull consumers are the recommended starting point for almost all modern application workloads.
 
-### 2.2 Core Consumer Configuration Parameters
+#### Continuous Processing (Callback-driven Pull)
 
-The table below categorizes JetStream consumer configuration parameters by their operational update capabilities and default values:
-
-| Parameter | Type / Option | Modifiability | Default Value (If Omitted) | Purpose & Operational Behavior |
-| :--- | :--- | :--- | :--- | :--- |
-| **Name / Durable** | `Name`, `Durable` | **Mandatory & Immutable** | *None* | Unique identifier for the consumer. Required for durable state tracking. Cannot be renamed once created. |
-| **Ack Policy** | `AckPolicy` | **Mandatory & Immutable** | `AckExplicit` | `AckExplicit` (requires explicit ACK per message; required for work queues), `AckNone` (server auto-ACKs), `AckAll` (ACK N ACKs all prior messages). |
-| **Deliver Policy** | `DeliverPolicy` | **Immutable** | `DeliverAll` | Starting stream position (`DeliverAll`, `DeliverLast`, `DeliverNew`, `DeliverByStartSequence`, `DeliverByStartTime`). Immutable after creation. |
-| **OptStartSeq / Time** | `OptStartSeq`, `OptStartTime` | **Immutable** | *None* | Specific sequence number or timestamp offset when `DeliverPolicy` is sequence/time based. |
-| **Replay Policy** | `ReplayPolicy` | **Immutable** | `ReplayInstant` | `ReplayInstant` (deliver pending messages as fast as possible) vs `ReplayOriginal` (replay matching original timestamps). |
-| **Ack Wait** | `AckWait` | **Updatable** | `30s` (30 Seconds) | Duration server waits for an ACK before assuming delivery failure and triggering redelivery. Can be updated dynamically. |
-| **Max Deliver** | `MaxDeliver` | **Updatable** | `-1` (Unlimited) | Maximum delivery attempts before JetStream halts redeliveries for a message. Can be updated dynamically. |
-| **Backoff Schedule** | `Backoff` | **Updatable** | `nil` (Fixed `AckWait`) | List of explicit redelivery delay durations (e.g. `[]time.Duration{1s, 5s, 30s}`). Can be updated dynamically. |
-| **Max Ack Pending** | `MaxAckPending` | **Updatable** | `1000` | Maximum in-flight unacknowledged messages allowed per consumer for flow control. Can be updated dynamically. |
-| **Filter Subjects** | `FilterSubject`, `FilterSubjects` | **Updatable** | `""` (All Stream Subjects) | Subject pattern filter(s) for the consumer. Can be updated dynamically. |
-| **Description** | `Description` | **Updatable** | `""` | Human-readable metadata description for the consumer. |
-
-> **Updating Consumer Configuration:** Updatable fields can be modified on an existing consumer using `js.CreateOrUpdateConsumer` or `js.UpdateConsumer`. Attempting to modify **Immutable** fields on an existing consumer will return a server error (`10012 Consumer Delivery Policy Mutated`). Immutable fields require deleting and recreating the consumer.
-
----
-
-### 2.3 Consumer Lifecycle Operations
-
-#### Creating or Updating a Consumer
-
-#### Go
+**Go — Continuous consumption (`Consume`)**
 
 ```go
-cfg := jetstream.ConsumerConfig{
-    Durable:       "order-worker-v1",
-    DeliverPolicy: jetstream.DeliverAllPolicy,
-    AckPolicy:     jetstream.AckExplicit,
-    AckWait:       30 * time.Second,
-    MaxDeliver:    5,
-    Backoff:       []time.Duration{1 * time.Second, 5 * time.Second, 15 * time.Second},
-    FilterSubject: "orders.created",
-    MaxAckPending: 100,
-}
-
-cons, err := js.CreateOrUpdateConsumer(ctx, "ORDERS", cfg)
+consumer, err := js.Consumer(ctx, "ORDERS", "orders-pull")
 if err != nil {
     return err
 }
-```
 
-#### Java
-
-```java
-ConsumerConfiguration config = ConsumerConfiguration.builder()
-        .durable("order-worker-v1")
-        .deliverPolicy(DeliverPolicy.All)
-        .ackPolicy(AckPolicy.Explicit)
-        .ackWait(Duration.ofSeconds(30))
-        .maxDeliver(5)
-        .backoff(Duration.ofSeconds(1), Duration.ofSeconds(5), Duration.ofSeconds(15))
-        .filterSubject("orders.created")
-        .maxAckPending(100)
-        .build();
-
-JetStreamManagement jsm = nc.jetStreamManagement();
-ConsumerInfo info = jsm.addOrUpdateConsumer("ORDERS", config);
-```
-
-#### Inspecting Consumer Status
-
-#### Go
-
-```go
-info, err := cons.Info(ctx)
-if err == nil {
-    log.Printf("Consumer %s on Stream %s: Pending=%d, AckPending=%d, Redelivered=%d",
-        info.Name, info.Stream, info.NumPending, info.NumAckPending, info.NumRedelivered)
-}
-```
-
-#### Java
-
-```java
-ConsumerInfo info = jsm.getConsumerInfo("ORDERS", "order-worker-v1");
-System.out.printf("Consumer %s on Stream %s: Pending=%d, AckPending=%d, Redelivered=%d%n",
-    info.getName(), info.getStreamName(), info.getNumPending(), info.getNumAckPending(), info.getNumRedelivered());
-```
-
-#### Pausing and Resuming Consumers
-
-Consumers can be paused to halt message delivery during maintenance or downstream dependency outages, then resumed.
-
-#### Go
-
-```go
-// Pause Consumer for 5 Minutes
-pauseResp, err := js.PauseConsumer(ctx, "ORDERS", "order-worker-v1", time.Now().Add(5*time.Minute))
-if err == nil {
-    log.Printf("Consumer paused until: %v", pauseResp.PauseUntil)
-}
-
-// Manually Resume Consumer
-resumeResp, err := js.ResumeConsumer(ctx, "ORDERS", "order-worker-v1")
-if err == nil {
-    log.Printf("Consumer resumed: %v", resumeResp.Paused)
-}
-```
-
-#### Java
-
-```java
-ConsumerInfo info = jsm.pauseConsumer("ORDERS", "order-worker-v1", ZonedDateTime.now().plusMinutes(5));
-System.out.printf("Consumer paused until: %s%n", info.getPauseUntil());
-
-jsm.resumeConsumer("ORDERS", "order-worker-v1");
-```
-
-#### Deleting a Consumer
-
-#### Go
-
-```go
-err := js.DeleteConsumer(ctx, "ORDERS", "order-worker-v1")
-if err != nil {
-    return err
-}
-```
-
-#### Java
-
-```java
-jsm.deleteConsumer("ORDERS", "order-worker-v1");
-```
-
----
-
-## 3. Consumption Patterns & Execution Models
-
-### 3.1 Pull Consumers (`Consume` / `Fetch` / `FetchNoWait`)
-
-Pull consumers give client applications complete control over message delivery speed and backpressure. The client explicitly requests or streams batches of messages from JetStream.
-
-#### Continuous Pull Consumption (`cons.Consume`)
-
-The SDK continuously pulls message batches in the background and executes the application handler callback.
-
-#### Go
-
-```go
-consCtx, err := cons.Consume(func(msg jetstream.Msg) {
-    log.Printf("Received msg seq %d: %s", msg.Sequence(), string(msg.Data()))
-
-    // Acknowledge message processing completion
-    if err := msg.Ack(); err != nil {
-        log.Printf("Failed to ACK message: %v", err)
+consumeCtx, err := consumer.Consume(func(msg jetstream.Msg) {
+    if err := process(msg.Data()); err != nil {
+        _ = msg.Nak()
+        return
     }
-})
-if err != nil {
-    return err
-}
-defer consCtx.Stop()
-```
-
-#### Java
-
-```java
-JetStream js = nc.jetStream();
-PullSubscribeOptions options = PullSubscribeOptions.builder()
-        .durable("order-worker-v1")
-        .build();
-
-JetStreamSubscription sub = js.subscribe("orders.created", options);
-
-Dispatcher dispatcher = nc.createDispatcher(msg -> {
-    System.out.printf("Received msg seq %d: %s%n", msg.metaData().streamSequence(), new String(msg.getData(), StandardCharsets.UTF_8));
-    msg.ack();
-});
-
-dispatcher.subscribe(sub);
-```
-
-#### Batch Pull Fetch (`cons.Fetch`)
-
-Pull a specific maximum batch size or wait up to a maximum duration timeout.
-
-#### Go
-
-```go
-batch, err := cons.Fetch(10, jetstream.FetchMaxWait(2*time.Second))
-if err != nil {
-    return err
-}
-
-for msg := range batch.Messages() {
-    log.Printf("Fetched msg seq %d: %s", msg.Sequence(), string(msg.Data()))
     _ = msg.Ack()
-}
-```
-
-#### Java
-
-```java
-JetStream js = nc.jetStream();
-PullSubscribeOptions options = PullSubscribeOptions.builder()
-        .durable("order-worker-v1")
-        .build();
-
-JetStreamSubscription sub = js.subscribe("orders.created", options);
-List<Message> messages = sub.fetch(10, Duration.ofSeconds(2));
-
-for (Message msg : messages) {
-    System.out.printf("Fetched msg seq %d: %s%n", msg.metaData().streamSequence(), new String(msg.getData(), StandardCharsets.UTF_8));
-    msg.ack();
-}
-```
-
-#### Non-Blocking Batch Fetch (`cons.FetchNoWait`)
-
-Fetches whatever pending messages are currently available on the server without waiting if fewer than the requested batch size exist. Returns immediately.
-
-#### Go
-
-```go
-batch, err := cons.FetchNoWait(10)
-if err != nil {
-    return err
-}
-
-for msg := range batch.Messages() {
-    log.Printf("Non-blocking fetched msg seq %d: %s", msg.Sequence(), string(msg.Data()))
-    _ = msg.Ack()
-}
-```
-
-#### Java
-
-```java
-List<Message> messages = sub.fetch(10, Duration.ofMillis(10));
-for (Message msg : messages) {
-    System.out.printf("Non-blocking fetched msg seq %d: %s%n", msg.metaData().streamSequence(), new String(msg.getData(), StandardCharsets.UTF_8));
-    msg.ack();
-}
-```
-
----
-
-### 3.2 Ordered Consumers (`OrderedConsumer`)
-
-An **Ordered Consumer** guarantees strict, in-order sequential delivery without gaps or duplicate processing.
-
-> **Ephemeral Nature:** **Ordered Consumers are ALWAYS Ephemeral.** An Ordered Consumer cannot be durable. Because JetStream manages the underlying ephemeral consumer automatically — automatically destroying and recreating a new ephemeral consumer at sequence N+1 whenever a network gap, timeout, or server failover occurs — durable tracking is not permitted.
-
-Key Characteristics:
-* Automatically created as ephemeral consumers by the SDK driver.
-* Configured with `AckNone` (server tracks sequence position automatically).
-* Single worker concurrent processing model.
-* Ideal for event-sourcing streams and ordered transaction logs.
-
-#### Go
-
-```go
-cons, err := js.OrderedConsumer(ctx, "ORDERS", jetstream.OrderedConsumerConfig{
-    FilterSubjects: []string{"orders.created"},
 })
 if err != nil {
     return err
 }
-
-consCtx, err := cons.Consume(func(msg jetstream.Msg) {
-    log.Printf("Ordered event seq %d: %s", msg.Sequence(), string(msg.Data()))
-})
-if err != nil {
-    return err
-}
-defer consCtx.Stop()
+defer consumeCtx.Stop()
 ```
 
-#### Java
+**Java — Continuous consumption (`consume`)**
 
 ```java
-SubscribeOptions opts = PushSubscribeOptions.builder()
-        .ordered(true)
-        .build();
+StreamContext streamContext = nc.getStreamContext("ORDERS");
+ConsumerContext consumerContext = streamContext.getConsumerContext("orders-pull");
 
-JetStreamSubscription sub = js.subscribe("orders.created", opts);
-```
-
----
-
-### 3.3 Consumer Worker Pools (Horizontal Load Balancing)
-
-Multiple consumer instances or worker threads can pull messages concurrently from the **same durable consumer** on a stream. JetStream automatically load-balances in-flight unacknowledged messages across the active worker pool up to the `MaxAckPending` limit.
-
-```text
-JetStream Consumer ("order-worker-v1")
-       |
-       +--> Worker Node 1 (cons.Consume) ---> Processes Msg Seq 101 (Ack)
-       |
-       +--> Worker Node 2 (cons.Consume) ---> Processes Msg Seq 102 (Ack)
-       |
-       +--> Worker Node 3 (cons.Consume) ---> Processes Msg Seq 103 (Ack)
-```
-
-#### Go
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"log"
-	"time"
-
-	"github.com/nats-io/nats.go/jetstream"
-)
-
-func StartConsumerWorkerPool(ctx context.Context, js jetstream.JetStream, stream string, consumerName string, workerCount int) error {
-	cons, err := js.Consumer(ctx, stream, consumerName)
-	if err != nil {
-		return fmt.Errorf("failed to bind consumer: %w", err)
-	}
-
-	for i := 1; i <= workerCount; i++ {
-		workerID := i
-		go func() {
-			consCtx, err := cons.Consume(func(msg jetstream.Msg) {
-				log.Printf("[Worker-%d] Processing msg seq %d on subject %s", workerID, msg.Sequence(), msg.Subject())
-				// Simulate processing workload
-				time.Sleep(100 * time.Millisecond)
-				_ = msg.Ack()
-			})
-			if err != nil {
-				log.Printf("[Worker-%d] Consumption error: %v", workerID, err)
-				return
-			}
-			<-ctx.Done()
-			consCtx.Stop()
-		}()
-	}
-
-	log.Printf("Started %d workers for durable consumer %s", workerCount, consumerName)
-	return nil
-}
-```
-
-#### Java
-
-```java
-public void startConsumerWorkerPool(Connection nc, String stream, String consumerName, int workerCount) throws Exception {
-    JetStream js = nc.jetStream();
-    PullSubscribeOptions options = PullSubscribeOptions.builder()
-            .durable(consumerName)
-            .stream(stream)
-            .build();
-
-    JetStreamSubscription sub = js.subscribe(null, options);
-
-    ExecutorService executor = Executors.newFixedThreadPool(workerCount);
-    for (int i = 1; i <= workerCount; i++) {
-        final int workerId = i;
-        executor.submit(() -> {
-            while (!Thread.currentThread().isInterrupted()) {
-                try {
-                    List<Message> msgs = sub.fetch(10, Duration.ofSeconds(1));
-                    for (Message msg : msgs) {
-                        System.out.printf("[Worker-%d] Processing msg seq %d on subject %s%n",
-                                workerId, msg.metaData().streamSequence(), msg.getSubject());
-                        msg.ack();
-                    }
-                } catch (Exception e) {
-                    break;
-                }
-            }
-        });
-    }
-}
-```
-
----
-
-## 4. Message Acknowledgement & Failure Semantics
-
-### 4.1 Message Acknowledgement Types
-
-When `AckPolicy` is set to `AckExplicit`, JetStream requires explicit client feedback. Consumers notify JetStream of message processing outcomes using 4 primary ACK signals:
-
-| ACK Method | Concept | Behavior & Server Action | Typical Use Case |
-| :--- | :--- | :--- | :--- |
-| `msg.Ack()` | Positive ACK | Confirms successful message processing. Server removes message from consumer pending list. | Successful processing complete. |
-| `msg.Nak()` / `msg.NakWithDelay(d)` | Negative ACK | Signals processing failure. Server reschedules message for immediate or delayed redelivery. | Transient failure (e.g. database timeout, rate limit). |
-| `msg.Term()` | Terminate Message | Signals permanent unprocessable failure. Server halts all redeliveries for this message immediately. | Poison pill payload, schema corruption, fatal validation error. |
-| `msg.InProgress()` | Heartbeat / Extend Wait | Resets the server `AckWait` timer for this specific message. | Long-running tasks (e.g. video processing, batch report generation). |
-
-#### Go
-
-```go
-consCtx, err := cons.Consume(func(msg jetstream.Msg) {
-    err := processOrder(msg.Data())
-    if err == nil {
-        _ = msg.Ack() // Successful processing
-        return
-    }
-
-    if errors.Is(err, ErrPermanentSchemaCorruption) {
-        log.Printf("Poison pill detected at seq %d, terminating redelivery: %v", msg.Sequence(), err)
-        _ = msg.Term() // Permanent failure; do not redeliver
-        return
-    }
-
-    if errors.Is(err, ErrTransientDatabaseTimeout) {
-        log.Printf("Transient error at seq %d, requesting delayed retry in 10s: %v", msg.Sequence(), err)
-        _ = msg.NakWithDelay(10 * time.Second) // Reschedule retry after 10 seconds
-        return
-    }
-
-    // Default immediate negative acknowledgement
-    _ = msg.Nak()
-})
-```
-
-#### Java
-
-```java
-try {
-    processOrder(msg.getData());
-    msg.ack();
-} catch (PermanentException e) {
-    msg.term(); // Terminate message; do not redeliver
-} catch (TransientException e) {
-    msg.nakWithDelay(Duration.ofSeconds(10)); // Reschedule retry after 10 seconds
-} catch (Exception e) {
-    msg.nak(); // Immediate negative ACK
-}
-```
-
----
-
-### 4.2 Redelivery, Message Replay & SDK Inspection APIs
-
-#### Redelivery Limits (`MaxDeliver`)
-
-When a message is NAKed or its `AckWait` timer expires without receiving an ACK, JetStream increments the delivery count (`msg.Metadata().NumDelivered`).
-
-Once `NumDelivered >= MaxDeliver`, JetStream stops redelivering the message to consumers.
-
-#### Message Replay Mechanisms & Replay Policies
-
-JetStream allows applications to replay historical messages stored in a stream. Replay behavior is controlled by two configuration parameters:
-
-1. **Replay Speed Policy (`ReplayPolicy`)**:
-   * **`ReplayInstant` (Default)**: Replays historical messages as fast as the network and client processing allow. Ideal for rapid catch-up or bootstrapping state caches.
-   * **`ReplayOriginal`**: Replays historical messages maintaining the exact relative time gaps (delays) between their original publication timestamps. Ideal for realistic workload simulation, time-series playback, or debugging past production traffic patterns.
-
-2. **Historical Replay Start Offset (`DeliverPolicy`)**:
-   * **`DeliverAll`**: Replay all stored messages from sequence 1.
-   * **`DeliverLast`**: Start at the most recent message in the stream.
-   * **`DeliverNew`**: Skip historical data; consume only new messages published after consumer creation.
-   * **`DeliverByStartSequence`**: Start replay at exact sequence $N$ (`OptStartSeq`).
-   * **`DeliverByStartTime`**: Start replay at exact timestamp $T$ (`OptStartTime`).
-   * **`DeliverLastPerSubject`**: Start by delivering the single latest message for each filtered subject.
-
-#### SDK Inspection APIs for Redelivery & Sequences
-
-The NATS Client SDK provides rich metadata inspection capabilities on every received message (`jetstream.Msg`) and consumer handle (`jetstream.Consumer`):
-
-1. **Inbound Message Metadata (`msg.Metadata()`)**:
-
-   ##### Go
-
-   ```go
-   meta, err := msg.Metadata()
-   if err == nil {
-       log.Printf("Stream Sequence: %d, Consumer Sequence: %d", meta.Sequence.Stream, meta.Sequence.Consumer)
-       log.Printf("Delivery Attempt Count: %d", meta.NumDelivered) // 1 = first attempt, >1 = REDELIVERY
-       log.Printf("Remaining Pending Stream Messages: %d", meta.NumPending)
-       log.Printf("Original Publication Timestamp: %v", meta.Timestamp)
-   }
-
-   // Detect if current message is a redelivery
-   if meta.NumDelivered > 1 {
-       log.Printf("WARNING: Processing redelivered message (attempt %d of %d)", meta.NumDelivered, maxDeliver)
-   }
-   ```
-
-   ##### Java
-
-   ```java
-   NatsJetStreamMetaData meta = msg.metaData();
-   if (meta != null) {
-       System.out.printf("Stream Sequence: %d, Consumer Sequence: %d%n", meta.streamSequence(), meta.consumerSequence());
-       System.out.printf("Delivery Attempt Count: %d%n", meta.deliveredCount());
-       System.out.printf("Remaining Pending Stream Messages: %d%n", meta.pendingCount());
-       System.out.printf("Original Publication Timestamp: %s%n", meta.timestamp());
-   }
-
-   if (meta.deliveredCount() > 1) {
-       System.out.printf("WARNING: Processing redelivered message (attempt %d)%n", meta.deliveredCount());
-   }
-   ```
-
-2. **Consumer-Level State Inspection (`cons.Info()`)**:
-
-   ##### Go
-
-   ```go
-   info, err := cons.Info(ctx)
-   if err == nil {
-       log.Printf("Total Consumer Redeliveries: %d", info.NumRedelivered)
-       log.Printf("Unprocessed Messages Pending: %d", info.NumPending)
-       log.Printf("In-Flight Unacknowledged Messages: %d", info.NumAckPending)
-   }
-   ```
-
-   ##### Java
-
-   ```java
-   ConsumerInfo info = jsm.getConsumerInfo("ORDERS", "order-worker-v1");
-   System.out.printf("Total Consumer Redeliveries: %d%n", info.getNumRedelivered());
-   System.out.printf("Unprocessed Messages Pending: %d%n", info.getNumPending());
-   System.out.printf("In-Flight Unacknowledged Messages: %d%n", info.getNumAckPending());
-   ```
-
----
-
-### 4.3 Consumer Pointer Manipulation & Reset Use Cases
-
-#### Do Developers Need to Manipulate Consumer Pointers?
-
-**Yes.** A consumer pointer represents the consumer's current sequence position (`AckPending`, delivered stream sequence). While JetStream automatically advances the consumer pointer as messages are ACKed, developers occasionally need to **manually manipulate or reset consumer sequence pointers**.
-
-#### Key Use Cases for Pointer Manipulation
-
-1. **Time Travel / Bugfix Reprocessing**:
-   When a bug is discovered in subscriber business logic, historical messages may have been processed incorrectly or NAKed. Developers fix the bug, then recreate or update the consumer pointer (`DeliverByStartSequence` or `DeliverByStartTime`) to rewind and re-process the exact range of historical messages.
-2. **Skipping Poison Sequences / Fast-Forwarding**:
-   If a corrupted sequence is stalling a consumer and cannot be handled, developers can fast-forward the consumer sequence pointer past the bad sequence to resume downstream processing.
-3. **Disaster Recovery & Microservice Database Resync**:
-   When restoring a downstream microservice database from a backup taken at timestamp $T$, the developer resets the consumer pointer using `DeliverByStartTime(T)` to re-sync event state precisely from the backup checkpoint.
-4. **Automated Ephemeral Gap Recovery**:
-   For Ordered Consumers, JetStream client SDK drivers manipulate consumer pointers under the hood automatically — recreating ephemeral consumers at sequence $N+1$ whenever network gaps or failovers occur.
-
-#### Go
-
-```go
-func ResetConsumerPointer(ctx context.Context, js jetstream.JetStream, stream string, consumerName string, startSeq uint64) error {
-	// Delete existing consumer pointer
-	_ = js.DeleteConsumer(ctx, stream, consumerName)
-
-	// Recreate consumer with DeliverByStartSequence pointing to startSeq
-	cfg := jetstream.ConsumerConfig{
-		Durable:       consumerName,
-		DeliverPolicy: jetstream.DeliverByStartSequencePolicy,
-		OptStartSeq:   startSeq,
-		AckPolicy:     jetstream.AckExplicit,
-	}
-
-	_, err := js.CreateOrUpdateConsumer(ctx, stream, cfg)
-	if err != nil {
-		return fmt.Errorf("failed to reset consumer pointer: %w", err)
-	}
-
-	log.Printf("Consumer %s sequence pointer successfully reset to start at sequence %d", consumerName, startSeq)
-	return nil
-}
-```
-
-#### Java
-
-```java
-public void resetConsumerPointer(JetStreamManagement jsm, String stream, String consumerName, long startSeq) throws Exception {
+MessageConsumer consumer = consumerContext.consume(msg -> {
     try {
-        jsm.deleteConsumer(stream, consumerName);
-    } catch (Exception ignored) {}
-
-    ConsumerConfiguration config = ConsumerConfiguration.builder()
-            .durable(consumerName)
-            .deliverPolicy(DeliverPolicy.ByStartSequence)
-            .startSequence(startSeq)
-            .ackPolicy(AckPolicy.Explicit)
-            .build();
-
-    jsm.addOrUpdateConsumer(stream, config);
-    System.out.printf("Consumer %s sequence pointer successfully reset to start at sequence %d%n", consumerName, startSeq);
-}
+        process(msg.getData());
+        msg.ack();
+    } catch (Exception e) {
+        msg.nak();
+    }
+});
 ```
 
----
+**Python 3 — Continuous consumption (`asyncio` loop with `fetch`)**
 
-## 5. Graceful Shutdown & Consumer Drainage
+In Python (`nats-py`), continuous pull consumption is driven via an explicit `asyncio` task loop rather than a background thread callback, ensuring execution remains cooperative, non-blocking, and cancellation-safe within the application's event loop:
 
-### 5.1 Consumer Context Stop (`Stop`) vs. Drain (`Drain`)
-
-| Shutdown Method | Action | Behavior |
-| :--- | :--- | :--- |
-| `consCtx.Stop()` | Stop Pulling | Immediately stops pulling new messages from JetStream; in-flight handler callbacks complete. |
-| `consCtx.Drain()` | Graceful Flush | Allows all currently pulled/in-flight messages to complete processing and ACK before shutting down. |
-
----
-
-### 5.2 Production Example: Resilient JetStream Consumer Service
-
-The runnable snippet below demonstrates how to construct a resilient JetStream consumer service with durable consumer binding, worker handling, and graceful teardown.
-
-#### Go
-
-```go
-package main
-
-import (
-	"context"
-	"errors"
-	"log"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
-	"time"
-
-	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
+```python
+sub = await js.pull_subscribe(
+    "orders.created",
+    durable="orders-pull",
+    stream="ORDERS",
 )
 
-func main() {
-	nc, err := nats.Connect("nats://localhost:4222", nats.Name("jetstream-consumer-demo"))
-	if err != nil {
-		log.Fatalf("Failed to connect to NATS: %v", err)
-	}
-	defer nc.Close()
+while True:
+    try:
+        messages = await sub.fetch(batch=10, timeout=2)
+        for msg in messages:
+            try:
+                await process(msg.data)
+                await msg.ack()
+            except Exception:
+                await msg.nak()
+    except asyncio.TimeoutError:
+        # Timeout occurs when no messages are available in the window; continue loop
+        continue
+```
 
-	js, err := jetstream.New(nc)
-	if err != nil {
-		log.Fatalf("Failed to initialize JetStream: %v", err)
-	}
+#### On-Demand Batch Retrieval (`Fetch`)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+**Go — Fetch a batch**
 
-	// Ensure durable consumer exists
-	cfg := jetstream.ConsumerConfig{
-		Durable:       "order-processing-consumer",
-		AckPolicy:     jetstream.AckExplicit,
-		AckWait:       15 * time.Second,
-		MaxDeliver:    3,
-		FilterSubject: "orders.created",
-		MaxAckPending: 50,
-	}
+```go
+consumer, err := js.Consumer(ctx, "ORDERS", "orders-pull")
+if err != nil {
+    return err
+}
 
-	cons, err := js.CreateOrUpdateConsumer(ctx, "ORDERS", cfg)
-	if err != nil {
-		log.Fatalf("Failed to create consumer: %v", err)
-	}
+msgs, err := consumer.Fetch(10)
+if err != nil {
+    return err
+}
 
-	var wg sync.WaitGroup
-
-	// Start continuous consumer callback
-	consCtx, err := cons.Consume(func(msg jetstream.Msg) {
-		wg.Add(1)
-		defer wg.Done()
-
-		log.Printf("Processing order seq %d [attempt %d]: %s",
-			msg.Sequence(), msg.Metadata().NumDelivered, string(msg.Data()))
-
-		// Simulate processing workload
-		time.Sleep(100 * time.Millisecond)
-
-		if err := msg.Ack(); err != nil {
-			log.Printf("Failed to ACK msg seq %d: %v", msg.Sequence(), err)
-		}
-	})
-	if err != nil {
-		log.Fatalf("Failed to start consume: %v", err)
-	}
-	log.Printf("Consumer started. Listening for orders...")
-
-	// Listen for OS termination signals
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
-
-	log.Printf("Shutdown signal received. Stopping consumer...")
-
-	// Stop fetching new messages from JetStream
-	consCtx.Stop()
-
-	// Bounded shutdown context to wait for in-flight tasks to finish ACKing
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer shutdownCancel()
-
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		log.Printf("All in-flight messages ACKed cleanly.")
-	case <-shutdownCtx.Done():
-		log.Printf("Shutdown timeout reached before all in-flight messages completed.")
-	}
-
-	log.Printf("JetStream consumer service shutdown complete.")
+for msg := range msgs.Messages() {
+    if err := process(msg.Data()); err != nil {
+        _ = msg.Nak()
+        continue
+    }
+    _ = msg.Ack()
 }
 ```
 
-#### Java
+**Java — Fetch a batch**
 
 ```java
-import io.nats.client.Connection;
-import io.nats.client.JetStream;
-import io.nats.client.JetStreamManagement;
-import io.nats.client.JetStreamSubscription;
-import io.nats.client.Message;
-import io.nats.client.Nats;
-import io.nats.client.Options;
-import io.nats.client.PullSubscribeOptions;
-import io.nats.client.api.AckPolicy;
-import io.nats.client.api.ConsumerConfiguration;
+StreamContext streamContext = nc.getStreamContext("ORDERS");
+ConsumerContext consumerContext = streamContext.getConsumerContext("orders-pull");
 
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.List;
-
-public class ResilientJetStreamConsumer {
-    public static void main(String[] args) {
-        Options options = new Options.Builder()
-                .server("nats://localhost:4222")
-                .connectionName("jetstream-consumer-demo")
-                .build();
-
-        try (Connection nc = Nats.connect(options)) {
-            JetStreamManagement jsm = nc.jetStreamManagement();
-
-            ConsumerConfiguration config = ConsumerConfiguration.builder()
-                    .durable("order-processing-consumer")
-                    .ackPolicy(AckPolicy.Explicit)
-                    .ackWait(Duration.ofSeconds(15))
-                    .maxDeliver(3)
-                    .filterSubject("orders.created")
-                    .maxAckPending(50)
-                    .build();
-
-            jsm.addOrUpdateConsumer("ORDERS", config);
-
-            JetStream js = nc.jetStream();
-            PullSubscribeOptions pullOpts = PullSubscribeOptions.builder()
-                    .durable("order-processing-consumer")
-                    .build();
-
-            JetStreamSubscription sub = js.subscribe("orders.created", pullOpts);
-            System.out.println("Consumer started. Listening for orders...");
-
-            while (!Thread.currentThread().isInterrupted()) {
-                List<Message> messages = sub.fetch(10, Duration.ofSeconds(1));
-                for (Message msg : messages) {
-                    System.out.printf("Processing order seq %d [attempt %d]: %s%n",
-                            msg.metaData().streamSequence(), msg.metaData().deliveredCount(),
-                            new String(msg.getData(), StandardCharsets.UTF_8));
-
-                    Thread.sleep(100);
-                    msg.ack();
-                }
-            }
+try (FetchConsumer fetchConsumer = consumerContext.fetchMessages(10)) {
+    Message msg;
+    while ((msg = fetchConsumer.nextMessage()) != null) {
+        try {
+            process(msg.getData());
+            msg.ack();
         } catch (Exception e) {
-            e.printStackTrace();
+            msg.nak();
         }
     }
 }
 ```
 
----
+**Python 3 — Fetch a batch**
 
-## 6. JetStream Consumer Capability Matrix
+```python
+sub = await js.pull_subscribe(
+    "orders.created",
+    durable="orders-pull",
+    stream="ORDERS",
+)
 
-| Capability | Pull Consumer (`Consume`) | Batch Fetch (`Fetch` / `FetchNoWait`) | Ordered Consumer |
-| :--- | :--- | :--- | :--- |
-| **Execution Model** | Continuous Push/Pull Callback | On-Demand Batch Pull | Continuous Sequential Callback |
-| **ACK Policy** | `AckExplicit` | `AckExplicit` | `AckNone` (Auto-tracked) |
-| **Flow Control** | `MaxAckPending` | Batch Size Limit | Single Stream Sequence |
-| **Consumer Nature** | Durable or Ephemeral | Durable or Ephemeral | **Always Ephemeral** |
-| **Horizontal Scaling** | Multi-Worker Load Balanced | Multi-Worker Load Balanced | Single Worker Instance |
-| **Redelivery Support** | `Nak`, `NakWithDelay`, `MaxDeliver` | `Nak`, `NakWithDelay`, `MaxDeliver` | Auto-recreate on sequence gap |
-| **Order Guarantee** | Parallel / Unordered across workers | Parallel / Unordered across workers | Strict In-Order Sequential |
+messages = await sub.fetch(batch=10, timeout=2)
 
----
+for msg in messages:
+    try:
+        await process(msg.data)
+        await msg.ack()
+    except Exception:
+        await msg.nak()
+```
 
-## 7. Official References
+### 3.2 Push Consumers
 
-* [Official NATS Go Client Repository](https://github.com/nats-io/nats.go)
-* [NATS Go Client JetStream Package (pkg.go.dev)](https://pkg.go.dev/github.com/nats-io/nats.go/jetstream)
-* [Official NATS Java Client Repository](https://github.com/nats-io/nats.java)
-* [NATS Java Client Javadoc](https://javadoc.io/doc/io.nats/jnats/latest/index.html)
-* [Official NATS JetStream Consumer Documentation](https://docs.nats.io/nats-concepts/jetstream/consumers)
+A push consumer is configured on the NATS server with a mandatory `DeliverSubject` (for example, `orders.delivery`). JetStream proactively forwards incoming stream messages to that `DeliverSubject`.
+
+The application handles messages by subscribing directly to the consumer's `DeliverSubject`.
+
+> [!NOTE]
+> Do not call pull methods like `consumer.Consume()` or `consumer.Fetch()` on a Push Consumer; the SDK will return an error (such as `ErrNotPullConsumer`). For callback-driven event handling with modern flow control, use a **Pull Consumer** with `consumer.Consume()`.
+
+**When to use push**
+
+- Use push consumers when the application needs messages to be delivered automatically as they become available, without explicitly requesting each batch.
+- Suitable for event-driven applications that need continuous message delivery and can manage incoming messages within their processing capacity.
+- Example: A Notification Service receives order confirmation events and sends email or SMS notifications as events arrive.
+
+**Go — Subscribe to DeliverSubject**
+
+```go
+// In Go, subscribe directly to the push consumer's configured DeliverSubject.
+// Use nc.QueueSubscribe when running multiple worker instances for load balancing.
+sub, err := nc.Subscribe("orders.delivery", func(msg *nats.Msg) {
+    if err := process(msg.Data); err != nil {
+        _ = msg.Nak()
+        return
+    }
+    _ = msg.Ack()
+})
+if err != nil {
+    return err
+}
+defer sub.Drain()
+```
+
+**Java — Subscribe to DeliverSubject**
+
+```java
+// In Java, listen on the DeliverSubject using a Dispatcher.
+Dispatcher dispatcher = nc.createDispatcher();
+Subscription sub = nc.subscribe(
+    "orders.delivery",
+    dispatcher,
+    msg -> {
+        try {
+            process(msg.getData());
+            msg.ack();
+        } catch (Exception e) {
+            msg.nak();
+        }
+    }
+);
+```
+
+**Python 3 — Subscribe to DeliverSubject**
+
+```python
+async def handle_message(msg):
+    try:
+        await process(msg.data)
+        await msg.ack()
+    except Exception:
+        await msg.nak()
+
+# In Python, subscribe directly to the push consumer's deliver_subject
+sub = await nc.subscribe(
+    "orders.delivery",
+    cb=handle_message,
+)
+```
+
+In all languages, messages received on a JetStream push consumer delivery subject are standard NATS messages that support explicit JetStream acknowledgements (`msg.Ack()`, `msg.Nak()`, `msg.Term()`).
+
+### 3.3 Quick Comparison
+
+| Requirement | Recommended approach |
+|---|---|
+| Control when and how many messages are requested | Pull |
+| Apply backpressure based on processing capacity | Pull |
+| Receive messages continuously through a configured delivery subject | Push |
+| Observe messages in sequence without application acknowledgements | Ordered Consumer |
+| Process independent messages concurrently | Pull is often a good starting point |
+
+## 4. Message Acknowledgements
+
+For consumers configured to require acknowledgements, acknowledge a message after the relevant business operation succeeds. An acknowledgement tells JetStream how the application handled the message; it does not automatically make the business operation exactly-once.
+
+### 4.1 Acknowledgement Actions
+
+| Outcome | Go | Java | Python 3 |
+|---|---|---|---|
+| Processing succeeded | `msg.Ack()` | `msg.ack()` | `await msg.ack()` |
+| Retry the message | `msg.Nak()` | `msg.nak()` | `await msg.nak()` |
+| Do not redeliver | `msg.Term()` | `msg.term()` | `await msg.term()` |
+| Processing is still in progress | `msg.InProgress()` | `msg.inProgress()` | `await msg.in_progress()` |
+
+Use `Term` only when the application has decided that the message should not be retried. Use `InProgress` for work that may exceed the configured acknowledgement wait period, where supported by the consumer configuration.
+
+### 4.2 Example: Success, Retry, or Permanent Failure
+
+**Go**
+
+```go
+switch {
+case isValid(msg.Data()):
+    if err := process(msg.Data()); err != nil {
+        _ = msg.Nak()
+        return
+    }
+    _ = msg.Ack()
+
+case isPermanentlyInvalid(msg.Data()):
+    logInvalidMessage(msg.Data())
+    _ = msg.Term()
+
+default:
+    _ = msg.Nak()
+}
+```
+
+**Java**
+
+```java
+if (isPermanentlyInvalid(msg.getData())) {
+    logInvalidMessage(msg.getData());
+    msg.term();
+} else {
+    try {
+        process(msg.getData());
+        msg.ack();
+    } catch (Exception e) {
+        msg.nak();
+    }
+}
+```
+
+**Python 3**
+
+```python
+if is_permanently_invalid(msg.data):
+    log_invalid_message(msg.data)
+    await msg.term()
+else:
+    try:
+        await process(msg.data)
+        await msg.ack()
+    except Exception:
+        await msg.nak()
+```
+
+The validation and processing functions are application-specific. Classify failures deliberately rather than treating every error as permanent or retryable.
+
+### 4.3 Long-running Processing
+
+If processing may exceed the acknowledgement wait period, send progress acknowledgements while work continues, where supported.
+
+**Go**
+
+```go
+_ = msg.InProgress()
+
+if err := process(msg.Data()); err != nil {
+    _ = msg.Nak()
+    return
+}
+_ = msg.Ack()
+```
+
+**Java**
+
+```java
+msg.inProgress();
+
+try {
+    process(msg.getData());
+    msg.ack();
+} catch (Exception e) {
+    msg.nak();
+}
+```
+
+**Python 3**
+
+```python
+await msg.in_progress()
+
+try:
+    await process(msg.data)
+    await msg.ack()
+except Exception:
+    await msg.nak()
+```
+
+For long-running work, progress acknowledgements may need to be sent repeatedly until processing completes. Configure acknowledgement timing with the platform team if the existing settings do not fit the workload.
+
+### 4.4 Prevent Duplicate Business Effects
+
+Messages can be redelivered if JetStream does not receive an acknowledgement, even if the application completed its business operation. Make processing idempotent where practical, using business identifiers, database constraints, or deduplication records.
+
+Review the **Delivery Semantics** guide for the implications of acknowledgements, redelivery, and exactly-once guarantees.
+
+## 5. Message Ordering and Processing Concurrency
+
+Stream sequence, delivery order, processing order, and completion order are not interchangeable. Choose a processing pattern based on the application's business requirements.
+
+### 5.1 Sequential Processing
+
+Sequential processing starts the next message only after the current message has finished processing.
+
+**When to use sequential processing**
+
+- Each operation depends on the preceding operation.
+- Business state must be updated in a defined order.
+- Simpler processing and failure handling are more important than maximum parallel throughput.
+
+**Go**
+
+```go
+for msg := range msgs.Messages() {
+    if err := process(msg.Data()); err != nil {
+        _ = msg.Nak()
+        continue
+    }
+    _ = msg.Ack()
+}
+```
+
+**Java**
+
+```java
+for (Message msg : messages) {
+    try {
+        process(msg.getData());
+        msg.ack();
+    } catch (Exception e) {
+        msg.nak();
+    }
+}
+```
+
+**Python 3**
+
+```python
+for msg in messages:
+    try:
+        await process(msg.data)
+        await msg.ack()
+    except Exception:
+        await msg.nak()
+```
+
+These examples process each batch sequentially. Sequential processing within one application loop does not guarantee global ordering across multiple instances, and redelivery may affect the order in which business operations complete.
+
+### 5.2 Concurrent Processing
+
+Concurrent processing allows multiple messages to be processed at the same time. This can increase throughput, but messages may complete in a different order from the order in which they were received.
+
+**When to use concurrent processing**
+
+- Messages are independent.
+- The application benefits from parallel processing.
+- The business logic can tolerate completion order differing from delivery order.
+
+**Go — Bounded worker pattern**
+
+```go
+workers := 4
+jobs := make(chan jetstream.Msg)
+
+for i := 0; i < workers; i++ {
+    go func() {
+        for msg := range jobs {
+            if err := process(msg.Data()); err != nil {
+                _ = msg.Nak()
+                continue
+            }
+            _ = msg.Ack()
+        }
+    }()
+}
+
+for msg := range msgs.Messages() {
+    jobs <- msg
+}
+```
+
+**Java — Executor pattern**
+
+```java
+ExecutorService workers = Executors.newFixedThreadPool(4);
+
+for (Message msg : messages) {
+    workers.submit(() -> {
+        try {
+            process(msg.getData());
+            msg.ack();
+        } catch (Exception e) {
+            msg.nak();
+        }
+    });
+}
+```
+
+**Python 3 — Bounded worker pattern**
+
+```python
+async def worker(queue):
+    while True:
+        msg = await queue.get()
+        try:
+            await process(msg.data)
+            await msg.ack()
+        except Exception:
+            await msg.nak()
+        finally:
+            queue.task_done()
+```
+
+These are illustrative processing patterns, not complete worker-pool implementations. Production code should bound queued work, propagate errors, and coordinate worker lifecycle. In particular, do not acknowledge a message before its business operation succeeds.
+
+### 5.3 Ordered Consumers
+
+An Ordered Consumer is intended for applications that need to observe a Stream sequentially, such as inspecting or analysing events in order. It is not a general replacement for an acknowledged work-processing consumer.
+
+**When to use an Ordered Consumer**
+
+- You need sequential observation of a Stream.
+- You are inspecting, replaying, or analysing event history.
+- You do not need application-controlled acknowledgements or load balancing across workers.
+
+Ordered Consumers are ephemeral, do not require acknowledgements, and are not designed to distribute work across multiple workers. Client libraries can recreate the underlying consumer when they detect a sequence gap.
+
+**Go — Create and consume from an Ordered Consumer**
+
+```go
+consumer, err := js.OrderedConsumer(
+    ctx,
+    "ORDERS",
+    jetstream.OrderedConsumerConfig{},
+)
+if err != nil {
+    return err
+}
+
+consumeCtx, err := consumer.Consume(func(msg jetstream.Msg) {
+    inspect(msg.Data())
+})
+if err != nil {
+    return err
+}
+defer consumeCtx.Stop()
+```
+
+**Java — Ordered push subscription**
+
+```java
+PushSubscribeOptions options =
+    PushSubscribeOptions.builder()
+        .stream("ORDERS")
+        .ordered(true)
+        .build();
+
+js.subscribe(
+    "orders.created",
+    dispatcher,
+    msg -> inspect(msg.getData()),
+    false,
+    options
+);
+```
+
+Ordered push subscriptions have specific restrictions: they are ephemeral, do not use normal acknowledgements, and cannot be used as queue-group load-balanced subscriptions. Confirm the supported options for the Java SDK version in use.
+
+**Python 3 — Ordered Consumer**
+
+```python
+sub = await js.subscribe(
+    "orders.created",
+    ordered_consumer=True,
+)
+
+while True:
+    try:
+        msg = await sub.next_msg(timeout=2)
+        inspect(msg.data)
+    except asyncio.TimeoutError:
+        break
+```
+
+In `nats-py`, an Ordered Consumer is configured directly via `ordered_consumer=True` on `js.subscribe()`, which transparently manages ephemeral consumer lifecycle, heartbeats, flow control, and sequence recovery under the hood.
+
+Ordered Consumers are suitable for ordered observation, not for application-controlled retries or acknowledged work distribution. If business operations require acknowledgements, retry handling, or multiple workers, use the appropriate provisioned application consumer.
+
+#### Ordered Processing for Durable Use Cases
+
+Native Ordered Consumers are ephemeral and designed solely for observation without explicit acknowledgements. For durable business use cases that require persistent delivery, explicit acknowledgements, and retry handling while guaranteeing strict sequential processing:
+
+1. **Consumer Configuration**:
+   - Use a provisioned JetStream **Durable Consumer**.
+   - Set `AckPolicy` to `AckExplicit`.
+   - Set `MaxAckPending = 1`. This instructs the NATS JetStream server to allow only one unacknowledged message at a time across the entire consumer.
+
+2. **Application Processing Discipline**:
+   - The application must process and ACK each message before processing the next, with retry handling that prevents later messages from overtaking failed messages.
+   - On transient failure, retry locally or use explicit backoff to prevent downstream messages from being processed ahead of failed ones.
+
+3. **Instance Concurrency**:
+   - Run a single active consumer worker instance. Multiple competing instances on the same consumer will cause messages to complete out of order.
+
+**Go — Durable Ordered Processing (`MaxAckPending = 1`)**
+
+```go
+// Consumer provisioned via Consumer Intake Form with:
+// Durable: "orders-ordered-worker"
+// AckPolicy: jetstream.AckExplicitPolicy
+// MaxAckPending: 1
+
+consumer, err := js.Consumer(ctx, "ORDERS", "orders-ordered-worker")
+if err != nil {
+    return err
+}
+
+cc, err := consumer.Consume(func(msg jetstream.Msg) {
+    // Process message strictly in order
+    if err := process(msg.Data()); err != nil {
+        _ = msg.Nak() // Reprocess in order
+        return
+    }
+
+    // Acknowledge current message to permit JetStream to deliver the next message
+    _ = msg.Ack()
+}, jetstream.PullMaxMessages(1))
+if err != nil {
+    return err
+}
+defer cc.Stop()
+```
+
+**Java — Durable Ordered Processing (`maxAckPending = 1`)**
+
+```java
+// Consumer provisioned with AckExplicit and maxAckPending(1)
+StreamContext streamContext = nc.getStreamContext("ORDERS");
+ConsumerContext consumerContext = streamContext.getConsumerContext("orders-ordered-worker");
+
+MessageConsumer consumer = consumerContext.consume(msg -> {
+    try {
+        process(msg.getData());
+        msg.ack(); // Release server lock to permit next message delivery
+    } catch (Exception e) {
+        msg.nak(); // Retry message in order
+    }
+});
+```
+
+**Python 3 — Durable Ordered Processing (`max_ack_pending = 1`)**
+
+```python
+# Consumer provisioned with ack_policy="explicit" and max_ack_pending=1
+sub = await js.pull_subscribe(
+    "orders.created",
+    durable="orders-ordered-worker",
+    stream="ORDERS",
+)
+
+while True:
+    try:
+        # Fetch strictly 1 message at a time
+        messages = await sub.fetch(batch=1, timeout=2)
+        for msg in messages:
+            try:
+                await process(msg.data)
+                await msg.ack()  # Allows next message to be fetched
+            except Exception:
+                await msg.nak()
+    except asyncio.TimeoutError:
+        continue
+```
+
+## 6. Common Consumer Issues
+
+| Symptom | What to check |
+|---|---|
+| No messages received | Verify Stream, consumer, subject filter, and delivery mode. |
+| Messages are redelivered | Check acknowledgement handling and processing duration. |
+| Duplicate business effects | Make processing idempotent and review acknowledgement failure scenarios. |
+| Messages complete out of order | Check concurrent handlers, multiple instances, and redelivery. |
+| Processing falls behind | Review processing latency, worker limits, pending messages, and downstream dependencies. |
+| Push subscription does not work | Confirm that the provisioned consumer is push-based and that the SDK binds to the correct configuration. |
+| Consumer configuration appears incorrect | Contact the platform team through the approved process; do not modify shared consumers directly. |
+
+## 7. Related Documentation
+
+- **JetStream Guide:** [JetStream Guide](nats-jetstream-guide.md)
+- **Consumer Intake Form:** [Consumer Intake Form](nats-resources/consumer-intake.md)
+- **JetStream Consumers:** https://docs.nats.io/nats-concepts/jetstream/consumers
+- **Go JetStream SDK:** https://github.com/nats-io/nats.go/tree/main/jetstream
+- **Java NATS SDK:** https://github.com/nats-io/nats.java
+- **Python NATS SDK:** https://github.com/nats-io/nats.py
+
+## 8. Developer Readiness Checklist
+
+### A. Provisioning and Configuration
+
+- [ ] The required consumer has been provisioned through the approved platform process.
+- [ ] The application uses the correct Stream, consumer, and subject configuration.
+- [ ] The application uses an approved SDK and runtime version.
+- [ ] Required credentials and permissions are configured.
+
+### B. Message Consumption
+
+- [ ] The application uses the provisioned delivery mode.
+- [ ] Acknowledgements follow the consumer's configured policy.
+- [ ] Messages are acknowledged only after relevant business processing succeeds.
+- [ ] Retryable and permanent failures have defined handling behaviour.
+- [ ] Long-running processing accounts for acknowledgement timing.
+
+### C. Reliability and Ordering
+
+- [ ] Processing can safely handle duplicate deliveries where required.
+- [ ] Concurrent processing is not assumed to preserve completion order.
+- [ ] Ordering requirements have been addressed in the application design.
+- [ ] Redelivery and failure handling have been considered.
+
+### D. Operational Readiness
+
+- [ ] Processing and acknowledgement errors have useful diagnostic logs.
+- [ ] Logs do not expose credentials or sensitive payloads.
+- [ ] The team knows how to investigate common consumer issues.
+- [ ] The team has reviewed the JetStream Guide and Delivery Semantics guide.
+
+**Before release:** Confirm that the application uses the provisioned consumer as intended and that its acknowledgement, failure-handling, and ordering behaviour match the application's requirements.
