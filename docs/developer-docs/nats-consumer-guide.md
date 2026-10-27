@@ -97,6 +97,31 @@ MessageConsumer consumer = consumerContext.consume(msg -> {
 });
 ```
 
+**Python 3 — Continuous consumption (`asyncio` loop with `fetch`)**
+
+In Python (`nats-py`), continuous pull consumption is driven via an explicit `asyncio` task loop rather than a background thread callback, ensuring execution remains cooperative, non-blocking, and cancellation-safe within the application's event loop:
+
+```python
+sub = await js.pull_subscribe(
+    "orders.created",
+    durable="orders-pull",
+    stream="ORDERS",
+)
+
+while True:
+    try:
+        messages = await sub.fetch(batch=10, timeout=2)
+        for msg in messages:
+            try:
+                await process(msg.data)
+                await msg.ack()
+            except Exception:
+                await msg.nak()
+    except asyncio.TimeoutError:
+        # Timeout occurs when no messages are available in the window; continue loop
+        continue
+```
+
 #### On-Demand Batch Retrieval (`Fetch`)
 
 **Go — Fetch a batch**

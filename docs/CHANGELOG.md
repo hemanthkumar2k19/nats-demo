@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-27] Add Python Continuous Pull Consumer Pattern to Consumer Guide
+
+- **Change:** Updated [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md) Section 3.1 to include Python 3 continuous pull consumption sample using an explicit `asyncio` task loop with `sub.fetch` and timeout handling, alongside Go and Java snippets.
+- **Reason:** Provide parity across all three supported SDKs (Go, Java, Python) for continuous pull consumption, explaining why Python uses a cooperative `asyncio` loop rather than a background thread callback.
+- **Affected Area:** [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-27] Structure Feature Catalogue into Tabular Format with Status Tracking
 
 - **Change:** Converted [catalogue.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/catalogue.md) from a nested list into a Markdown matrix table featuring hierarchical indexing (`#`), `Category`, `Feature`, `Scope / Target`, and an explicit `Status` column as the final column.
