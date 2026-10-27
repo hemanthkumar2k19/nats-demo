@@ -2,6 +2,12 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-27] Structure Feature Catalogue into Tabular Format with Status Tracking
+
+- **Change:** Converted [catalogue.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/catalogue.md) from a nested list into a Markdown matrix table featuring hierarchical indexing (`#`), `Category`, `Feature`, `Scope / Target`, and an explicit `Status` column as the final column.
+- **Reason:** Provide a clear, scannable platform feature tracking matrix reflecting implemented and planned NATS evaluation capabilities.
+- **Affected Area:** [catalogue.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/catalogue.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-27] Complete Developer Roadmap Integration for all Developer Docs
 
 - **Change:** Updated [docs/developer-docs/roadmap.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/roadmap.md) to integrate the enterprise resource governance framework and complete 1-to-1 coverage of all guides:
