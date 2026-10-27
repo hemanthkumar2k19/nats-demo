@@ -51,10 +51,9 @@ A pull consumer lets the application request messages when it is ready to proces
 
 **When to use pull**
 
-- The application needs control over batch size and request timing.
-- Processing capacity varies or depends on downstream services.
-- The application needs backpressure or controlled concurrency.
-- The workload requires explicit retry and failure handling.
+- Use pull consumers when the application needs control over message consumption rate, batch size, and processing concurrency.
+- Suitable for batch processing, background workers, and workloads where messages should be fetched only when the application is ready to process them.
+- Example: An Order Processing Service fetches 10 orders at a time and processes them based on available database connections and worker capacity.
 
 Pull consumers are the recommended starting point for almost all modern application workloads.
 
@@ -195,9 +194,9 @@ The application handles messages by subscribing directly to the consumer's `Deli
 
 **When to use push**
 
-- The platform has provisioned an existing push consumer with a designated `DeliverSubject`.
-- The application needs real-time delivery without initiating client pull requests.
-- The existing push configuration meets the application's flow-control and delivery requirements.
+- Use push consumers when the application needs messages to be delivered automatically as they become available, without explicitly requesting each batch.
+- Suitable for event-driven applications that need continuous message delivery and can manage incoming messages within their processing capacity.
+- Example: A Notification Service receives order confirmation events and sends email or SMS notifications as events arrive.
 
 **Go — Subscribe to DeliverSubject**
 
