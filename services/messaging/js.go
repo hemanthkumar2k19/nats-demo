@@ -3,6 +3,9 @@ package messaging
 import (
 	"context"
 	"fmt"
+	"math/rand"
+	"time"
+
 	"services/model"
 
 	"github.com/nats-io/nats.go"
@@ -90,4 +93,25 @@ func JSPublishAsyncPending(js jetstream.JetStream) map[string]any {
 	return map[string]any{
 		"pending": pending,
 	}
+}
+
+// Publish N Messages with distinct order numbers and indices for concurrency testing
+func JSPublishN(ctx context.Context, js jetstream.JetStream, messages []model.Message) error {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	orderBatch := r.Intn(9000) + 1000
+
+	for i := range messages {
+		msg := &messages[i]
+		if msg.Data == "" {
+			msg.Data = fmt.Sprintf("Order ORD-%d-%02d is received for processing", orderBatch, i+1)
+		} else {
+			msg.Data = fmt.Sprintf("Order ORD-%d-%02d is received: %s", orderBatch, i+1, msg.Data)
+		}
+
+		_, err := JSPublishAsync(ctx, js, msg)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

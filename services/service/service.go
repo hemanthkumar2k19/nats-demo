@@ -54,6 +54,19 @@ func (s *Service) JSPublish(ctx context.Context, msg *model.Message) (*jetstream
 	return messaging.JSPublishMsg(ctx, s.js, msg)
 }
 
+// JSPublishBatch publishes multiple messages to JetStream asynchronously using JSPublishN.
+func (s *Service) JSPublishBatch(ctx context.Context, messages []model.Message) error {
+	if s.js == nil {
+		var err error
+		s.js, err = jetstream.New(s.nc)
+		if err != nil {
+			return fmt.Errorf("failed to initialize JetStream context: %w", err)
+		}
+	}
+
+	return messaging.JSPublishN(ctx, s.js, messages)
+}
+
 // CreateConsumer creates or retrieves a JetStream consumer and returns its metadata.
 func (s *Service) CreateConsumer(ctx context.Context, cr *model.CreateConsumerRequest) (*jetstream.ConsumerInfo, error) {
 	if s.js == nil {

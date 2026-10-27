@@ -1,6 +1,9 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"services/model"
 	"services/service"
@@ -80,8 +83,47 @@ func (h *PublisherHandler) JSPublishHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, ack)
 }
 
+// JSPublishBatchHandler handles HTTP POST /api/v1/publish/js/batch for publishing multiple messages asynchronously.
+func (h *PublisherHandler) JSPublishBatchHandler(c *gin.Context) {
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body: " + err.Error()})
+		return
+	}
+
+	var messages []model.Message
+	if err := json.Unmarshal(bodyBytes, &messages); err != nil {
+		var req struct {
+			Messages []model.Message `json:"messages"`
+		}
+		if err := json.Unmarshal(bodyBytes, &req); err != nil || len(req.Messages) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON: expected an array of messages or an object with 'messages' key"})
+			return
+		}
+		messages = req.Messages
+	}
+
+	for i, msg := range messages {
+		if msg.Subject == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Message at index %d is missing required 'subject' field", i)})
+			return
+		}
+	}
+
+	if err := h.pubService.JSPublishBatch(c.Request.Context(), messages); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "published",
+		"count":  len(messages),
+	})
+}
+
 // RegisterRoutes registers publisher API routes on the Gin router group.
 func (h *PublisherHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/publish", h.PublishHandler)
 	rg.POST("/publish/js", h.JSPublishHandler)
+	rg.POST("/publish/js/batch", h.JSPublishBatchHandler)
 }

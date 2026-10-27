@@ -303,6 +303,87 @@
               "body": "{\n  \"stream\": \"DELIVERY\",\n  \"sequence\": 2,\n  \"domain\": \"\",\n  \"duplicate\": true\n}"
             }
           ]
+        },
+        {
+          "name": "JetStream Batch Publish (Async)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #1\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #2\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #3\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #4\"\n  }\n]",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/publish/js/batch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "publish",
+                "js",
+                "batch"
+              ]
+            },
+            "description": "Publishes a batch of messages to JetStream asynchronously for testing worker concurrency and competing consumers. If data is provided or omitted, each message is tagged with an identifiable order random number and index (e.g. Order ORD-<rand>-<index>) to easily distinguish them in worker logs."
+          },
+          "response": [
+            {
+              "name": "200 OK - Batch Published",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "[\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #1\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #2\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #3\"\n  },\n  {\n    \"subject\": \"payments.created\",\n    \"data\": \"checkout payment #4\"\n  }\n]",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/publish/js/batch",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "publish",
+                    "js",
+                    "batch"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"count\": 4,\n  \"status\": \"published\"\n}"
+            }
+          ]
         }
       ]
     },

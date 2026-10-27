@@ -2,6 +2,34 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-27] Add Push Consumer Concurrency and Batch JetStream Publishing API
+
+- **Change:**
+  - Updated [services/cmd/notification-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/notification-worker/main.go):
+    - Replaced `nc.Subscribe` with `nc.QueueSubscribe` using queue group `notification-workers` to enable horizontal load balancing across multiple push worker instances.
+    - Added `WorkerPrefix = "notification-worker"` and dynamic `WORKER_ID` suffix resolution defaulting to `1` (e.g. `notification-worker-1`).
+    - Fixed consumer name to `payments-push` and added 2-second processing simulation to visibly observe parallel execution across competing instances.
+  - Updated [services/messaging/js.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/js.go):
+    - Enhanced `JSPublishN` to automatically generate distinct order identifiers (`Order ORD-<rand>-<index>`) for each batch item so messages stand out distinctly in worker logs.
+  - Updated [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go) and [services/api/publisher_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/publisher_handler.go):
+    - Added `JSPublishBatch` service method wrapping `messaging.JSPublishN`.
+    - Added HTTP endpoint `POST /api/v1/publish/js/batch` accepting a list of messages or `{"messages": [...]}` to asynchronously publish batches of messages to JetStream for concurrency testing.
+  - Updated [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json):
+    - Added `JetStream Batch Publish (Async)` request under the `Publishing` folder with documentation and 200 OK example.
+- **Reason:** Enable horizontal scaling and competing consumer evaluation for push consumers, provide an HTTP batch publishing API to trigger bulk message processing across workers, and enrich payloads with order tracking tags.
+- **Affected Area:** [services/cmd/notification-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/notification-worker/main.go), [services/messaging/js.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/js.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [services/api/publisher_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/publisher_handler.go), [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-27] Enable Horizontal Scaling and Worker ID Identification in Payment Worker
+
+- **Change:** Updated [services/cmd/payment-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/payment-worker/main.go):
+  - Added `WorkerPrefix = "payment-worker"` and dynamic `WORKER_ID` suffix resolution defaulting to `1` (yielding `payment-worker-1`).
+  - Formatted `worker_id` and NATS connection names as `payment-worker-<WORKER_ID>` (e.g. `payment-worker-3` when `WORKER_ID=3`).
+  - Tagged all processing and lifecycle logs with `worker_id`.
+  - Added simulated processing delay (2 seconds) to visibly observe parallel execution across competing consumer instances.
+  - Updated [catalogue.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/catalogue.md) row 7 (Consumer Parallelism) to `Completed`.
+- **Reason:** Enable multi-process horizontal scaling demonstrations for JetStream pull competing consumers directly from the terminal without requiring container setups.
+- **Affected Area:** [services/cmd/payment-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/payment-worker/main.go), [catalogue.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/catalogue.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-27] Add Python Continuous Pull Consumer Pattern to Consumer Guide
 
 - **Change:** Updated [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md) Section 3.1 to include Python 3 continuous pull consumption sample using an explicit `asyncio` task loop with `sub.fetch` and timeout handling, alongside Go and Java snippets.
