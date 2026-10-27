@@ -4,7 +4,7 @@
 
 This guide explains how application developers consume messages from NATS JetStream using provisioned consumers. It covers pull and push delivery, message acknowledgement, processing concurrency, ordering, and common issues.
 
-Streams and Consumers are provisioned and managed through the approved platform process. Subject usage and filtering follow the platform's naming and configuration conventions. Developers should request new resources or configuration changes through the approved [Consumer Intake Form — insert link] and use the resulting configuration in their applications.
+Streams and Consumers are provisioned and managed through the approved platform process. Subject usage and filtering follow the platform's naming and configuration conventions. Developers should request new resources or configuration changes through the approved [Consumer Intake Form](nats-resources/consumer-intake.md) and use the resulting configuration in their applications.
 
 Read this guide first to understand how to consume messages. Then review the **Delivery Semantics** guide to understand At-Most-Once, At-Least-Once, and Exactly-Once delivery guarantees.
 
@@ -36,7 +36,7 @@ Obtain the following details from the platform team:
 - Acknowledgement policy and retry expectations.
 - Approved SDK and runtime versions.
 
-If the required consumer is unavailable, submit a request through the approved [Consumer Intake Form — insert link]. Do not create, update, reset, or delete shared resources from application code.
+If the required consumer is unavailable, submit a request through the approved [Consumer Intake Form](nats-resources/consumer-intake.md). Do not create, update, reset, or delete shared resources from application code.
 
 ## 3. Pull and Push Consumers
 
@@ -564,9 +564,8 @@ Ordered Consumers are suitable for ordered observation, not for application-cont
 
 ## 7. Related Documentation
 
-- **JetStream Guide — Overall:** [Insert link]
-- **Delivery Semantics — At-Most-Once, At-Least-Once and Exactly-Once:** [Insert link]
-- **Consumer Intake Form:** [Insert link]
+- **JetStream Guide:** [JetStream Guide](nats-jetstream-guide.md)
+- **Consumer Intake Form:** [Consumer Intake Form](nats-resources/consumer-intake.md)
 - **JetStream Consumers:** https://docs.nats.io/nats-concepts/jetstream/consumers
 - **Go JetStream SDK:** https://github.com/nats-io/nats.go/tree/main/jetstream
 - **Java NATS SDK:** https://github.com/nats-io/nats.java

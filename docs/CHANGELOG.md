@@ -2,6 +2,16 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-27] Complete Developer Roadmap Integration for all Developer Docs
+
+- **Change:** Updated [docs/developer-docs/roadmap.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/roadmap.md) to complete 1-to-1 coverage of all guides in the `developer-docs` repository:
+  - Added **Step 06 (Resource Provisioning — Subject Intake)** immediately following Subject Design, establishing the formal platform request and approval process for subject registration, persistence justification, and stream mapping.
+  - Added **Step 09 (Persistent Messaging — Consumer Guide)** immediately following the JetStream Guide, establishing how application services consume messages using continuous pull (`Consume`), batch pull (`Fetch`), push subscriptions, explicit acknowledgements, concurrency, and ordered consumption.
+  - Added **Step 10 (Resource Provisioning — Consumer Intake)** establishing the formal request process for platform-managed consumer provisioning, subject filters, delivery mode, and acknowledgement policy prior to implementing delivery semantics.
+  - Renumbered downstream steps across the complete 13-step matrix and authored intent-oriented, developer-facing self-check questions for each stage.
+- **Reason:** Ensure comprehensive, unbroken onboarding flow covering the full lifecycle: Foundations -> Local Setup -> Client Connection -> Subject Design & Intake -> Core Messaging -> JetStream Architecture & Consumer Implementation -> Consumer Intake -> Delivery Semantics.
+- **Affected Area:** [docs/developer-docs/roadmap.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/roadmap.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-27] Standardize NATS Consumer Guide on Modern SDKs and Accurate Delivery Semantics
 
 - **Change:** Overhauled [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md):
