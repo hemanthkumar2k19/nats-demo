@@ -574,6 +574,92 @@ In `nats-py`, an Ordered Consumer is configured directly via `ordered_consumer=T
 
 Ordered Consumers are suitable for ordered observation, not for application-controlled retries or acknowledged work distribution. If business operations require acknowledgements, retry handling, or multiple workers, use the appropriate provisioned application consumer.
 
+#### Ordered Processing for Durable Use Cases
+
+Native Ordered Consumers are ephemeral and designed solely for observation without explicit acknowledgements. For durable business use cases that require persistent delivery, explicit acknowledgements, and retry handling while guaranteeing strict sequential processing:
+
+1. **Consumer Configuration**:
+   - Use a provisioned JetStream **Durable Consumer**.
+   - Set `AckPolicy` to `AckExplicit`.
+   - Set `MaxAckPending = 1`. This instructs the NATS JetStream server to allow only one unacknowledged message at a time across the entire consumer.
+
+2. **Application Processing Discipline**:
+   - The application must process and ACK each message before processing the next, with retry handling that prevents later messages from overtaking failed messages.
+   - On transient failure, retry locally or use explicit backoff to prevent downstream messages from being processed ahead of failed ones.
+
+3. **Instance Concurrency**:
+   - Run a single active consumer worker instance. Multiple competing instances on the same consumer will cause messages to complete out of order.
+
+**Go — Durable Ordered Processing (`MaxAckPending = 1`)**
+
+```go
+// Consumer provisioned via Consumer Intake Form with:
+// Durable: "orders-ordered-worker"
+// AckPolicy: jetstream.AckExplicitPolicy
+// MaxAckPending: 1
+
+consumer, err := js.Consumer(ctx, "ORDERS", "orders-ordered-worker")
+if err != nil {
+    return err
+}
+
+cc, err := consumer.Consume(func(msg jetstream.Msg) {
+    // Process message strictly in order
+    if err := process(msg.Data()); err != nil {
+        _ = msg.Nak() // Reprocess in order
+        return
+    }
+
+    // Acknowledge current message to permit JetStream to deliver the next message
+    _ = msg.Ack()
+}, jetstream.PullMaxMessages(1))
+if err != nil {
+    return err
+}
+defer cc.Stop()
+```
+
+**Java — Durable Ordered Processing (`maxAckPending = 1`)**
+
+```java
+// Consumer provisioned with AckExplicit and maxAckPending(1)
+StreamContext streamContext = nc.getStreamContext("ORDERS");
+ConsumerContext consumerContext = streamContext.getConsumerContext("orders-ordered-worker");
+
+MessageConsumer consumer = consumerContext.consume(msg -> {
+    try {
+        process(msg.getData());
+        msg.ack(); // Release server lock to permit next message delivery
+    } catch (Exception e) {
+        msg.nak(); // Retry message in order
+    }
+});
+```
+
+**Python 3 — Durable Ordered Processing (`max_ack_pending = 1`)**
+
+```python
+# Consumer provisioned with ack_policy="explicit" and max_ack_pending=1
+sub = await js.pull_subscribe(
+    "orders.created",
+    durable="orders-ordered-worker",
+    stream="ORDERS",
+)
+
+while True:
+    try:
+        # Fetch strictly 1 message at a time
+        messages = await sub.fetch(batch=1, timeout=2)
+        for msg in messages:
+            try:
+                await process(msg.data)
+                await msg.ack()  # Allows next message to be fetched
+            except Exception:
+                await msg.nak()
+    except asyncio.TimeoutError:
+        continue
+```
+
 ## 6. Common Consumer Issues
 
 | Symptom | What to check |

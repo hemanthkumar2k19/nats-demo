@@ -2,6 +2,15 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-27] Add Durable Ordered Consumer Pattern (MaxAckPending = 1) to Consumer Guide
+
+- **Change:** Updated [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md) Section 5.3 to document the canonical solution for ordered processing with durable JetStream consumers:
+  - Documented the architecture: configuring a durable consumer with `AckExplicit` and `MaxAckPending = 1` to strictly enforce one unacknowledged message at a time.
+  - Specified application processing discipline (processing and ACK before moving to next message, in-order retry handling, single active instance).
+  - Provided copy/paste code examples across Go (`PullMaxMessages(1)`), Java (`maxAckPending(1)`), and Python 3 (`batch=1`).
+- **Reason:** Provide an explicit architectural pattern for applications requiring strict sequential processing alongside durable persistence, explicit acknowledgements, and retry handling (which ephemeral Ordered Consumers cannot provide).
+- **Affected Area:** [docs/developer-docs/nats-consumer-guide.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/developer-docs/nats-consumer-guide.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-27] Add Push Consumer Concurrency and Batch JetStream Publishing API
 
 - **Change:**
