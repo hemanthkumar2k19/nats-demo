@@ -106,9 +106,9 @@ All endpoints, pre-configured variables, and sample payloads can be imported dir
 
 | Method | Endpoint | Description | Postman Item Name |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/v1/publish` | Publishes to Core NATS with at-most-once delivery (fire-and-forget). | `NATS Publish (AtMost Once)` |
-| `POST` | `/api/v1/publish/js` | Publishes to JetStream synchronously with at-least-once delivery; returns `PubAck`. | `JetStream Publish (AtLeast Once)` |
-| `POST` | `/api/v1/publish/js` | Publishes to JetStream with `Nats-Msg-Id` header for deduplication (exactly-once flow). | `JetStream Publish (Exactly Once)` |
+| `POST` | `/api/v1/publish` | Publishes to Core NATS with at-most-once delivery (fire-and-forget); enriches headers and injects runtime unique short ID. | `NATS Publish (AtMost Once)` |
+| `POST` | `/api/v1/publish/js` | Publishes to JetStream synchronously with at-least-once delivery; enriches headers, injects runtime short ID, and returns rich status with stream sequence. | `JetStream Publish (AtLeast Once)` |
+| `POST` | `/api/v1/publish/js` | Publishes to JetStream with `Nats-Msg-Id` header for deduplication (exactly-once flow); returns enriched publish response with duplicate flag. | `JetStream Publish (Exactly Once)` |
 | `POST` | `/api/v1/consumers` | Creates or retrieves a JetStream consumer (pull or push). | `Create Pull Consumer` / `Create Push Consumer` |
 | `DELETE` | `/api/v1/consumers` | Deletes a JetStream consumer using a JSON body (`streamName`, `consumerName`). | `Delete Consumer` |
 | `POST` | `/api/v1/consumers/replay` | Replays stream messages for audit/inspection (no business effect) by sequence or timestamp range; returns execution summary. | `Replay Messages (By Sequence)` / `Replay Messages (By Time)` |

@@ -43,15 +43,13 @@ func (h *PublisherHandler) PublishHandler(c *gin.Context) {
 		msg.Headers["Nats-Msg-Id"] = httpMsgID
 	}
 
-	if err := h.pubService.Publish(c.Request.Context(), &msg); err != nil {
+	resp, err := h.pubService.Publish(c.Request.Context(), &msg)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, model.PublishResponse{
-		Status:  "published",
-		Subject: msg.Subject,
-	})
+	c.JSON(http.StatusOK, resp)
 }
 
 // JSPublishHandler handles HTTP POST /api/v1/publish/js for JetStream.
@@ -74,13 +72,13 @@ func (h *PublisherHandler) JSPublishHandler(c *gin.Context) {
 		msg.Headers["Nats-Msg-Id"] = httpMsgID
 	}
 
-	ack, err := h.pubService.JSPublish(c.Request.Context(), &msg)
+	resp, err := h.pubService.JSPublish(c.Request.Context(), &msg)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, ack)
+	c.JSON(http.StatusOK, resp)
 }
 
 // JSPublishBatchHandler handles HTTP POST /api/v1/publish/js/batch for publishing multiple messages asynchronously.

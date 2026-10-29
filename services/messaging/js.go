@@ -16,10 +16,15 @@ import (
 // Publish Msg
 func JSPublishMsg(ctx context.Context, js jetstream.JetStream, msg *model.Message) (*jetstream.PubAck, error) {
 	header := toNatsHeader(msg.Headers)
+	dataBytes, err := serializeData(msg.Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize message data: %w", err)
+	}
+
 	natsMsg := &nats.Msg{
 		Subject: msg.Subject,
 		Header:  header,
-		Data:    []byte(msg.Data),
+		Data:    dataBytes,
 	}
 
 	var opts []jetstream.PublishOpt
@@ -42,6 +47,7 @@ func JSPublishMsg(ctx context.Context, js jetstream.JetStream, msg *model.Messag
 		Uint64("sequence", ack.Sequence).
 		Bool("duplicate", ack.Duplicate).
 		Str("msgId", msgID).
+		Str("data", string(dataBytes)).
 		Msg("Successfully published message to JetStream")
 
 	return ack, nil
@@ -50,10 +56,15 @@ func JSPublishMsg(ctx context.Context, js jetstream.JetStream, msg *model.Messag
 // Publish Msg Async
 func JSPublishAsync(ctx context.Context, js jetstream.JetStream, msg *model.Message) (*jetstream.PubAck, error) {
 	header := toNatsHeader(msg.Headers)
+	dataBytes, err := serializeData(msg.Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize message data: %w", err)
+	}
+
 	natsMsg := &nats.Msg{
 		Subject: msg.Subject,
 		Header:  header,
-		Data:    []byte(msg.Data),
+		Data:    dataBytes,
 	}
 
 	var opts []jetstream.PublishOpt
@@ -78,6 +89,7 @@ func JSPublishAsync(ctx context.Context, js jetstream.JetStream, msg *model.Mess
 			Uint64("sequence", ack.Sequence).
 			Bool("duplicate", ack.Duplicate).
 			Str("msgId", msgID).
+			Str("data", string(dataBytes)).
 			Msg("Successfully published async message to JetStream")
 		return ack, nil
 	case err := <-future.Err():
@@ -104,10 +116,10 @@ func JSPublishN(ctx context.Context, js jetstream.JetStream, messages []model.Me
 		msg := &messages[i]
 		orderID := fmt.Sprintf("ORD-%d-%02d", orderBatch, i+1)
 
-		if msg.Data == "" {
+		if msg.Data == nil || msg.Data == "" {
 			msg.Data = fmt.Sprintf("Order %s is received for processing", orderID)
 		} else {
-			msg.Data = fmt.Sprintf("Order %s: %s", orderID, msg.Data)
+			msg.Data = fmt.Sprintf("Order %s: %v", orderID, msg.Data)
 		}
 
 		_, err := JSPublishAsync(ctx, js, msg)

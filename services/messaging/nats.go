@@ -10,10 +10,15 @@ import (
 
 // Publish on NATS
 func PublishMsg(nc *nats.Conn, msg *model.Message) error {
+	dataBytes, err := serializeData(msg.Data)
+	if err != nil {
+		return fmt.Errorf("error serializing data: %w", err)
+	}
+
 	natsMsg := &nats.Msg{
 		Subject: msg.Subject,
 		Header:  toNatsHeader(msg.Headers),
-		Data:    []byte(msg.Data),
+		Data:    dataBytes,
 	}
 
 	// Check for Reply Subject
@@ -21,7 +26,7 @@ func PublishMsg(nc *nats.Conn, msg *model.Message) error {
 		natsMsg.Reply = msg.Reply
 	}
 
-	err := nc.PublishMsg(natsMsg)
+	err = nc.PublishMsg(natsMsg)
 	if err != nil {
 		log.Error().Err(err).Str("subject", msg.Subject).Msg("Failed to publish message on NATS")
 		return fmt.Errorf("error while publishing on NATS: %w", err)
@@ -30,18 +35,22 @@ func PublishMsg(nc *nats.Conn, msg *model.Message) error {
 	log.Info().
 		Str("subject", msg.Subject).
 		Interface("headers", msg.Headers).
-		Str("data", msg.Data).
+		Str("data", string(dataBytes)).
 		Msg("Successfully published message on NATS")
 	return nil
 }
 
 // Publish Request
 func PublishRequest(nc *nats.Conn, msg *model.Message) (*nats.Msg, error) {
+	dataBytes, err := serializeData(msg.Data)
+	if err != nil {
+		return nil, fmt.Errorf("error serializing data: %w", err)
+	}
 
 	natsMsg := &nats.Msg{
 		Subject: msg.Subject,
 		Header:  toNatsHeader(msg.Headers),
-		Data:    []byte(msg.Data),
+		Data:    dataBytes,
 	}
 
 	resp, err := nc.RequestMsg(natsMsg, msg.Timeout)
@@ -53,7 +62,7 @@ func PublishRequest(nc *nats.Conn, msg *model.Message) (*nats.Msg, error) {
 	log.Info().
 		Str("subject", msg.Subject).
 		Interface("headers", msg.Headers).
-		Str("data", msg.Data).
+		Str("data", string(dataBytes)).
 		Str("response", string(resp.Data)).
 		Msg("Successfully published request on NATS")
 	return resp, nil

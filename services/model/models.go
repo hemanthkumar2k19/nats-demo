@@ -99,16 +99,22 @@ type PublishRequest struct {
 	Data    string `json:"data"`
 }
 
-// PublishResponse defines the JSON response payload returning publish status.
+// PublishResponse defines the JSON response payload returning publish status and enriched metadata.
 type PublishResponse struct {
-	Status  string `json:"status"`
-	Subject string `json:"subject"`
+	Status    string         `json:"status"`
+	Subject   string         `json:"subject"`
+	MsgID     string         `json:"msgId,omitempty"`
+	Stream    string         `json:"stream,omitempty"`
+	Sequence  uint64         `json:"sequence,omitempty"`
+	Duplicate bool           `json:"duplicate,omitempty"`
+	Headers   map[string]any `json:"headers,omitempty"`
+	Data      any            `json:"data,omitempty"`
 }
 
 type Message struct {
 	Subject string         `json:"subject"`
 	Reply   string         `json:"reply,omitempty"`
-	Data    string         `json:"data"`
+	Data    any            `json:"data"`
 	Headers map[string]any `json:"headers"`
 	Timeout time.Duration  `json:"timeout,omitempty"`
 }

@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"services/messaging"
@@ -12,6 +15,94 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 )
+
+var shortIDCounter uint64 = uint64(time.Now().Unix()%9000) + 1000
+
+func deriveDomainPrefix(subject string) string {
+	parts := strings.Split(subject, ".")
+	if len(parts) > 0 && len(parts[0]) > 0 {
+		token := strings.ToUpper(parts[0])
+		if strings.HasPrefix(token, "DEL") {
+			return "DEL"
+		}
+		if strings.HasPrefix(token, "PAY") {
+			return "PAY"
+		}
+		if strings.HasPrefix(token, "ORD") {
+			return "ORD"
+		}
+		if len(token) >= 3 {
+			return token[:3]
+		}
+		return token
+	}
+	return "MSG"
+}
+
+// GenerateShortID produces a short, human-readable unique identifier (e.g. "DEL-4821", "ORD-1092").
+func GenerateShortID(subject string) string {
+	prefix := deriveDomainPrefix(subject)
+	num := (atomic.AddUint64(&shortIDCounter, 1) % 9000) + 1000
+	return fmt.Sprintf("%s-%04d", prefix, num)
+}
+
+// PrepareMessage enriches the message headers and injects a runtime unique short ID into the payload.
+func PrepareMessage(msg *model.Message) string {
+	if msg.Headers == nil {
+		msg.Headers = make(map[string]any)
+	}
+
+	shortID := GenerateShortID(msg.Subject)
+
+	// Standardize source to order-service
+	msg.Headers["Source"] = "order-service"
+
+	// Correlation-ID
+	if cID, ok := msg.Headers["Correlation-ID"]; !ok || cID == "" || cID == nil {
+		msg.Headers["Correlation-ID"] = "corr-" + shortID
+	}
+
+	// Nats-Msg-Id for JetStream deduplication and message tracing
+	if msgID, ok := msg.Headers["Nats-Msg-Id"]; !ok || msgID == "" || msgID == nil {
+		msg.Headers["Nats-Msg-Id"] = "msg-" + shortID
+	}
+
+	// Published-At timestamp
+	if pubAt, ok := msg.Headers["Published-At"]; !ok || pubAt == "" || pubAt == nil {
+		msg.Headers["Published-At"] = time.Now().Format("2006-01-02 15:04:05")
+	}
+
+	// Enrich Data payload with runtime ID
+	msg.Data = attachDataID(msg.Data, shortID, msg.Subject)
+
+	return shortID
+}
+
+func attachDataID(data any, shortID string, subject string) any {
+	if data == nil {
+		return map[string]any{"id": shortID, "subject": subject}
+	}
+	switch v := data.(type) {
+	case map[string]any:
+		v["id"] = shortID
+		return v
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return map[string]any{"id": shortID, "subject": subject}
+		}
+		if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
+			var parsed map[string]any
+			if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
+				parsed["id"] = shortID
+				return parsed
+			}
+		}
+		return v
+	default:
+		return v
+	}
+}
 
 // Service manages publishing and subscription operations over NATS.
 type Service struct {
@@ -31,13 +122,30 @@ func NewService(nc *nats.Conn) *Service {
 	}
 }
 
-// Publish publishes a message to Core NATS.
-func (s *Service) Publish(ctx context.Context, msg *model.Message) error {
-	return messaging.PublishMsg(s.nc, msg)
+// Publish publishes a message to Core NATS after enriching headers and data with a runtime unique ID.
+func (s *Service) Publish(ctx context.Context, msg *model.Message) (*model.PublishResponse, error) {
+	PrepareMessage(msg)
+
+	if err := messaging.PublishMsg(s.nc, msg); err != nil {
+		return nil, err
+	}
+
+	msgID := ""
+	if v, ok := msg.Headers["Nats-Msg-Id"]; ok && v != nil {
+		msgID = fmt.Sprintf("%v", v)
+	}
+
+	return &model.PublishResponse{
+		Status:  "published",
+		Subject: msg.Subject,
+		MsgID:   msgID,
+		Headers: msg.Headers,
+		Data:    msg.Data,
+	}, nil
 }
 
-// JSPublish publishes a message to JetStream synchronously.
-func (s *Service) JSPublish(ctx context.Context, msg *model.Message) (*jetstream.PubAck, error) {
+// JSPublish publishes a message to JetStream synchronously after enriching headers and data with a runtime unique ID.
+func (s *Service) JSPublish(ctx context.Context, msg *model.Message) (*model.PublishResponse, error) {
 	if s.js == nil {
 		var err error
 		s.js, err = jetstream.New(s.nc)
@@ -46,14 +154,28 @@ func (s *Service) JSPublish(ctx context.Context, msg *model.Message) (*jetstream
 		}
 	}
 
-	info, err := s.js.AccountInfo(ctx)
+	PrepareMessage(msg)
+
+	ack, err := messaging.JSPublishMsg(ctx, s.js, msg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get account info: %w", err)
+		return nil, err
 	}
 
-	log.Info().Any("Account Info: ", info).Msg("")
+	msgID := ""
+	if v, ok := msg.Headers["Nats-Msg-Id"]; ok && v != nil {
+		msgID = fmt.Sprintf("%v", v)
+	}
 
-	return messaging.JSPublishMsg(ctx, s.js, msg)
+	return &model.PublishResponse{
+		Status:    "published",
+		Subject:   msg.Subject,
+		MsgID:     msgID,
+		Stream:    ack.Stream,
+		Sequence:  ack.Sequence,
+		Duplicate: ack.Duplicate,
+		Headers:   msg.Headers,
+		Data:      msg.Data,
+	}, nil
 }
 
 // JSPublishBatch publishes multiple messages to JetStream asynchronously using JSPublishN.

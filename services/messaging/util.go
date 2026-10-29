@@ -1,6 +1,7 @@
 package messaging
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -95,6 +96,21 @@ func toMap(header nats.Header) map[string]interface{} {
 		result[k] = v
 	}
 	return result
+}
+
+// serializeData converts string, []byte, or any JSON-serializable object to []byte.
+func serializeData(data any) ([]byte, error) {
+	if data == nil {
+		return []byte{}, nil
+	}
+	switch v := data.(type) {
+	case []byte:
+		return v, nil
+	case string:
+		return []byte(v), nil
+	default:
+		return json.Marshal(v)
+	}
 }
 
 func OrderHandler(msg *nats.Msg) {

@@ -22,7 +22,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"subject\": \"delivery.atmost-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1002\\\", \\\"status\\\": \\\"dispatched\\\"}\",\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
+              "raw": "{\n  \"subject\": \"delivery.atmost-once\",\n  \"data\": {\n    \"status\": \"dispatched\",\n    \"trackingUrl\": \"https://carrier.local/track\"\n  },\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -55,7 +55,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"subject\": \"delivery.atmost-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1002\\\", \\\"status\\\": \\\"dispatched\\\"}\",\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
+                  "raw": "{\n  \"subject\": \"delivery.atmost-once\",\n  \"data\": {\n    \"status\": \"dispatched\",\n    \"trackingUrl\": \"https://carrier.local/track\"\n  },\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -83,7 +83,7 @@
                   "value": "application/json; charset=utf-8"
                 }
               ],
-              "body": "{\n  \"status\": \"published\",\n  \"subject\": \"delivery.atmost-once\"\n}"
+              "body": "{\n  \"status\": \"published\",\n  \"subject\": \"delivery.atmost-once\",\n  \"msgId\": \"msg-DEL-1002\",\n  \"headers\": {\n    \"Correlation-ID\": \"corr-DEL-1002\",\n    \"Nats-Msg-Id\": \"msg-DEL-1002\",\n    \"Published-At\": \"2026-10-29 16:30:00\",\n    \"Source\": \"order-service\"\n  },\n  \"data\": {\n    \"id\": \"DEL-1002\",\n    \"status\": \"dispatched\",\n    \"trackingUrl\": \"https://carrier.local/track\"\n  }\n}"
             }
           ]
         },
@@ -99,7 +99,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"subject\": \"delivery.atleast-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1001\\\", \\\"amount\\\": 250.00, \\\"currency\\\": \\\"USD\\\"}\",\n  \"headers\": {\n    \"Correlation-ID\": \"c8f9a2b1-4e20-411a-b33c-58e39f72a123\",\n    \"Source\": \"checkout-service\"\n  }\n}",
+              "raw": "{\n  \"subject\": \"delivery.atleast-once\",\n  \"data\": {\n    \"amount\": 250.00,\n    \"currency\": \"USD\",\n    \"customer\": \"acme-corp\"\n  },\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -133,7 +133,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"subject\": \"delivery.atleast-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1001\\\", \\\"amount\\\": 250.00, \\\"currency\\\": \\\"USD\\\"}\",\n  \"headers\": {\n    \"Correlation-ID\": \"c8f9a2b1-4e20-411a-b33c-58e39f72a123\",\n    \"Source\": \"checkout-service\"\n  }\n}",
+                  "raw": "{\n  \"subject\": \"delivery.atleast-once\",\n  \"data\": {\n    \"amount\": 250.00,\n    \"currency\": \"USD\",\n    \"customer\": \"acme-corp\"\n  },\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -162,7 +162,7 @@
                   "value": "application/json; charset=utf-8"
                 }
               ],
-              "body": "{\n  \"stream\": \"DELIVERY\",\n  \"sequence\": 1,\n  \"domain\": \"\",\n  \"duplicate\": false\n}"
+              "body": "{\n  \"status\": \"published\",\n  \"subject\": \"delivery.atleast-once\",\n  \"msgId\": \"msg-DEL-1001\",\n  \"stream\": \"DELIVERY\",\n  \"sequence\": 1,\n  \"duplicate\": false,\n  \"headers\": {\n    \"Correlation-ID\": \"corr-DEL-1001\",\n    \"Nats-Msg-Id\": \"msg-DEL-1001\",\n    \"Published-At\": \"2026-10-29 16:30:00\",\n    \"Source\": \"order-service\"\n  },\n  \"data\": {\n    \"id\": \"DEL-1001\",\n    \"amount\": 250.00,\n    \"currency\": \"USD\",\n    \"customer\": \"acme-corp\"\n  }\n}"
             }
           ]
         },
@@ -184,7 +184,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"subject\": \"delivery.exactly-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1003\\\", \\\"amount\\\": 500.00, \\\"status\\\": \\\"settled\\\"}\",\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
+              "raw": "{\n  \"subject\": \"delivery.exactly-once\",\n  \"data\": {\n    \"amount\": 500.00,\n    \"currency\": \"USD\",\n    \"status\": \"settled\"\n  },\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -223,7 +223,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"subject\": \"delivery.exactly-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1003\\\", \\\"amount\\\": 500.00, \\\"status\\\": \\\"settled\\\"}\",\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
+                  "raw": "{\n  \"subject\": \"delivery.exactly-once\",\n  \"data\": {\n    \"amount\": 500.00,\n    \"currency\": \"USD\",\n    \"status\": \"settled\"\n  },\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -252,7 +252,7 @@
                   "value": "application/json; charset=utf-8"
                 }
               ],
-              "body": "{\n  \"stream\": \"DELIVERY\",\n  \"sequence\": 2,\n  \"domain\": \"\",\n  \"duplicate\": false\n}"
+              "body": "{\n  \"status\": \"published\",\n  \"subject\": \"delivery.exactly-once\",\n  \"msgId\": \"msg-eo-001\",\n  \"stream\": \"DELIVERY\",\n  \"sequence\": 2,\n  \"duplicate\": false,\n  \"headers\": {\n    \"Correlation-ID\": \"corr-DEL-1003\",\n    \"Nats-Msg-Id\": \"msg-eo-001\",\n    \"Published-At\": \"2026-10-29 16:30:00\",\n    \"Source\": \"order-service\"\n  },\n  \"data\": {\n    \"id\": \"DEL-1003\",\n    \"amount\": 500.00,\n    \"currency\": \"USD\",\n    \"status\": \"settled\"\n  }\n}"
             },
             {
               "name": "200 OK - Duplicate Detected",
@@ -271,7 +271,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"subject\": \"delivery.exactly-once\",\n  \"data\": \"{\\\"orderId\\\": \\\"ORD-1003\\\", \\\"amount\\\": 500.00, \\\"status\\\": \\\"settled\\\"}\",\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
+                  "raw": "{\n  \"subject\": \"delivery.exactly-once\",\n  \"data\": {\n    \"amount\": 500.00,\n    \"currency\": \"USD\",\n    \"status\": \"settled\"\n  },\n  \"headers\": {\n    \"Source\": \"order-service\"\n  }\n}",
                   "options": {
                     "raw": {
                       "language": "json"
@@ -300,7 +300,7 @@
                   "value": "application/json; charset=utf-8"
                 }
               ],
-              "body": "{\n  \"stream\": \"DELIVERY\",\n  \"sequence\": 2,\n  \"domain\": \"\",\n  \"duplicate\": true\n}"
+              "body": "{\n  \"status\": \"published\",\n  \"subject\": \"delivery.exactly-once\",\n  \"msgId\": \"msg-eo-001\",\n  \"stream\": \"DELIVERY\",\n  \"sequence\": 2,\n  \"duplicate\": true,\n  \"headers\": {\n    \"Correlation-ID\": \"corr-DEL-1003\",\n    \"Nats-Msg-Id\": \"msg-eo-001\",\n    \"Published-At\": \"2026-10-29 16:30:00\",\n    \"Source\": \"order-service\"\n  },\n  \"data\": {\n    \"id\": \"DEL-1003\",\n    \"amount\": 500.00,\n    \"currency\": \"USD\",\n    \"status\": \"settled\"\n  }\n}"
             }
           ]
         },
