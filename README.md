@@ -111,6 +111,9 @@ All endpoints, pre-configured variables, and sample payloads can be imported dir
 | `POST` | `/api/v1/publish/js` | Publishes to JetStream with `Nats-Msg-Id` header for deduplication (exactly-once flow). | `JetStream Publish (Exactly Once)` |
 | `POST` | `/api/v1/consumers` | Creates or retrieves a JetStream consumer (pull or push). | `Create Pull Consumer` / `Create Push Consumer` |
 | `DELETE` | `/api/v1/consumers` | Deletes a JetStream consumer using a JSON body (`streamName`, `consumerName`). | `Delete Consumer` |
+| `POST` | `/api/v1/consumers/replay` | Replays stream messages for audit/inspection (no business effect) by sequence or timestamp range; returns execution summary. | `Replay Messages (By Sequence)` / `Replay Messages (By Time)` |
+| `POST` | `/api/v1/consumers/reprocess` | Reprocesses stream messages with business side-effects applied by sequence or timestamp range; returns reprocessing summary. | `Reprocess Messages (By Sequence)` / `Reprocess Messages (By Time)` |
+| `GET` | `/api/v1/streams/:stream/sequences` | Returns stream sequence and timestamp boundaries (`firstSequence`, `lastSequence`, `firstTimestamp`, `lastTimestamp`, `messagesCount`) to guide replay. | `Get Stream Sequences` |
 
 ---
 

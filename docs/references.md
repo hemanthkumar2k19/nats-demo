@@ -14,3 +14,7 @@
 - https://www.synadia.com/blog/message-tracing-nats
 
 
+## DLQ
+- https://www.synadia.com/blog/building-a-job-queue-with-nats-io-and-go
+
+

@@ -2,6 +2,108 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-29] Include Full Message Payload and Headers in Replay and Reprocess Logs
+
+- **Change:**
+  - Updated message logger in `processEphemeralConsumer` in [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go) to include `data` (exact message payload string) and `headers` alongside `sequence`, `subject`, and `timestamp`.
+  - Updated `ProcessBusinessMessage` to log the full message payload `data` string.
+- **Reason:** Enable complete visibility and audit traceability of the exact message content processed or replayed alongside its stream sequence number during live execution and demos.
+- **Affected Area:** [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md), [catalogue.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/catalogue.md)
+
+## [2026-10-29] Parameterize Stream Replay and Reprocessing into Unified RangeType Engine
+
+- **Change:**
+  - Added `RangeType` (`RangeBySequence`, `RangeByTime`) and `RangeParams` struct in [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go).
+  - Added `ConsumerEffect` enum (`EffectAudit`, `EffectBusiness`) and consolidated ephemeral consumer creation, sequence/time delivery policies, and non-blocking `FetchNoWait` iteration into an internal core engine `processEphemeralConsumer`.
+  - Replaced duplicate `ReprocessMessagesBySeq`, `ReprocessMessagesByTime`, `ReplayMessagesBySeq`, and `ReplayMessagesByTime` functions with unified, parameterized `ReprocessMessages` and `ReplayMessages` functions.
+  - Updated `Service.ReplayMessages` and `Service.ReprocessMessages` in [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go) to pass `messaging.RangeParams`, eliminating branching duplication.
+- **Reason:** Eliminate ~350 lines of duplicate consumer loop boilerplate between sequence and timestamp modes while preserving exact NATS semantics and API contracts.
+- **Affected Area:** [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-29] Separate Historical Replay (Audit Summary) and Message Reprocessing (Business Effect)
+
+- **Change:**
+  - Implemented `fmt.Stringer` on `model.FormattedTime` via `String() string` returning `YYYY-MM-DD HH:MM:SS` in local timezone.
+  - Updated `POST /api/v1/consumers/replay` to remove raw message payload array from the response and return an execution summary (`replayedCount`, `firstSequence`, `lastSequence`, `firstTimestamp`, `lastTimestamp`). Replayed messages are logged with audit context without buffering payloads in memory.
+  - Implemented `POST /api/v1/consumers/reprocess` supporting sequence range (`startSequence`/`endSequence`) and timestamp range (`startTime`/`endTime`) for executing domain business effects (`ProcessBusinessMessage`).
+  - Added `ReprocessRequest` and `ReprocessResponse` models in [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go).
+  - Added `ReprocessMessagesBySeq` and `ReprocessMessagesByTime` in [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go) configuring ephemeral consumers with `effect: business-effect` metadata.
+  - Added `ReprocessMessages` to `Service` in [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go).
+  - Added `ReprocessMessagesHandler` in [services/api/consumer_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/consumer_handler.go).
+  - Added `Reprocess Messages (By Sequence)` and `Reprocess Messages (By Time)` to [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json).
+  - Updated API Reference in [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md).
+- **Reason:** Provide clean architectural and operational separation between non-mutating historical replay (audit inspection) and business-effect reprocessing (reconciliation, state mutations, workflows), while eliminating response memory bloat.
+- **Affected Area:** [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go), [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [services/api/consumer_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/consumer_handler.go), [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-29] Optimize Replay Latency from ~4s to Milliseconds Using FetchNoWait
+
+- **Change:**
+  - Replaced blocking `cons.Fetch(batch, FetchMaxWait(2*time.Second))` with non-blocking `cons.FetchNoWait(batch)` in `ReplayMessagesBySeq` and `ReplayMessagesByTime` in [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go).
+  - Streamlined completion detection to exit immediately when `msgCount == 0` instead of waiting for a second `FetchMaxWait` timeout window.
+- **Reason:** For historical stream replay, messages are already committed to the stream. Using blocking `Fetch(batchSize)` caused NATS client to wait for `FetchMaxWait` (2s) when fewer messages than `batchSize` remained, plus an additional 2s on the second check to detect stream end (totaling ~4s). `FetchNoWait` retrieves all immediately available messages without blocking, reducing replay API response times from ~4s to ~15ms.
+- **Affected Area:** [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md), [catalogue.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/catalogue.md)
+
+## [2026-10-29] Align Replay and Sequence Timestamps with NATS CLI Local Wall-Clock Format
+
+- **Change:**
+  - Introduced `FormattedTime` wrapper type in [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go) that marshals timestamps to the local wall-clock format `YYYY-MM-DD HH:MM:SS` (`2006-01-02 15:04:05`), exactly matching the NATS CLI display standard.
+  - Implemented flexible unmarshaling in `FormattedTime.UnmarshalJSON` supporting `YYYY-MM-DD HH:MM:SS` (local time), date-only `YYYY-MM-DD` (local midnight), minute-precision `YYYY-MM-DD HH:MM`, `time.RFC3339Nano`, and `time.RFC3339`.
+  - Updated `StreamSequencesResponse`, `ReplayRequest`, `ReplayResponse`, and `ReplayedMessage` to use `FormattedTime`.
+  - Updated `services/messaging/stream.go`, `services/messaging/consumer.go`, and `services/service/service.go` to wrap JetStream timestamps in `model.FormattedTime`.
+  - Updated [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json) sample requests and responses.
+- **Reason:** Provide seamless developer and demo usability by aligning API timestamp presentation with the NATS CLI terminal output, and allowing users to pass simple local timestamps (`"2026-10-29 14:00:00"` or `"2026-10-29"`) without manual UTC conversion.
+- **Affected Area:** [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go), [services/messaging/stream.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/stream.go), [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-29] Fix Replay Boundary Accuracy with First/Last Sequence and Timestamp Metrics
+
+- **Change:**
+  - Added actual boundary metrics to `ReplayResponse` in [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go): `firstSequence`, `lastSequence`, `firstTimestamp`, `lastTimestamp`.
+  - Added requested parameter tracking fields to `ReplayResponse`: `requestedStartSequence`, `requestedEndSequence`, `requestedStartTime`, `requestedEndTime`.
+  - Updated `ReplayMessages` in [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go) to inspect the collected `msgs` slice and extract actual `firstSequence` (`msgs[0].Sequence`), `lastSequence` (`msgs[len(msgs)-1].Sequence`), `firstTimestamp` (`msgs[0].Timestamp`), and `lastTimestamp` (`msgs[len(msgs)-1].Timestamp`) for both sequence-based and timestamp-based replay runs.
+  - Updated [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json) sample responses for `Replay Messages (By Sequence)` and `Replay Messages (By Time)` to reflect the new boundary fields.
+- **Reason:** Prevent misleading responses when the stream contains fewer messages than the user-requested sequence/timestamp upper bound (e.g., requested `endSequence: 12` when only 6 messages exist in the stream). Callers now receive unambiguous metrics indicating both what was requested and the actual sequence/timestamp range of messages replayed.
+- **Affected Area:** [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-29] Implement Stream Sequences Inspection API for Replay Guidance
+
+- **Change:**
+  - Added `StreamSequencesResponse` model in [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go) providing `firstSequence`, `lastSequence`, `firstTimestamp`, `lastTimestamp`, `messagesCount`, `bytes`, and `deletedCount`.
+  - Implemented `GetStreamSequenceBounds` in [services/messaging/stream.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/stream.go) retrieving sequence and timestamp boundaries via `stream.Info()`.
+  - Added `GetStreamSequenceBounds` to `Service` in [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go).
+  - Added `GetStreamSequencesHandler` in [services/api/stream_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/stream_handler.go) registered at `GET /api/v1/streams/:stream/sequences` and `POST /api/v1/streams/sequences`.
+  - Cleaned up redundant `/state` routes and obsolete subject filtering in stream state APIs.
+  - Added `Streams` folder to [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json) with `Get Stream Sequences` item and sample response.
+  - Updated [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) API Reference table.
+- **Reason:** Enable users and clients to discover valid stream sequence boundaries and timestamp windows before triggering message replay APIs while eliminating redundant endpoint paths.
+- **Affected Area:** [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go), [services/messaging/stream.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/stream.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [services/api/stream_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/stream_handler.go), [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-29] Implement Unified Stream Message Replay API (Sequence and Timestamp)
+
+- **Change:**
+  - Extended `ReplayRequest` in [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go) to support both sequence bounds (`startSequence`, `endSequence`) and timestamp bounds (`startTime`, `endTime`).
+  - Added `ReplayedMessage` model capturing sequence, subject, data, headers, and server timestamp for historical replay auditing.
+  - Updated `ReplayResponse` in [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go) to return execution `mode`, `messagesCount`, and `messages` array containing full replayed message details.
+  - Implemented `ReplayMessagesByTime` in [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go) utilizing JetStream `DeliverByStartTimePolicy`, `ReplayInstantPolicy`, `AckNonePolicy`, and client-side `endTime` boundary enforcement with ephemeral consumer auto-cleanup.
+  - Updated `ReplayMessagesBySeq` in [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go) to collect and return replayed message records.
+  - Added `ReplayMessages` unified method to `Service` in [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go) delegating to `ReplayMessagesBySeq` or `ReplayMessagesByTime` based on request fields.
+  - Updated `ReplayMessagesHandler` in [services/api/consumer_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/consumer_handler.go) with mutual-exclusion and input range validation for unified `POST /api/v1/consumers/replay`.
+  - Updated [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) API Reference table.
+  - Updated [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json) with `Replay Messages (By Sequence)` and `Replay Messages (By Time)` items and sample responses.
+- **Reason:** Provide a single, unified REST API endpoint for historical stream message replay supporting both sequence-bounded and timestamp-bounded ranges with full message detail visibility.
+- **Affected Area:** [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [services/api/consumer_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/consumer_handler.go), [services/messaging/consumer.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/consumer.go), [nats_demo.postman_collection.json](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/nats_demo.postman_collection.json), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-28] Implement Stream State REST API Utility for Message Replay
+
+- **Change:**
+  - Added `StreamStateRequest` and `StreamStateResponse` (`LastSeq`, `FirstSeq`, `Msgs`) models to [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go).
+  - Added `GetStreamState` method to [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go) delegating to `messaging.GetStreamState` in [services/messaging/stream.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/stream.go).
+  - Preserved `CreateStream` and `DeleteStream` strictly as internal helper functions in [services/messaging/stream.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/stream.go) without exposing HTTP CRUD endpoints.
+  - Created [services/api/stream_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/stream_handler.go) with `StreamHandler` providing `GET /api/v1/streams/:stream/state` and `POST /api/v1/streams/state` (`GetStreamStateHandler`).
+  - Registered `StreamHandler` routes on `/api/v1` in [services/cmd/order-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/order-service/main.go).
+  - Updated [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) API Reference table with the stream state replay utility endpoint.
+- **Reason:** Provide a focused REST utility endpoint for retrieving stream sequence bounds (`lastSeq`, `firstSeq`) and message counts (`msgs`) to support message replay workflows, avoiding unnecessary HTTP stream CRUD endpoints while preserving internal stream helper functions in `services/messaging/stream.go`.
+- **Affected Area:** [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go), [services/service/service.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/service/service.go), [services/api/stream_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/stream_handler.go), [services/messaging/stream.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/messaging/stream.go), [services/cmd/order-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/order-service/main.go), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-27] Consolidate Consumer Documentation into Unified Developer Guide and Align Roadmap
 
 - **Change:**

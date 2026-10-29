@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"services/messaging"
 	"services/model"
 
@@ -107,8 +109,8 @@ func (s *Service) DeleteConsumer(ctx context.Context, cr *model.CreateConsumerRe
 	return nil
 }
 
-// CreateStream creates or retrieves a JetStream stream and returns its metadata.
-func (s *Service) CreateStream(ctx context.Context, sr *model.CreateStreamRequest) (*jetstream.StreamInfo, error) {
+// GetStreamSequenceBounds retrieves available boundary sequences and timestamps for a stream to guide replay requests.
+func (s *Service) GetStreamSequenceBounds(ctx context.Context, streamName string) (*model.StreamSequencesResponse, error) {
 	if s.js == nil {
 		var err error
 		s.js, err = jetstream.New(s.nc)
@@ -117,32 +119,130 @@ func (s *Service) CreateStream(ctx context.Context, sr *model.CreateStreamReques
 		}
 	}
 
-	stream, err := messaging.CreateStream(ctx, s.js, *sr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create stream: %w", err)
-	}
-
-	info, err := stream.Info(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve stream info: %w", err)
-	}
-
-	return info, nil
+	return messaging.GetStreamSequenceBounds(ctx, s.js, streamName)
 }
 
-// DeleteStream deletes a JetStream stream by name.
-func (s *Service) DeleteStream(ctx context.Context, streamName string) error {
+// ReplayMessages replays stream messages by sequence range or time range for historical audit without applying business effects.
+func (s *Service) ReplayMessages(ctx context.Context, req *model.ReplayRequest) (*model.ReplayResponse, error) {
 	if s.js == nil {
 		var err error
 		s.js, err = jetstream.New(s.nc)
 		if err != nil {
-			return fmt.Errorf("failed to initialize JetStream context: %w", err)
+			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
 		}
 	}
 
-	if err := messaging.DeleteStream(ctx, s.js, streamName); err != nil {
-		return fmt.Errorf("failed to delete stream: %w", err)
+	rangeParams := messaging.RangeParams{
+		Type:          messaging.RangeBySequence,
+		StartSequence: req.StartSequence,
+		EndSequence:   req.EndSequence,
+	}
+	mode := "sequence"
+
+	if req.StartTime != nil && !req.StartTime.IsZero() {
+		rangeParams.Type = messaging.RangeByTime
+		rangeParams.StartTime = req.StartTime.Time()
+		if req.EndTime != nil && !req.EndTime.IsZero() {
+			t := req.EndTime.Time()
+			rangeParams.EndTime = &t
+		}
+		mode = "time"
 	}
 
-	return nil
+	summary, err := messaging.ReplayMessages(
+		ctx,
+		s.js,
+		req.StreamName,
+		req.FilterSubjects,
+		rangeParams,
+		req.BatchSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.ReplayResponse{
+		Status:             "completed",
+		StreamName:         req.StreamName,
+		Mode:               mode,
+		RequestedStartSeq:  req.StartSequence,
+		RequestedEndSeq:    req.EndSequence,
+		RequestedStartTime: req.StartTime,
+		RequestedEndTime:   req.EndTime,
+		StartTime:          req.StartTime,
+		EndTime:            req.EndTime,
+		StartSequence:      req.StartSequence,
+		EndSequence:        req.EndSequence,
+		FirstSequence:      summary.FirstSequence,
+		LastSequence:       summary.LastSequence,
+		FirstTimestamp:     summary.FirstTimestamp,
+		LastTimestamp:      summary.LastTimestamp,
+		FilterSubjects:     req.FilterSubjects,
+		ReplayedCount:      summary.Count,
+		MessagesCount:      summary.Count,
+	}, nil
+}
+
+// ReprocessMessages fetches messages within a sequence or time range and executes domain business processing logic for each message.
+func (s *Service) ReprocessMessages(ctx context.Context, req *model.ReprocessRequest) (*model.ReprocessResponse, error) {
+	if s.js == nil {
+		var err error
+		s.js, err = jetstream.New(s.nc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
+		}
+	}
+
+	rangeParams := messaging.RangeParams{
+		Type:          messaging.RangeBySequence,
+		StartSequence: req.StartSequence,
+		EndSequence:   req.EndSequence,
+	}
+	mode := "sequence"
+
+	if req.StartTime != nil && !req.StartTime.IsZero() {
+		rangeParams.Type = messaging.RangeByTime
+		rangeParams.StartTime = req.StartTime.Time()
+		if req.EndTime != nil && !req.EndTime.IsZero() {
+			t := req.EndTime.Time()
+			rangeParams.EndTime = &t
+		}
+		mode = "time"
+	}
+
+	startTime := time.Now()
+	summary, err := messaging.ReprocessMessages(
+		ctx,
+		s.js,
+		req.StreamName,
+		req.FilterSubjects,
+		rangeParams,
+		req.BatchSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	duration := time.Since(startTime).Milliseconds()
+
+	return &model.ReprocessResponse{
+		Status:             "completed",
+		StreamName:         req.StreamName,
+		Mode:               mode,
+		RequestedStartSeq:  req.StartSequence,
+		RequestedEndSeq:    req.EndSequence,
+		RequestedStartTime: req.StartTime,
+		RequestedEndTime:   req.EndTime,
+		StartTime:          req.StartTime,
+		EndTime:            req.EndTime,
+		StartSequence:      req.StartSequence,
+		EndSequence:        req.EndSequence,
+		FirstSequence:      summary.FirstSequence,
+		LastSequence:       summary.LastSequence,
+		FirstTimestamp:     summary.FirstTimestamp,
+		LastTimestamp:      summary.LastTimestamp,
+		FilterSubjects:     req.FilterSubjects,
+		ReprocessedCount:   summary.Count,
+		DurationMs:         duration,
+		Message:            "Reprocessing completed with business effects applied",
+	}, nil
 }

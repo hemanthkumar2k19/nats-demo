@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"context"
+	"fmt"
 	"services/model"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -61,4 +62,29 @@ func DeleteStream(ctx context.Context, js jetstream.JetStream, streamName string
 	}
 
 	return err
+}
+
+// GetStreamSequenceBounds retrieves available boundary sequences and timestamps for a stream to guide replay requests.
+func GetStreamSequenceBounds(ctx context.Context, js jetstream.JetStream, streamName string) (*model.StreamSequencesResponse, error) {
+	stream, err := js.Stream(ctx, streamName)
+	if err != nil {
+		return nil, err
+	}
+
+	streamInfo, err := stream.Info(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stream info: %w", err)
+	}
+
+	state := streamInfo.State
+	return &model.StreamSequencesResponse{
+		StreamName:     streamName,
+		FirstSequence:  state.FirstSeq,
+		LastSequence:   state.LastSeq,
+		FirstTimestamp: model.FormattedTime(state.FirstTime),
+		LastTimestamp:  model.FormattedTime(state.LastTime),
+		MessagesCount:  state.Msgs,
+		Bytes:          state.Bytes,
+		DeletedCount:   state.NumDeleted,
+	}, nil
 }

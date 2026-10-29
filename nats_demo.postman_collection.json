@@ -621,6 +621,381 @@
               "body": "{\n  \"status\": \"deleted\",\n  \"streamName\": \"PAYMENTS\",\n  \"consumerName\": \"payments-pull\"\n}"
             }
           ]
+        },
+        {
+          "name": "Replay Messages (By Sequence)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"startSequence\": 1,\n  \"endSequence\": 10,\n  \"batchSize\": 50\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/consumers/replay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "consumers",
+                "replay"
+              ]
+            },
+            "description": "Replays stream messages within a sequence range [startSequence, endSequence] using an ephemeral pull consumer with zero-ACK semantics, returning message details."
+          },
+          "response": [
+            {
+              "name": "200 OK - Replay by Sequence Completed",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"startSequence\": 1,\n  \"endSequence\": 2,\n  \"batchSize\": 50\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/consumers/replay",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "consumers",
+                    "replay"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"status\": \"completed\",\n  \"streamName\": \"PAYMENTS\",\n  \"mode\": \"sequence\",\n  \"requestedStartSequence\": 1,\n  \"requestedEndSequence\": 10,\n  \"firstSequence\": 1,\n  \"lastSequence\": 2,\n  \"firstTimestamp\": \"2026-10-29 10:00:00\",\n  \"lastTimestamp\": \"2026-10-29 10:05:00\",\n  \"startSequence\": 1,\n  \"endSequence\": 10,\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"replayedCount\": 2,\n  \"messagesCount\": 2\n}"
+            }
+          ]
+        },
+        {
+          "name": "Replay Messages (By Time)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"startTime\": \"2026-10-29 00:00:00\",\n  \"endTime\": \"2026-10-29 23:59:59\",\n  \"batchSize\": 50\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/consumers/replay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "consumers",
+                "replay"
+              ]
+            },
+            "description": "Replays stream messages within a time window [startTime, endTime] using DeliverByStartTimePolicy on an ephemeral pull consumer with zero-ACK semantics, logging messages for historical audit and returning execution summary."
+          },
+          "response": [
+            {
+              "name": "200 OK - Replay by Time Completed",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"startTime\": \"2026-10-29 00:00:00\",\n  \"endTime\": \"2026-10-29 23:59:59\",\n  \"batchSize\": 50\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/consumers/replay",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "consumers",
+                    "replay"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"status\": \"completed\",\n  \"streamName\": \"PAYMENTS\",\n  \"mode\": \"time\",\n  \"requestedStartTime\": \"2026-10-29 00:00:00\",\n  \"requestedEndTime\": \"2026-10-29 23:59:59\",\n  \"firstSequence\": 1,\n  \"lastSequence\": 2,\n  \"firstTimestamp\": \"2026-10-29 10:00:00\",\n  \"lastTimestamp\": \"2026-10-29 10:05:00\",\n  \"startTime\": \"2026-10-29 00:00:00\",\n  \"endTime\": \"2026-10-29 23:59:59\",\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"replayedCount\": 2,\n  \"messagesCount\": 2\n}"
+            }
+          ]
+        },
+        {
+          "name": "Reprocess Messages (By Sequence)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"startSequence\": 1,\n  \"endSequence\": 10,\n  \"batchSize\": 50\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/consumers/reprocess",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "consumers",
+                "reprocess"
+              ]
+            },
+            "description": "Reprocesses stream messages within a sequence range [startSequence, endSequence] using an ephemeral pull consumer, executing domain business effects for each message and returning an execution summary."
+          },
+          "response": [
+            {
+              "name": "200 OK - Reprocess by Sequence Completed",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"startSequence\": 1,\n  \"endSequence\": 10,\n  \"batchSize\": 50\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/consumers/reprocess",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "consumers",
+                    "reprocess"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"status\": \"completed\",\n  \"streamName\": \"PAYMENTS\",\n  \"mode\": \"sequence\",\n  \"requestedStartSequence\": 1,\n  \"requestedEndSequence\": 10,\n  \"firstSequence\": 1,\n  \"lastSequence\": 2,\n  \"firstTimestamp\": \"2026-10-29 10:00:00\",\n  \"lastTimestamp\": \"2026-10-29 10:05:00\",\n  \"startSequence\": 1,\n  \"endSequence\": 10,\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"reprocessedCount\": 2,\n  \"durationMs\": 15,\n  \"message\": \"Reprocessing completed with business effects applied\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Reprocess Messages (By Time)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"startTime\": \"2026-10-29 00:00:00\",\n  \"endTime\": \"2026-10-29 23:59:59\",\n  \"batchSize\": 50\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/consumers/reprocess",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "consumers",
+                "reprocess"
+              ]
+            },
+            "description": "Reprocesses stream messages within a time window [startTime, endTime] using DeliverByStartTimePolicy on an ephemeral pull consumer, executing domain business effects for each message and returning an execution summary."
+          },
+          "response": [
+            {
+              "name": "200 OK - Reprocess by Time Completed",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"streamName\": \"PAYMENTS\",\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"startTime\": \"2026-10-29 00:00:00\",\n  \"endTime\": \"2026-10-29 23:59:59\",\n  \"batchSize\": 50\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/consumers/reprocess",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "consumers",
+                    "reprocess"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"status\": \"completed\",\n  \"streamName\": \"PAYMENTS\",\n  \"mode\": \"time\",\n  \"requestedStartTime\": \"2026-10-29 00:00:00\",\n  \"requestedEndTime\": \"2026-10-29 23:59:59\",\n  \"firstSequence\": 1,\n  \"lastSequence\": 2,\n  \"firstTimestamp\": \"2026-10-29 10:00:00\",\n  \"lastTimestamp\": \"2026-10-29 10:05:00\",\n  \"startTime\": \"2026-10-29 00:00:00\",\n  \"endTime\": \"2026-10-29 23:59:59\",\n  \"filterSubjects\": [\n    \"payments.>\"\n  ],\n  \"reprocessedCount\": 2,\n  \"durationMs\": 18,\n  \"message\": \"Reprocessing completed with business effects applied\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Streams",
+      "description": "Endpoints for inspecting JetStream streams, sequence boundaries, and timestamps.",
+      "item": [
+        {
+          "name": "Get Stream Sequences",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/streams/{{streamName}}/sequences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "streams",
+                "{{streamName}}",
+                "sequences"
+              ]
+            },
+            "description": "Returns stream sequence boundaries (firstSequence, lastSequence) and timestamps (firstTimestamp, lastTimestamp) to guide replay requests."
+          },
+          "response": [
+            {
+              "name": "200 OK - Stream Sequences",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/v1/streams/{{streamName}}/sequences",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "streams",
+                    "{{streamName}}",
+                    "sequences"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json; charset=utf-8"
+                }
+              ],
+              "body": "{\n  \"streamName\": \"PAYMENTS\",\n  \"firstSequence\": 1,\n  \"lastSequence\": 100,\n  \"firstTimestamp\": \"2026-10-29 08:00:00\",\n  \"lastTimestamp\": \"2026-10-29 12:00:00\",\n  \"messagesCount\": 100,\n  \"bytes\": 14500,\n  \"deletedCount\": 0\n}"
+            }
+          ]
         }
       ]
     }

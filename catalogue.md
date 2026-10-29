@@ -12,7 +12,9 @@
 | 8 | Delivery Semantics | At-Most-Once Delivery | Processing Service fire-and-forget message delivery | Completed |
 | 9 | Delivery Semantics | At-Least-Once Delivery | Processing Service persistent pull with explicit acknowledgment | Completed |
 | 10 | Delivery Semantics | Exactly-Once Delivery | Processing Service publisher deduplication and consumer synchronous acknowledgment | Completed |
-| 11 | Message Replay | Message Replay | Stream event replay via start sequence and timestamp policies | Planned |
-| 12 | Failure Handling and Reliability | Publisher Reliability | Disconnect handling, retry buffers, and connection reconnect options | Planned |
-| 13 | Failure Handling and Reliability | Consumer Reliability | Graceful shutdown, crash redelivery, max delivery limits, and DLQ advisories | Planned |
-| 14 | Failure Handling and Reliability | NATS Cluster Reliability | Cluster node failure, failover resilience, and Raft consensus validation | Planned |
+| 11 | Stream Inspection | Stream Sequence Discovery | Discovery of sequence and timestamp boundaries to guide replay and reprocess workflows | Completed |
+| 12 | Message Replay | Historical Audit Replay | Non-mutating stream event replay by sequence or timestamp range with execution summary | Completed |
+| 13 | Message Replay | Message Reprocessing | Re-executing stream messages with domain business effects by sequence or timestamp range | Completed |
+| 14 | Failure Handling and Reliability | Publisher Reliability | Disconnect handling, retry buffers, and connection reconnect options | Planned |
+| 15 | Failure Handling and Reliability | Consumer Reliability | Graceful shutdown, crash redelivery, max delivery limits, and DLQ advisories | Planned |
+| 16 | Failure Handling and Reliability | NATS Cluster Reliability | Cluster node failure, failover resilience, and Raft consensus validation | Planned |
