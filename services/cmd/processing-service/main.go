@@ -35,13 +35,13 @@ func main() {
 	logger.Init(false)
 
 	// 1. Load Environment Configuration
-	_, err := config.Load()
+	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load environment configuration")
 	}
 
 	// 2. Connect to NATS Server
-	nc, err := natsclient.ConnectAndDiscover(Client)
+	nc, err := natsclient.ConnectAndDiscover(&cfg.NATS, Client)
 	if err != nil {
 		log.Fatal().Err(err).Str("client", Client).Msg("Failed to initialize NATS Client")
 	}

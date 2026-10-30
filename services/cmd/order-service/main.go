@@ -31,7 +31,7 @@ func main() {
 	}
 
 	// 2. Connect to NATS Server
-	nc, err := natsclient.ConnectAndDiscover("order-service")
+	nc, err := natsclient.ConnectAndDiscover(&cfg.NATS, "order-service")
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to initialize NATS Client")
 	}

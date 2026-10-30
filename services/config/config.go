@@ -5,10 +5,12 @@ import (
 
 	"github.com/caarlos0/env/v10"
 	"github.com/joho/godotenv"
+	"github.com/rs/zerolog/log"
 )
 
 // Config holds runtime configuration variables.
 type Config struct {
+	NATS                     NATSClientConfig
 	NATSURL                  string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
 	OtelExporterType         string `env:"OTEL_EXPORTER_TYPE" envDefault:"otlp-grpc"`
 	OtelExporterOTLPEndpoint string `env:"OTEL_EXPORTER_OTLP_ENDPOINT" envDefault:"localhost:4317"`
@@ -22,7 +24,7 @@ func Load() (*Config, error) {
 	// Load environment variables from .env file if it exists.
 	err := godotenv.Load()
 	if err != nil {
-		fmt.Printf("No .env file found: %v\n", err)
+		log.Warn().Msgf("No .env file found: %v\n", err)
 	}
 
 	var cfg Config
@@ -39,8 +41,14 @@ func Load() (*Config, error) {
 
 // Validate checks that required configuration values are present.
 func (c *Config) Validate() error {
-	if c.NATSURL == "" {
-		return fmt.Errorf("NATS_URL cannot be empty")
+	// Sync legacy NATSURL if present and NATS.Servers is using default
+	if c.NATSURL != "" && (len(c.NATS.Servers) == 0 || (len(c.NATS.Servers) == 1 && c.NATS.Servers[0] == "nats://localhost:4222")) {
+		c.NATS.Servers = []string{c.NATSURL}
 	}
+
+	if err := c.NATS.Validate(); err != nil {
+		return fmt.Errorf("nats config error: %w", err)
+	}
+
 	return nil
 }

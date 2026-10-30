@@ -6,25 +6,26 @@ This repository is a NATS evaluation demo and reference implementation built wit
 
 ## 1. System Architecture
 
-```text
-                             +-------------------+
-                             |    NATS Server    |
-                             |  nats://localhost |
-                             +---------+---------+
-                                       ^
-            +--------------------------+--------------------------+--------------------------+
-            |                          |                          |                          |
-            v                          v                          v                          v
-+-----------------------+  +-----------------------+  +-----------------------+  +-----------------------+
-|     Order Service     |  |  Processing Service   |  |    Payment Worker     |  |  Notification Worker  |
-| http://localhost:8080 |  |  (Delivery Semantics) |  |  (JetStream Pull)     |  |  (JetStream Push)     |
-+-----------+-----------+  +-----------------------+  +-----------------------+  +-----------------------+
-            |
-    +-------+-------+
-    |               |
-    v               v
-Consumers        Publish
- (CRUD)      (NATS / JS)
+```mermaid
+graph TD
+    Client["Client / Postman"] -->|REST API :8080| OrderService["Order Service<br/>(Publisher & Consumer Admin)"]
+
+    subgraph NATS_Cluster ["NATS Cluster (nats://localhost:4222, :4223, :4224)"]
+        CoreNATS["Core NATS Engine"]
+        StreamDelivery["Stream: DELIVERY<br/>(delivery.>)"]
+        StreamPayments["Stream: PAYMENTS<br/>(payments.>)"]
+    end
+
+    OrderService -->|Publish Fire-and-Forget| CoreNATS
+    OrderService -->|Publish Persistent & Deduplicated| StreamDelivery
+    OrderService -->|Manage Consumers & Replay| StreamDelivery
+
+    CoreNATS -->|delivery.atmost-once| ProcAtMost["Processing Service<br/>(At-Most-Once Subscriber)"]
+    StreamDelivery -->|Pull: delivery.atleast-once| ProcAtLeast["Processing Service<br/>(At-Least-Once Consumer)"]
+    StreamDelivery -->|Pull: delivery.exactly-once DoubleAck| ProcExact["Processing Service<br/>(Exactly-Once Consumer)"]
+
+    StreamPayments -->|Pull: payments-pull| PayWorker["Payment Worker<br/>(Pull Consumer)"]
+    StreamPayments -->|Push: payments-push| NotifWorker["Notification Worker<br/>(Push Consumer)"]
 ```
 
 - **Order Service (`services/cmd/order-service`)**: Exposed on port `:8080`. Provides REST APIs for publishing messages to Core NATS and JetStream (supporting at-most-once, at-least-once, and deduplicated exactly-once publishing) and managing consumer lifecycles.
@@ -76,22 +77,39 @@ podman-compose up -d
 ### 2. Create Required Streams
 Execute the stream creation commands from Section 2 for `PAYMENTS` and `DELIVERY`.
 
-### 3. Start Order Service (REST API Publisher & Consumer Manager)
+### 3. Environment Configuration (`.env`)
+The Go services read runtime settings from `services/.env`. A ready-to-use template is provided in `services/.env.example`.
+
+Copy the template to create your local `.env`:
+```bash
+cp services/.env.example services/.env
+```
+
+Key environment settings in `services/.env`:
+- `NATS_SERVERS`: Comma-separated cluster endpoints. Defaults to the 3-node local cluster: `nats://localhost:4222,nats://localhost:4223,nats://localhost:4224`. If running a single node, set to `nats://localhost:4222`.
+- `NATS_CONNECT_TIMEOUT` & `NATS_RECONNECT_WAIT`: Connection timeout (default `2s`) and reconnect interval (default `2s`) with exponential backoff up to 10s.
+- `NATS_MAX_RECONNECT_ATTEMPTS`: Reconnection retries (default `10`). Set to `-1` for infinite retries.
+- `NATS_TLS_ENABLED`: Set to `false` by default for local development. Set to `true` when connecting to TLS-enabled enterprise clusters.
+- `NATS_AUTH_METHOD`: Authentication type (`token`, `user_password`, `jwt`, `credentials`). Commented out for local unauthenticated clusters.
+- `ORDER_SERVICE_PORT`: HTTP server port for Order Service (default `:8080`).
+- `PROCESSING_SERVICE_PORT`: HTTP server port for Processing Service (default `:8081`).
+
+### 4. Start Order Service (REST API Publisher & Consumer Manager)
 ```bash
 go run ./services/cmd/order-service
 ```
 
-### 4. Start Processing Service (Delivery Semantics Worker)
+### 5. Start Processing Service (Delivery Semantics Worker)
 ```bash
 go run ./services/cmd/processing-service
 ```
 
-### 5. Start Payment Worker (Pull Consumer)
+### 6. Start Payment Worker (Pull Consumer)
 ```bash
 go run ./services/cmd/payment-worker
 ```
 
-### 6. Start Notification Worker (Push Consumer)
+### 7. Start Notification Worker (Push Consumer)
 ```bash
 go run ./services/cmd/notification-worker
 ```

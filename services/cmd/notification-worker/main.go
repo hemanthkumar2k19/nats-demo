@@ -40,13 +40,13 @@ func main() {
 	workerID := fmt.Sprintf("%s-%s", WorkerPrefix, workerSuffix)
 
 	// 2. Load Environment Configuration
-	_, err := config.Load()
+	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to load environment configuration")
 	}
 
 	// 3. Connect to NATS Server
-	nc, err := natsclient.ConnectAndDiscover(workerID)
+	nc, err := natsclient.ConnectAndDiscover(&cfg.NATS, workerID)
 	if err != nil {
 		log.Fatal().Err(err).Str("worker_id", workerID).Msg("Failed to initialize NATS Client")
 	}

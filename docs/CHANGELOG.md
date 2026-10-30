@@ -2,6 +2,41 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-30] Replace Text ASCII Architecture Diagram with Mermaid Flowchart in README
+
+- **Change:**
+  - Replaced the plaintext box diagram in Section 1 ("System Architecture") of [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) with a clear, rendered `mermaid` flowchart (`graph TD`).
+  - Illustrates the client REST calls, Order Service admin/publisher flows, NATS cluster streams (`DELIVERY`, `PAYMENTS`), delivery semantic subscribers (`At-Most-Once`, `At-Least-Once`, `Exactly-Once`), and worker consumers (`Payment Worker`, `Notification Worker`).
+- **Reason:** Provide enhanced visual readability, modern GitHub documentation formatting, and explicit message flow direction.
+- **Affected Area:** [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-30] Document Environment Configuration and Template Setup in README
+
+- **Change:**
+  - Added step 3 ("Environment Configuration (`.env`)") to Section 3 of [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md).
+  - Provided copy command `cp services/.env.example services/.env` and documented essential environment variables: multi-node cluster URLs (`NATS_SERVERS`), timeouts, reconnect exponential backoff, TLS toggles, and service ports.
+- **Reason:** Provide clear setup guidance for developers on configuring runtime parameters from the template.
+- **Affected Area:** [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-30] Add Local Deployment Environment Configuration Files
+
+- **Change:**
+  - Created [services/.env](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/.env) and [services/.env.example](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/.env.example) containing default operational variables for the 3-node local NATS cluster (`NATS_SERVERS=nats://localhost:4222,nats://localhost:4223,nats://localhost:4224`), reconnect timeouts, pings, ports (`:8080`, `:8081`), and OpenTelemetry tracing.
+  - Left TLS (`NATS_TLS_ENABLED=false`) and Authentication methods disabled for seamless local containerized development.
+- **Reason:** Provide out-of-the-box local configuration so services connect to all nodes of the local cluster without manual variable exports.
+- **Affected Area:** [services/.env](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/.env), [services/.env.example](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/.env.example), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-10-30] Integrate Enterprise NATSClientConfig into Centralized Configuration
+
+- **Change:**
+  - Embedded `NATSClientConfig` inside `Config` in [services/config/config.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/config/config.go).
+  - Added `Validate() error` method to `NATSClientConfig` in [services/config/nats_client_config.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/config/nats_client_config.go) validating server URLs, TLS certificate consistency, and authentication configurations (token, user_password, jwt/credentials).
+  - Enhanced `BuildOptions(clientNameOverride ...string)` in [services/config/nats_client_config.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/config/nats_client_config.go) to encapsulate all production options: timeouts, reconnect limits, ping intervals, exponential backoff reconnect delays, 8MB reconnect buffer, and connection lifecycle event handlers.
+  - Refactored `ConnectAndDiscover` in [services/natsclient/client.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/natsclient/client.go) to consume `*config.NATSClientConfig` and execute `BuildOptions` instead of hardcoding connection options.
+  - Updated all service entrypoints ([services/cmd/order-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/order-service/main.go), [services/cmd/processing-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/processing-service/main.go), [services/cmd/notification-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/notification-worker/main.go), [services/cmd/payment-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/payment-worker/main.go)) to pass `&cfg.NATS` and distinct client/worker names to `ConnectAndDiscover`.
+- **Reason:** Centralize and externalize all NATS connection settings across services, support multi-server cluster URLs via `NATS_SERVERS`, ensure strict configuration validation at startup, and remove hardcoded connection parameters.
+- **Affected Area:** [services/config/nats_client_config.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/config/nats_client_config.go), [services/config/config.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/config/config.go), [services/natsclient/client.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/natsclient/client.go), [services/cmd/order-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/order-service/main.go), [services/cmd/processing-service/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/processing-service/main.go), [services/cmd/notification-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/notification-worker/main.go), [services/cmd/payment-worker/main.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/cmd/payment-worker/main.go), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-30] Simplify Stream Sequences API to Single GET Endpoint with Path Parameter
 
 - **Change:**

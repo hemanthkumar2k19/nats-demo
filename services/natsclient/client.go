@@ -1,70 +1,34 @@
 package natsclient
 
 import (
-	"time"
+	"fmt"
+	"strings"
+
+	"services/config"
 
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
 )
 
-func ConnectAndDiscover(cn string) (*nats.Conn, error) {
-	server := "nats://localhost:4222"
+// ConnectAndDiscover initializes a resilient connection to NATS using the centralized NATSClientConfig.
+// It accepts optional clientNameOverride strings to allow individual workers to identify themselves.
+func ConnectAndDiscover(cfg *config.NATSClientConfig, clientNameOverride ...string) (*nats.Conn, error) {
 
-	nc, err := nats.Connect(server,
-
-		// Client Identification
-		nats.Name(cn),
-
-		// Reconnection & Retry Semantics
-		nats.MaxReconnects(10), // Set to -1 for infinite reconnect attempts
-		nats.ReconnectWait(2*time.Second),
-		nats.CustomReconnectDelay(func(attempts int) time.Duration {
-			// Exponential backoff up to 10 seconds to prevent thundering herd
-			delay := time.Duration(attempts) * time.Second
-			if delay > 10*time.Second {
-				return 10 * time.Second
-			}
-			return delay
-		}),
-		nats.ReconnectBufSize(8*1024*1024), // 8MB buffer for outbound messages while disconnected
-
-		// Heartbeat & Connection Liveness Monitoring
-		nats.PingInterval(5*time.Second), // Send PING every 5s to verify server health
-		nats.MaxPingsOutstanding(3),      // Miss 3 PONG responses before declaring connection dead
-
-		nats.ErrorHandler(
-			func(c *nats.Conn, s *nats.Subscription, err error) {
-				if s != nil {
-					log.Error().Err(err).Str("subject", s.Subject).Msg("NATS async error on subject")
-				} else {
-					log.Error().Err(err).Msg("NATS async error")
-				}
-			}),
-
-		nats.DisconnectErrHandler(
-			func(nc *nats.Conn, err error) {
-				log.Warn().Err(err).Msg("Disconnected from NATS. Swapping to next cluster node...")
-			}),
-
-		nats.ReconnectHandler(func(c *nats.Conn) {
-			log.Info().
-				Str("url", c.ConnectedUrl()).
-				Strs("discovered", c.DiscoveredServers()).
-				Msg("Reconnected to NATS server")
-		}),
-
-		nats.ClosedHandler(
-			func(c *nats.Conn) {
-				log.Info().Str("url", c.ConnectedUrl()).Msg("NATS connection closed")
-			}),
-	)
-
+	opts, err := cfg.BuildOptions(clientNameOverride...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to build NATS options: %w", err)
+	}
+
+	serverList := strings.Join(cfg.Servers, ",")
+
+	nc, err := nats.Connect(serverList, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to NATS (%s): %w", serverList, err)
 	}
 
 	log.Info().
 		Str("url", nc.ConnectedUrl()).
+		Strs("servers", cfg.Servers).
 		Msg("Connected to NATS server")
 
 	log.Info().
