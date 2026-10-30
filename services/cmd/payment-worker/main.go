@@ -11,9 +11,9 @@ import (
 
 	"services/config"
 	"services/logger"
+	"services/messaging"
 	"services/natsclient"
 
-	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 )
@@ -87,17 +87,17 @@ func main() {
 		Msg("Received shutdown signal. Initiating graceful shutdown...")
 
 	// 7. Graceful shutdown of consumer and NATS connection
-	cleanup(cc, nc, &wg, workerID)
+	messaging.GracefulShutdown(workerID, nc, &wg, 5*time.Second, nil, cc)
 }
 
 // StartWorker binds to the configured JetStream consumer and begins asynchronous message processing.
 func StartWorker(ctx context.Context, js jetstream.JetStream, wg *sync.WaitGroup, workerID string) (jetstream.ConsumeContext, error) {
-	consumer, err := js.Consumer(ctx, StreamName, ConsumerName)
+	consumer, err := messaging.GetConsumer(ctx, js, StreamName, ConsumerName)
 	if err != nil {
 		return nil, err
 	}
 
-	cc, err := consumer.Consume(func(msg jetstream.Msg) {
+	cc, err := messaging.Consume(consumer, func(msg jetstream.Msg) {
 		wg.Add(1)
 		defer wg.Done()
 
@@ -111,60 +111,12 @@ func StartWorker(ctx context.Context, js jetstream.JetStream, wg *sync.WaitGroup
 		// Simulate processing duration to clearly observe concurrency across competing workers
 		time.Sleep(2 * time.Second)
 
-		// Acknowledge message processing completion
-		if err := msg.Ack(); err != nil {
-			log.Error().
-				Err(err).
-				Str("worker_id", workerID).
-				Str("consumer", ConsumerName).
-				Msg("Failed to ACK message")
-			return
-		}
-
-		log.Info().
-			Str("worker_id", workerID).
-			Str("consumer", ConsumerName).
-			Str("subject", msg.Subject()).
-			Msg("Message processed and ACKed successfully")
+		// Acknowledge message processing completion via messaging utility
+		messaging.AcknowledgeMessage(ctx, msg, workerID, ConsumerName, "at-least-once")
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	return cc, nil
-}
-
-// cleanup performs graceful shutdown of the consume context, waits for in-flight tasks, and drains NATS.
-func cleanup(cc jetstream.ConsumeContext, nc *nats.Conn, wg *sync.WaitGroup, workerID string) {
-	// 1. Stop consumer fetch loop
-	if cc != nil {
-		cc.Stop()
-		log.Info().Str("worker_id", workerID).Msg("Stopped consumer message fetch loop")
-	}
-
-	// 2. Wait for in-flight message processing with a bounded timeout
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		log.Info().Str("worker_id", workerID).Msg("All in-flight messages completed and ACKed cleanly")
-	case <-shutdownCtx.Done():
-		log.Warn().Str("worker_id", workerID).Msg("Shutdown timeout reached before all in-flight messages finished")
-	}
-
-	// 3. Drain and close NATS connection
-	if nc != nil {
-		if err := nc.Drain(); err != nil {
-			log.Error().Err(err).Str("worker_id", workerID).Msg("Error during NATS connection drain")
-		} else {
-			log.Info().Str("worker_id", workerID).Msg("NATS connection successfully drained and closed")
-		}
-	}
 }

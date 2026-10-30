@@ -88,3 +88,11 @@ func GetStreamSequenceBounds(ctx context.Context, js jetstream.JetStream, stream
 		DeletedCount:   state.NumDeleted,
 	}, nil
 }
+
+// [TODO: USER_IMPLEMENT]
+// GetStreamMsg retrieves a raw stored message from a stream by its sequence number.
+// Logic to be implemented by user.
+func GetStreamMsg(ctx context.Context, js jetstream.JetStream, stream string, seq uint64) (*jetstream.RawStreamMsg, error) {
+	// Dummy stub: User to implement logic using js.GetMsg(ctx, stream, seq)
+	return nil, nil
+}

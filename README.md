@@ -14,6 +14,7 @@ graph TD
         CoreNATS["Core NATS Engine"]
         StreamDelivery["Stream: DELIVERY<br/>(delivery.>)"]
         StreamPayments["Stream: PAYMENTS<br/>(payments.>)"]
+        StreamDLQ["Stream: dlq_stream<br/>($JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>)"]
     end
 
     OrderService -->|Publish Fire-and-Forget| CoreNATS
@@ -26,6 +27,10 @@ graph TD
 
     StreamPayments -->|Pull: payments-pull| PayWorker["Payment Worker<br/>(Pull Consumer)"]
     StreamPayments -->|Push: payments-push| NotifWorker["Notification Worker<br/>(Push Consumer)"]
+
+    StreamDelivery -.->|MaxDeliver Exhausted Advisory| StreamDLQ
+    StreamDLQ -->|Pull: dlq-consumer| DLQWorker["DLQ Worker<br/>(Forensic Diagnostic Handler)"]
+    DLQWorker -.->|Fetch Raw Payload by stream_seq| StreamDelivery
 ```
 
 - **Order Service (`services/cmd/order-service`)**: Exposed on port `:8080`. Provides REST APIs for publishing messages to Core NATS and JetStream (supporting at-most-once, at-least-once, and deduplicated exactly-once publishing) and managing consumer lifecycles.
@@ -35,6 +40,7 @@ graph TD
   - Exactly-Once: JetStream pull consumer on `delivery.exactly-once` (stream `DELIVERY`) with `msg.DoubleAck()` and publisher deduplication
 - **Payment Worker (`services/cmd/payment-worker`)**: Background worker that pulls and processes payment events from the `PAYMENTS` stream (`payments-pull` consumer).
 - **Notification Worker (`services/cmd/notification-worker`)**: Background worker that consumes payment notifications from the `PAYMENTS` stream (`payments-push` consumer).
+- **DLQ Worker (`services/cmd/dlq-worker`)**: Independent diagnostic worker that consumes server advisory events from `dlq_stream`, fetches original raw messages from origin streams via `stream_seq`, and logs forensic audit trails for poison messages.
 
 ---
 
@@ -52,6 +58,12 @@ nats stream add PAYMENTS --subjects "payments.>" --storage file --retention limi
 Used by `processing-service` on subject pattern `delivery.>` for at-least-once and exactly-once delivery testing. The `--dupe-window 2m` flag enables JetStream publisher message deduplication based on `Nats-Msg-Id`:
 ```bash
 nats stream add DELIVERY --subjects "delivery.>" --storage file --retention limits --discard old --dupe-window 2m --replicas 1 --defaults
+```
+
+### Stream 3: dlq_stream (Dead Letter Queue & Poison Message Diagnostics)
+Used by `dlq-worker` to automatically ingest NATS JetStream server advisory events when any consumer exhausts maximum delivery attempts (`MaxDeliver`):
+```bash
+nats stream add dlq_stream --subjects '$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>' --storage file --retention limits --discard old --replicas 1 --defaults
 ```
 
 ---
@@ -114,6 +126,11 @@ go run ./services/cmd/payment-worker
 go run ./services/cmd/notification-worker
 ```
 
+### 8. Start Dead Letter Queue Worker (DLQ Diagnostic Handler)
+```bash
+go run ./services/cmd/dlq-worker
+```
+
 ---
 
 ## 4. API Reference
@@ -135,7 +152,71 @@ All endpoints, pre-configured variables, and sample payloads can be imported dir
 
 ---
 
-## 5. Logging & Observability
+## 5. Consumer Acknowledgment & Failure Simulation
+
+The `processing-service` supports standard declarative message processing simulations via the HTTP header `X-Simulation-Action` (or the JSON payload field `"simulateAction": "..."`). This eliminates manual worker restarts and enables predictable demonstration of all NATS acknowledgment verbs.
+
+### Processing Outcomes & NATS Verbs
+
+| Action | NATS Verb | Behavior & Broker Impact | Enterprise Use Case |
+| :--- | :--- | :--- | :--- |
+| `ack` (default) | `msg.Ack()` / `msg.DoubleAck()` | Marks message complete; advances ack floor. Simulates 500ms processing delay. | Normal successful business processing. |
+| `nak` | `msg.Nak()` | Signals failure immediately. Server redelivers message per consumer `BackOff` (`2s, 5s`) up to `MaxDeliver: 3`. | Transient failure (e.g. database connection temporarily lost). |
+| `nak-delay` | `msg.NakWithDelay(5s)` | Tells server to pause 5 seconds before making the message available for redelivery. | Rate-limiting (HTTP 429) or downstream third-party backoff. |
+| `term` | `msg.Term()` | Permanently terminates message immediately without waiting for `MaxDeliver` retries. | Unrecoverable schema corruption, poison pill, or invalid account. |
+| `in-progress` | `msg.InProgress()` | Resets the server `AckWait` timer back to 0. Extends the deadline for long tasks before acknowledging. | Long-running reports, image processing, heavy batch calculations. |
+| `timeout` | *(No Response)* | Worker does not send ACK or NAK. JetStream server `AckWait` expires (10s), triggering automatic redelivery. | Worker hang, network partition, or ungraceful crash. |
+
+### Simulation Usage Examples
+
+#### 1. Simulate Transient Failure (`nak` -> Retries -> Dead Letter Queue)
+Publish a message with `X-Simulation-Action: nak`. The `processing-service` logs a warning and NAKs the message. After 3 delivery attempts (`MaxDeliver: 3`), NATS automatically routes the advisory to `dlq_stream` where `dlq-worker` captures the payload:
+```bash
+curl -X POST http://localhost:8080/api/v1/publish/js \
+  -H "Content-Type: application/json" \
+  -H "X-Simulation-Action: nak" \
+  -d '{
+    "subject": "delivery.atleast-once",
+    "data": {
+      "orderId": "ORD-FAIL-01",
+      "amount": 100.00
+    }
+  }'
+```
+
+#### 2. Simulate Poison Pill Immediate Termination (`term`)
+Publish a message with `X-Simulation-Action: term`. The worker kills the message immediately without burning retries:
+```bash
+curl -X POST http://localhost:8080/api/v1/publish/js \
+  -H "Content-Type: application/json" \
+  -H "X-Simulation-Action: term" \
+  -d '{
+    "subject": "delivery.atleast-once",
+    "data": {
+      "orderId": "ORD-POISON-01",
+      "corrupted": true
+    }
+  }'
+```
+
+#### 3. Simulate Long-Running Job Heartbeat (`in-progress`)
+Publish a message with `X-Simulation-Action: in-progress`. The worker sends an `InProgress()` heartbeat to extend `AckWait`, completes work, and ACKs:
+```bash
+curl -X POST http://localhost:8080/api/v1/publish/js \
+  -H "Content-Type: application/json" \
+  -H "X-Simulation-Action: in-progress" \
+  -d '{
+    "subject": "delivery.atleast-once",
+    "data": {
+      "orderId": "ORD-HEAVY-01",
+      "operation": "batch-report"
+    }
+  }'
+```
+
+---
+
+## 6. Logging & Observability
 
 ### Application Logging
 Logging is managed by Zerolog (`github.com/rs/zerolog`).

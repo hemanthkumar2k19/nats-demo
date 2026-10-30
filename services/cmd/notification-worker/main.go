@@ -11,6 +11,7 @@ import (
 
 	"services/config"
 	"services/logger"
+	"services/messaging"
 	"services/natsclient"
 
 	"github.com/nats-io/nats.go"
@@ -92,29 +93,30 @@ func main() {
 		Msg("Received shutdown signal. Initiating graceful shutdown...")
 
 	// 7. Graceful shutdown of push subscription and NATS connection
-	cleanup(sub, nc, &wg, workerID)
+	messaging.GracefulShutdown(workerID, nc, &wg, 5*time.Second, []*nats.Subscription{sub})
 }
 
 // StartWorker verifies the push consumer in JetStream and subscribes to its DeliverSubject with QueueGroup.
 func StartWorker(ctx context.Context, nc *nats.Conn, js jetstream.JetStream, wg *sync.WaitGroup, workerID string) (*nats.Subscription, error) {
-	// Verify consumer exists in JetStream
-	consumer, err := js.Consumer(ctx, StreamName, ConsumerName)
-	if err != nil {
-		return nil, err
-	}
-
-	info, err := consumer.Info(ctx)
+	// Verify consumer exists in JetStream via messaging utility
+	consumer, err := messaging.GetConsumer(ctx, js, StreamName, ConsumerName)
 	if err != nil {
 		return nil, err
 	}
 
 	targetSubject := DeliverSubject
-	if info.Config.DeliverSubject != "" {
-		targetSubject = info.Config.DeliverSubject
+	if consumer != nil {
+		info, err := consumer.Info(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if info.Config.DeliverSubject != "" {
+			targetSubject = info.Config.DeliverSubject
+		}
 	}
 
-	// Core NATS QueueSubscribe distributes pushed messages across competing workers in QueueGroup
-	sub, err := nc.QueueSubscribe(targetSubject, QueueGroup, func(msg *nats.Msg) {
+	// QueueSubscribe via messaging package distributes pushed messages across competing workers in QueueGroup
+	sub, err := messaging.QueueSubscribe(nc, targetSubject, QueueGroup, func(msg *nats.Msg) {
 		wg.Add(1)
 		defer wg.Done()
 
@@ -149,42 +151,4 @@ func StartWorker(ctx context.Context, nc *nats.Conn, js jetstream.JetStream, wg 
 	}
 
 	return sub, nil
-}
-
-// cleanup gracefully drains the push subscription, waits for in-flight tasks, and drains NATS.
-func cleanup(sub *nats.Subscription, nc *nats.Conn, wg *sync.WaitGroup, workerID string) {
-	// 1. Drain push subscription to stop receiving new pushed messages
-	if sub != nil {
-		if err := sub.Drain(); err != nil {
-			log.Error().Err(err).Str("worker_id", workerID).Msg("Error during subscription drain")
-		} else {
-			log.Info().Str("worker_id", workerID).Msg("Push subscription drained successfully")
-		}
-	}
-
-	// 2. Wait for in-flight message processing with a bounded timeout
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		log.Info().Str("worker_id", workerID).Msg("All in-flight messages completed and ACKed cleanly")
-	case <-shutdownCtx.Done():
-		log.Warn().Str("worker_id", workerID).Msg("Shutdown timeout reached before all in-flight messages finished")
-	}
-
-	// 3. Drain and close NATS connection
-	if nc != nil {
-		if err := nc.Drain(); err != nil {
-			log.Error().Err(err).Str("worker_id", workerID).Msg("Error during NATS connection drain")
-		} else {
-			log.Info().Str("worker_id", workerID).Msg("NATS connection successfully drained and closed")
-		}
-	}
 }

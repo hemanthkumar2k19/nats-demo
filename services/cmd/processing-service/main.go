@@ -11,6 +11,7 @@ import (
 
 	"services/config"
 	"services/logger"
+	"services/messaging"
 	"services/natsclient"
 
 	"github.com/nats-io/nats.go"
@@ -69,7 +70,7 @@ func main() {
 
 	cc1, err := startAtLeastOnce(ctx, js, &wg)
 	if err != nil {
-		cleanup(sub, nc, &wg)
+		messaging.GracefulShutdown(Client, nc, &wg, 5*time.Second, []*nats.Subscription{sub})
 		log.Fatal().
 			Err(err).
 			Str("client", Client).
@@ -80,7 +81,7 @@ func main() {
 
 	cc2, err := startExactlyOnce(ctx, js, &wg)
 	if err != nil {
-		cleanup(sub, nc, &wg, cc1)
+		messaging.GracefulShutdown(Client, nc, &wg, 5*time.Second, []*nats.Subscription{sub}, cc1)
 		log.Fatal().
 			Err(err).
 			Str("client", Client).
@@ -97,30 +98,21 @@ func main() {
 		Msg("All processors started successfully and listening for messages")
 
 	// 5. Wait for OS shutdown signal (Ctrl+C / SIGINT / SIGTERM)
-	sigChan := make(chan os.Signal, 2)
+	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	sig := <-sigChan
 	log.Info().
 		Str("client", Client).
 		Str("signal", sig.String()).
-		Msg("Received shutdown signal. Initiating graceful shutdown... (Press Ctrl+C again to force exit immediately)")
-
-	// Listen for a second Ctrl+C to force exit immediately without waiting for in-flight tasks or sending ACK
-	go func() {
-		<-sigChan
-		log.Warn().
-			Str("client", Client).
-			Msg("Second shutdown signal received. Forcing immediate termination without ACK...")
-		os.Exit(1)
-	}()
+		Msg("Received shutdown signal. Initiating graceful shutdown...")
 
 	// 6. Graceful shutdown of consumer, subscription, and NATS connection
-	cleanup(sub, nc, &wg, cc1, cc2)
+	messaging.GracefulShutdown(Client, nc, &wg, 5*time.Second, []*nats.Subscription{sub}, cc1, cc2)
 }
 
 // startAtMostOnce subscribes to Sub1 using Core NATS (at-most-once delivery).
 func startAtMostOnce(nc *nats.Conn, wg *sync.WaitGroup) (*nats.Subscription, error) {
-	sub, err := nc.Subscribe(Sub1, func(msg *nats.Msg) {
+	sub, err := messaging.SubscribeWithHandler(nc, Sub1, func(msg *nats.Msg) {
 		wg.Add(1)
 		defer wg.Done()
 
@@ -138,7 +130,7 @@ func startAtMostOnce(nc *nats.Conn, wg *sync.WaitGroup) (*nats.Subscription, err
 			Str("message", string(msg.Data)).
 			Msg("Processing message...")
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(500 * time.Millisecond)
 
 		log.Info().
 			Str("client", Client).
@@ -162,45 +154,41 @@ func startAtMostOnce(nc *nats.Conn, wg *sync.WaitGroup) (*nats.Subscription, err
 
 // startAtLeastOnce configures and starts a JetStream pull consumer on Sub2 (at-least-once delivery).
 func startAtLeastOnce(ctx context.Context, js jetstream.JetStream, wg *sync.WaitGroup) (jetstream.ConsumeContext, error) {
-	consumer, err := js.CreateOrUpdateConsumer(ctx, Stream, jetstream.ConsumerConfig{
+	consumer, err := messaging.CreateConsumer(ctx, js, Stream, jetstream.ConsumerConfig{
 		Durable:       Consumer1,
 		FilterSubject: Sub2,
 		AckPolicy:     jetstream.AckExplicitPolicy,
-		AckWait:       30 * time.Second,
-		MaxDeliver:    5,
+		AckWait:       10 * time.Second,
+		MaxDeliver:    3,
+		BackOff: []time.Duration{
+			2 * time.Second,
+			5 * time.Second,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create or update consumer %s on stream %s: %w", Consumer1, Stream, err)
 	}
 
-	cc, err := consumer.Consume(func(msg jetstream.Msg) {
+	cc, err := messaging.Consume(consumer, func(msg jetstream.Msg) {
 		wg.Add(1)
 		defer wg.Done()
+
+		meta, _ := msg.Metadata()
+		var deliveryAttempt uint64 = 1
+		if meta != nil {
+			deliveryAttempt = meta.NumDelivered
+		}
 
 		log.Info().
 			Str("client", Client).
 			Str("delivery", "at-least-once").
 			Str("consumer", Consumer1).
 			Str("subject", msg.Subject()).
+			Uint64("attempt", deliveryAttempt).
 			Str("payload", string(msg.Data())).
 			Msg("Received message")
 
-		logger.Countdown(10, "Processing Message")
-
-		// Acknowledge message processing completion back to JetStream
-		if err := msg.Ack(); err != nil {
-			log.Error().
-				Err(err).
-				Str("client", Client).
-				Str("consumer", Consumer1).
-				Msg("Failed to ACK message")
-			return
-		}
-		log.Info().
-			Str("client", Client).
-			Str("consumer", Consumer1).
-			Msg("ACK sent successfully")
-
+		messaging.ExecuteSimulationAction(ctx, msg, Client, Consumer1, "at-least-once", deliveryAttempt)
 	},
 		jetstream.PullMaxMessages(1), // Limits the number of messages fetched at once
 	)
@@ -220,45 +208,41 @@ func startAtLeastOnce(ctx context.Context, js jetstream.JetStream, wg *sync.Wait
 }
 
 func startExactlyOnce(ctx context.Context, js jetstream.JetStream, wg *sync.WaitGroup) (jetstream.ConsumeContext, error) {
-	consumer, err := js.CreateOrUpdateConsumer(ctx, Stream, jetstream.ConsumerConfig{
+	consumer, err := messaging.CreateConsumer(ctx, js, Stream, jetstream.ConsumerConfig{
 		Durable:       Consumer2,
 		FilterSubject: Sub3,
 		AckPolicy:     jetstream.AckExplicitPolicy,
-		AckWait:       30 * time.Second,
-		MaxDeliver:    5,
+		AckWait:       10 * time.Second,
+		MaxDeliver:    3,
+		BackOff: []time.Duration{
+			2 * time.Second,
+			5 * time.Second,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create or update consumer %s on stream %s: %w", Consumer2, Stream, err)
 	}
 
-	cc, err := consumer.Consume(func(msg jetstream.Msg) {
+	cc, err := messaging.Consume(consumer, func(msg jetstream.Msg) {
 		wg.Add(1)
 		defer wg.Done()
+
+		meta, _ := msg.Metadata()
+		var deliveryAttempt uint64 = 1
+		if meta != nil {
+			deliveryAttempt = meta.NumDelivered
+		}
 
 		log.Info().
 			Str("client", Client).
 			Str("delivery", "exactly-once").
 			Str("consumer", Consumer2).
 			Str("subject", msg.Subject()).
+			Uint64("attempt", deliveryAttempt).
 			Str("payload", string(msg.Data())).
 			Msg("Received message")
 
-		logger.Countdown(10, "Processing Message")
-
-		// Acknowledge message processing completion back to JetStream using DoubleAck (synchronous server confirmation)
-		if err := msg.DoubleAck(ctx); err != nil {
-			log.Error().
-				Err(err).
-				Str("client", Client).
-				Str("consumer", Consumer2).
-				Msg("Failed to DoubleACK message")
-			return
-		}
-		log.Info().
-			Str("client", Client).
-			Str("consumer", Consumer2).
-			Msg("DoubleACK sent and confirmed by server successfully")
-
+		messaging.ExecuteSimulationAction(ctx, msg, Client, Consumer2, "exactly-once", deliveryAttempt)
 	},
 		jetstream.PullMaxMessages(1), // Limits the number of messages fetched at once
 	)
@@ -275,50 +259,4 @@ func startExactlyOnce(ctx context.Context, js jetstream.JetStream, wg *sync.Wait
 		Msg("Consumer created and consuming")
 
 	return cc, nil
-}
-
-// cleanup performs graceful shutdown of consume contexts, subscription, waits for in-flight tasks, and drains NATS.
-func cleanup(sub *nats.Subscription, nc *nats.Conn, wg *sync.WaitGroup, ccs ...jetstream.ConsumeContext) {
-	// 1. Stop JetStream consume context fetch loops
-	for _, cc := range ccs {
-		if cc != nil {
-			cc.Stop()
-		}
-	}
-	log.Info().Str("client", Client).Msg("Stopped JetStream consumer message fetch loop(s)")
-
-	// 2. Drain Core NATS subscription to stop receiving new messages while completing in-flight processing
-	if sub != nil {
-		if err := sub.Drain(); err != nil {
-			log.Error().Err(err).Str("client", Client).Msg("Error during subscription drain")
-		} else {
-			log.Info().Str("client", Client).Msg("Subscription drained successfully")
-		}
-	}
-
-	// 3. Wait for in-flight message processing with a bounded timeout
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		log.Info().Str("client", Client).Msg("All in-flight messages completed cleanly")
-	case <-shutdownCtx.Done():
-		log.Warn().Str("client", Client).Msg("Shutdown timeout reached before all in-flight messages finished")
-	}
-
-	// 4. Drain and close NATS connection
-	if nc != nil {
-		if err := nc.Drain(); err != nil {
-			log.Error().Err(err).Str("client", Client).Msg("Error during NATS connection drain")
-		} else {
-			log.Info().Str("client", Client).Msg("NATS connection successfully drained and closed")
-		}
-	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"services/messaging"
 	"services/model"
+	"services/natsclient"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -112,7 +113,7 @@ type Service struct {
 
 // NewService creates a new Service instance.
 func NewService(nc *nats.Conn) *Service {
-	js, err := jetstream.New(nc)
+	js, err := natsclient.NewJSClient(nc)
 	if err != nil {
 		log.Warn().Err(err).Msg("JetStream context creation warning")
 	}
@@ -148,7 +149,7 @@ func (s *Service) Publish(ctx context.Context, msg *model.Message) (*model.Publi
 func (s *Service) JSPublish(ctx context.Context, msg *model.Message) (*model.PublishResponse, error) {
 	if s.js == nil {
 		var err error
-		s.js, err = jetstream.New(s.nc)
+		s.js, err = natsclient.NewJSClient(s.nc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
 		}
@@ -182,7 +183,7 @@ func (s *Service) JSPublish(ctx context.Context, msg *model.Message) (*model.Pub
 func (s *Service) JSPublishBatch(ctx context.Context, messages []model.Message) error {
 	if s.js == nil {
 		var err error
-		s.js, err = jetstream.New(s.nc)
+		s.js, err = natsclient.NewJSClient(s.nc)
 		if err != nil {
 			return fmt.Errorf("failed to initialize JetStream context: %w", err)
 		}
@@ -195,13 +196,23 @@ func (s *Service) JSPublishBatch(ctx context.Context, messages []model.Message) 
 func (s *Service) CreateConsumer(ctx context.Context, cr *model.CreateConsumerRequest) (*jetstream.ConsumerInfo, error) {
 	if s.js == nil {
 		var err error
-		s.js, err = jetstream.New(s.nc)
+		s.js, err = natsclient.NewJSClient(s.nc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
 		}
 	}
 
-	consumer, err := messaging.CreateConsumer(ctx, s.js, cr)
+	cfg := jetstream.ConsumerConfig{
+		Durable:        cr.ConsumerName,
+		FilterSubjects: cr.FilterSubjects,
+		AckPolicy:      messaging.ResolveAckPolicy(cr.AckPolicy),
+		DeliverPolicy:  messaging.ResolveDeliverPolicy(cr.DeliverPolicy),
+	}
+	if cr.DeliverSubject != "" {
+		cfg.DeliverSubject = cr.DeliverSubject
+	}
+
+	consumer, err := messaging.CreateConsumer(ctx, s.js, cr.StreamName, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
@@ -218,7 +229,7 @@ func (s *Service) CreateConsumer(ctx context.Context, cr *model.CreateConsumerRe
 func (s *Service) DeleteConsumer(ctx context.Context, cr *model.CreateConsumerRequest) error {
 	if s.js == nil {
 		var err error
-		s.js, err = jetstream.New(s.nc)
+		s.js, err = natsclient.NewJSClient(s.nc)
 		if err != nil {
 			return fmt.Errorf("failed to initialize JetStream context: %w", err)
 		}
@@ -235,7 +246,7 @@ func (s *Service) DeleteConsumer(ctx context.Context, cr *model.CreateConsumerRe
 func (s *Service) GetStreamSequenceBounds(ctx context.Context, streamName string) (*model.StreamSequencesResponse, error) {
 	if s.js == nil {
 		var err error
-		s.js, err = jetstream.New(s.nc)
+		s.js, err = natsclient.NewJSClient(s.nc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
 		}
@@ -248,7 +259,7 @@ func (s *Service) GetStreamSequenceBounds(ctx context.Context, streamName string
 func (s *Service) ReplayMessages(ctx context.Context, req *model.ReplayRequest) (*model.ReplayResponse, error) {
 	if s.js == nil {
 		var err error
-		s.js, err = jetstream.New(s.nc)
+		s.js, err = natsclient.NewJSClient(s.nc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
 		}
@@ -309,7 +320,7 @@ func (s *Service) ReplayMessages(ctx context.Context, req *model.ReplayRequest) 
 func (s *Service) ReprocessMessages(ctx context.Context, req *model.ReprocessRequest) (*model.ReprocessResponse, error) {
 	if s.js == nil {
 		var err error
-		s.js, err = jetstream.New(s.nc)
+		s.js, err = natsclient.NewJSClient(s.nc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
 		}

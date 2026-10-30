@@ -2,6 +2,7 @@ package messaging
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,40 +12,28 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Get or Create
-func CreateConsumer(ctx context.Context, js jetstream.JetStream, cr *model.CreateConsumerRequest) (jetstream.Consumer, error) {
-	consumer, err := js.Consumer(ctx, cr.StreamName, cr.ConsumerName)
+// CreateConsumer idempotently retrieves an existing consumer or creates a new one with cfg.
+func CreateConsumer(ctx context.Context, js jetstream.JetStream, stream string, cfg jetstream.ConsumerConfig) (jetstream.Consumer, error) {
+	consumerName := cfg.Name
+	if consumerName == "" {
+		consumerName = cfg.Durable
+	}
 
+	consumer, err := js.Consumer(ctx, stream, consumerName)
 	if err == nil {
-
 		info, _ := consumer.Info(ctx)
-		log.Info().Msg("Consumer Already Exists: " + info.Name)
+		log.Info().Str("stream", stream).Str("consumer", info.Name).Msg("Consumer already exists")
 		return consumer, nil
 	}
 
-	if err == jetstream.ErrConsumerNotFound {
-
-		log.Info().Msg("Creating new consumer: " + cr.ConsumerName)
-
-		cc := jetstream.ConsumerConfig{
-			Durable:        cr.ConsumerName,
-			FilterSubjects: cr.FilterSubjects,
-			AckPolicy:      ResolveAckPolicy(cr.AckPolicy),
-			DeliverPolicy:  ResolveDeliverPolicy(cr.DeliverPolicy),
-		}
-
-		if cr.DeliverSubject != "" {
-			// push consumer
-			cc.DeliverSubject = cr.DeliverSubject
-		}
-
-		consumer, err = js.CreateConsumer(ctx, cr.StreamName, cc)
+	if errors.Is(err, jetstream.ErrConsumerNotFound) {
+		log.Info().Str("stream", stream).Str("consumer", consumerName).Msg("Creating new consumer")
+		consumer, err = js.CreateConsumer(ctx, stream, cfg)
 		if err != nil {
 			return nil, err
 		}
-
 		info, _ := consumer.Info(ctx)
-		log.Info().Msg("Consumer Created: " + info.Name)
+		log.Info().Str("stream", stream).Str("consumer", info.Name).Msg("Consumer created successfully")
 		return consumer, nil
 	}
 
@@ -65,43 +54,20 @@ func DeleteConsumer(ctx context.Context, js jetstream.JetStream, cr *model.Creat
 	return err
 }
 
-const (
-	defaultReplayBatchSize = 50
-	maxReplayBatchSize     = 1024
-)
-
-// RangeType specifies whether stream iteration is bounded by sequence numbers or timestamps.
-type RangeType string
-
-const (
-	RangeBySequence RangeType = "sequence"
-	RangeByTime     RangeType = "time"
-)
-
-// RangeParams defines the boundaries for stream message replay or reprocessing.
-type RangeParams struct {
-	Type          RangeType
-	StartSequence uint64
-	EndSequence   uint64
-	StartTime     time.Time
-	EndTime       *time.Time
+// [TODO: USER_IMPLEMENT]
+// GetConsumer retrieves a reference to an existing consumer on the given stream.
+// Logic to be implemented by user.
+func GetConsumer(ctx context.Context, js jetstream.JetStream, stream, consumer string) (jetstream.Consumer, error) {
+	// Dummy stub: User to implement logic using js.Consumer(ctx, stream, consumer)
+	return nil, nil
 }
 
-// ConsumerEffect defines whether the consumer execution is audit-only or applies business side-effects.
-type ConsumerEffect string
-
-const (
-	EffectAudit    ConsumerEffect = "none"
-	EffectBusiness ConsumerEffect = "business-effect"
-)
-
-// ReplaySummary holds execution boundaries and statistics for replayed or reprocessed messages.
-type ReplaySummary struct {
-	FirstSequence  uint64
-	LastSequence   uint64
-	FirstTimestamp *model.FormattedTime
-	LastTimestamp  *model.FormattedTime
-	Count          int
+// [TODO: USER_IMPLEMENT]
+// Consume binds a message handler loop to a JetStream consumer and returns its ConsumeContext.
+// Logic to be implemented by user.
+func Consume(consumer jetstream.Consumer, handler func(msg jetstream.Msg), opts ...jetstream.PullConsumeOpt) (jetstream.ConsumeContext, error) {
+	// Dummy stub: User to implement logic using consumer.Consume(handler, opts...)
+	return nil, nil
 }
 
 // ProcessBusinessMessage simulates and applies domain business effects for a reprocessed message.
@@ -113,25 +79,6 @@ func ProcessBusinessMessage(ctx context.Context, seq uint64, subject string, dat
 		Msg("Executing business effect for reprocessed message")
 	// Reference implementation: In production, this invokes domain order/payment reconciliation,
 	// state mutations, ledgers, or downstream dispatching.
-	return nil
-}
-
-func validateRange(rng RangeParams) error {
-	switch rng.Type {
-	case RangeBySequence:
-		if rng.StartSequence == 0 || rng.EndSequence < rng.StartSequence {
-			return fmt.Errorf("invalid sequence range: start=%d, end=%d", rng.StartSequence, rng.EndSequence)
-		}
-	case RangeByTime:
-		if rng.StartTime.IsZero() {
-			return fmt.Errorf("invalid start time: startTime cannot be zero")
-		}
-		if rng.EndTime != nil && !rng.EndTime.IsZero() && rng.EndTime.Before(rng.StartTime) {
-			return fmt.Errorf("invalid time range: endTime %v cannot be before startTime %v", rng.EndTime, rng.StartTime)
-		}
-	default:
-		return fmt.Errorf("unsupported range type: %q", rng.Type)
-	}
 	return nil
 }
 

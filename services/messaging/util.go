@@ -1,9 +1,11 @@
 package messaging
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -152,4 +154,193 @@ func ReplyHandler(msg *nats.Msg) {
 	if err := msg.RespondMsg(replyMsg); err != nil {
 		log.Error().Msg("Failed to send structured response")
 	}
+}
+
+// ExtractSimulationAction inspects the X-Simulation-Action header (or JSON payload field "simulateAction")
+// returning normalized action strings: "ack", "nak", "nak-delay", "term", "in-progress", or "timeout".
+func ExtractSimulationAction(msg jetstream.Msg) string {
+	if headers := msg.Headers(); headers != nil {
+		if val := headers.Get("X-Simulation-Action"); val != "" {
+			return strings.ToLower(strings.TrimSpace(val))
+		}
+	}
+
+	// Fallback to checking payload JSON field: {"simulateAction": "..."}
+	var body map[string]any
+	if err := json.Unmarshal(msg.Data(), &body); err == nil {
+		if val, ok := body["simulateAction"]; ok && val != nil {
+			return strings.ToLower(strings.TrimSpace(fmt.Sprintf("%v", val)))
+		}
+	}
+
+	return "ack"
+}
+
+// ExecuteSimulationAction standardizes message processing simulation across all NATS acknowledgment verbs.
+func ExecuteSimulationAction(ctx context.Context, msg jetstream.Msg, clientName, consumerName, deliveryMode string, attempt uint64) {
+	action := ExtractSimulationAction(msg)
+
+	switch action {
+	case "nak":
+		log.Warn().
+			Str("client", clientName).
+			Str("consumer", consumerName).
+			Str("delivery", deliveryMode).
+			Uint64("attempt", attempt).
+			Msg("SIMULATION [nak]: Simulating transient error -> Sending msg.Nak() (message will be redelivered per BackOff)")
+		_ = msg.Nak()
+
+	case "nak-delay":
+		delay := 5 * time.Second
+		log.Warn().
+			Str("client", clientName).
+			Str("consumer", consumerName).
+			Str("delivery", deliveryMode).
+			Uint64("attempt", attempt).
+			Dur("delay", delay).
+			Msg("SIMULATION [nak-delay]: Simulating rate limit -> Sending msg.NakWithDelay(5s)")
+		_ = msg.NakWithDelay(delay)
+
+	case "term":
+		log.Error().
+			Str("client", clientName).
+			Str("consumer", consumerName).
+			Str("delivery", deliveryMode).
+			Uint64("attempt", attempt).
+			Msg("SIMULATION [term]: Simulating poison pill -> Sending msg.Term() (permanently terminated without redelivery)")
+		_ = msg.Term()
+
+	case "in-progress":
+		log.Info().
+			Str("client", clientName).
+			Str("consumer", consumerName).
+			Str("delivery", deliveryMode).
+			Uint64("attempt", attempt).
+			Msg("SIMULATION [in-progress]: Simulating long-running job -> Sending msg.InProgress() heartbeat to reset AckWait")
+		_ = msg.InProgress()
+
+		time.Sleep(1 * time.Second) // Process additional work after extending timeout
+		AcknowledgeMessage(ctx, msg, clientName, consumerName, deliveryMode)
+
+	case "timeout":
+		log.Warn().
+			Str("client", clientName).
+			Str("consumer", consumerName).
+			Str("delivery", deliveryMode).
+			Uint64("attempt", attempt).
+			Msg("SIMULATION [timeout]: Simulating worker hang -> Letting AckWait expire without ACK (server will auto-redeliver)")
+		// Do nothing; allow server-side AckWait timer to expire
+
+	default:
+		// Standard Happy Path
+		time.Sleep(500 * time.Millisecond) // Clean simulated processing time
+		AcknowledgeMessage(ctx, msg, clientName, consumerName, deliveryMode)
+	}
+}
+
+// AcknowledgeMessage acknowledges completion back to JetStream (DoubleAck for exactly-once, Ack for at-least-once).
+func AcknowledgeMessage(ctx context.Context, msg jetstream.Msg, clientName, consumerName, deliveryMode string) {
+	if deliveryMode == "exactly-once" {
+		if err := msg.DoubleAck(ctx); err != nil {
+			log.Error().
+				Err(err).
+				Str("client", clientName).
+				Str("consumer", consumerName).
+				Msg("Failed to DoubleACK message")
+			return
+		}
+		log.Info().
+			Str("client", clientName).
+			Str("consumer", consumerName).
+			Msg("DoubleACK sent and confirmed by server successfully")
+	} else {
+		if err := msg.Ack(); err != nil {
+			log.Error().
+				Err(err).
+				Str("client", clientName).
+				Str("consumer", consumerName).
+				Msg("Failed to ACK message")
+			return
+		}
+		log.Info().
+			Str("client", clientName).
+			Str("consumer", consumerName).
+			Msg("ACK sent successfully")
+	}
+}
+
+// GracefulShutdown performs a unified graceful shutdown across JetStream consumers, Core NATS subscriptions,
+// waits for active goroutines, and drains the connection.
+func GracefulShutdown(clientName string, nc *nats.Conn, wg *sync.WaitGroup, timeout time.Duration, subs []*nats.Subscription, ccs ...jetstream.ConsumeContext) {
+	// 1. Stop JetStream consume context fetch loops
+	for _, cc := range ccs {
+		if cc != nil {
+			cc.Stop()
+		}
+	}
+	if len(ccs) > 0 {
+		log.Info().Str("client", clientName).Msg("Stopped JetStream consumer message fetch loop(s)")
+	}
+
+	// 2. Drain Core NATS subscriptions
+	for _, sub := range subs {
+		if sub != nil {
+			if err := sub.Drain(); err != nil {
+				log.Error().Err(err).Str("client", clientName).Msg("Error during subscription drain")
+			} else {
+				log.Info().Str("client", clientName).Msg("Subscription drained successfully")
+			}
+		}
+	}
+
+	// 3. Wait for in-flight tasks with a bounded timeout
+	if wg != nil {
+		if timeout <= 0 {
+			timeout = 5 * time.Second
+		}
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			log.Info().Str("client", clientName).Msg("All in-flight messages completed cleanly")
+		case <-shutdownCtx.Done():
+			log.Warn().Str("client", clientName).Msg("Shutdown timeout reached before all in-flight messages finished")
+		}
+	}
+
+	// 4. Drain and close NATS connection
+	if nc != nil {
+		if err := nc.Drain(); err != nil {
+			log.Error().Err(err).Str("client", clientName).Msg("Error during NATS connection drain")
+		} else {
+			log.Info().Str("client", clientName).Msg("NATS connection successfully drained and closed")
+		}
+	}
+}
+
+// validateRange verifies that replay and reprocess sequence/time ranges are logically valid.
+func validateRange(rng RangeParams) error {
+	switch rng.Type {
+	case RangeBySequence:
+		if rng.StartSequence == 0 || rng.EndSequence < rng.StartSequence {
+			return fmt.Errorf("invalid sequence range: start=%d, end=%d", rng.StartSequence, rng.EndSequence)
+		}
+	case RangeByTime:
+		if rng.StartTime.IsZero() {
+			return fmt.Errorf("invalid start time: startTime cannot be zero")
+		}
+		if rng.EndTime != nil && !rng.EndTime.IsZero() && rng.EndTime.Before(rng.StartTime) {
+			return fmt.Errorf("invalid time range: endTime %v cannot be before startTime %v", rng.EndTime, rng.StartTime)
+		}
+	default:
+		return fmt.Errorf("unsupported range type: %q", rng.Type)
+	}
+	return nil
 }

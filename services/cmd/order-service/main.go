@@ -36,8 +36,8 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to initialize NATS Client")
 	}
 
-	// RTT
-	rtt, err := nc.RTT()
+	// Verify NATS round-trip latency via natsclient utility
+	rtt, err := natsclient.GetRTT(nc)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to get RTT")
 	}

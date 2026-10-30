@@ -247,3 +247,16 @@ type ReprocessResponse struct {
 	StartTime     *FormattedTime `json:"startTime,omitempty"`
 	EndTime       *FormattedTime `json:"endTime,omitempty"`
 }
+
+// MaxDeliverAdvisory represents the NATS JetStream advisory event emitted to
+// $JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.<stream>.<consumer> when delivery attempts reach MaxDeliver.
+type MaxDeliverAdvisory struct {
+	Type       string    `json:"type"`
+	ID         string    `json:"id"`
+	Timestamp  time.Time `json:"timestamp"`
+	Stream     string    `json:"stream"`
+	Consumer   string    `json:"consumer"`
+	StreamSeq  uint64    `json:"stream_seq"`
+	Deliveries uint64    `json:"deliveries"`
+	Domain     string    `json:"domain,omitempty"`
+}

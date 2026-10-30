@@ -1,10 +1,20 @@
 package natsclient
 
 import (
+	"fmt"
 	"log"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
+
+// GetRTT returns the round-trip time between the client and the connected NATS server.
+func GetRTT(nc *nats.Conn) (time.Duration, error) {
+	if nc == nil {
+		return 0, fmt.Errorf("nats connection is nil")
+	}
+	return nc.RTT()
+}
 
 func PrintConnectionDetails(nc *nats.Conn) {
 	if nc == nil {

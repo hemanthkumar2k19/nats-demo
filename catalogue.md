@@ -17,5 +17,5 @@
 | 13 | Message Replay | Historical Audit Replay | Non-mutating stream event replay by sequence or timestamp range with execution summary | Completed |
 | 14 | Message Replay | Message Reprocessing | Re-executing stream messages with domain business effects by sequence or timestamp range | Completed |
 | 15 | Failure Handling and Reliability | Publisher Reliability | Disconnect handling, retry buffers, and connection reconnect options | Planned |
-| 16 | Failure Handling and Reliability | Consumer Reliability | Graceful shutdown, crash redelivery, max delivery limits, and DLQ advisories | Planned |
+| 16 | Failure Handling and Reliability | Consumer Reliability & Dead Letter Queue | Graceful shutdown, crash redelivery, max delivery limits, and dedicated DLQ worker | Completed |
 | 17 | Failure Handling and Reliability | NATS Cluster Reliability | Cluster node failure, failover resilience, and Raft consensus validation | Planned |
