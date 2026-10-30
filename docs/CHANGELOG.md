@@ -2,6 +2,15 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-10-30] Simplify Stream Sequences API to Single GET Endpoint with Path Parameter
+
+- **Change:**
+  - Simplified `GetStreamSequencesHandler` in [services/api/stream_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/stream_handler.go) to exclusively accept the stream name via URL path parameter (`c.Param("stream")`).
+  - Removed duplicate `POST /streams/sequences` route and removed query/body fallback parsing from `GetStreamSequencesHandler`.
+  - Removed unused `model.StreamSequencesRequest` struct from [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go).
+- **Reason:** Enforce strict idiomatic REST conventions (`GET /api/v1/streams/:stream/sequences`) and eliminate redundant route and payload code.
+- **Affected Area:** [services/api/stream_handler.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/api/stream_handler.go), [services/model/models.go](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/services/model/models.go), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-29] Rich Message Publishing with Runtime Short ID Generation and Header Enrichment
 
 - **Change:**

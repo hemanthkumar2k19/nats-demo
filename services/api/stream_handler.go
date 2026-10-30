@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"services/model"
 	"services/service"
 
 	"github.com/gin-gonic/gin"
@@ -22,29 +21,12 @@ func NewStreamHandler(svc *service.Service) *StreamHandler {
 	}
 }
 
-// GetStreamSequencesHandler handles GET /api/v1/streams/:stream/sequences and POST /api/v1/streams/sequences.
+// GetStreamSequencesHandler handles GET /api/v1/streams/:stream/sequences.
 // It returns available sequence bounds, timestamps, and message counts to guide replay requests.
 func (h *StreamHandler) GetStreamSequencesHandler(c *gin.Context) {
 	streamName := c.Param("stream")
 	if streamName == "" {
-		streamName = c.Query("stream")
-	}
-	if streamName == "" {
-		streamName = c.Query("name")
-	}
-	if streamName == "" && c.Request.ContentLength > 0 {
-		var req model.StreamSequencesRequest
-		if err := c.ShouldBindJSON(&req); err == nil {
-			if req.StreamName != "" {
-				streamName = req.StreamName
-			} else if req.Name != "" {
-				streamName = req.Name
-			}
-		}
-	}
-
-	if streamName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Stream name is required (path param /streams/:stream/sequences, query ?stream=, or JSON body)"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Stream name is required in path: /api/v1/streams/:stream/sequences"})
 		return
 	}
 
@@ -64,5 +46,4 @@ func (h *StreamHandler) GetStreamSequencesHandler(c *gin.Context) {
 // RegisterRoutes registers stream sequence inspection API routes on the Gin router group.
 func (h *StreamHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/streams/:stream/sequences", h.GetStreamSequencesHandler)
-	rg.POST("/streams/sequences", h.GetStreamSequencesHandler)
 }

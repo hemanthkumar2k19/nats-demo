@@ -156,12 +156,6 @@ type DeleteStreamRequest struct {
 	Name string `json:"name"`
 }
 
-// StreamSequencesRequest defines the request payload for stream sequence inspection.
-type StreamSequencesRequest struct {
-	StreamName string `json:"streamName,omitempty"`
-	Name       string `json:"name,omitempty"`
-}
-
 // StreamSequencesResponse provides stream sequence and timestamp boundaries to guide replay requests.
 type StreamSequencesResponse struct {
 	StreamName     string        `json:"streamName"`
