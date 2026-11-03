@@ -1,0 +1,14 @@
+## OCP
+- 3 NATS Cluster Deployments
+  - Cluster communication through routes on port `6222`.
+  - JetStream enabled.
+    - `max_memory_store`: 512 MB
+    - `max_file_store`: 5 GB
+  - Client port `4222` exposed.
+  - Monitoring port `8222` exposed.
+- Kubernetes Service
+- Kubernetes NodePort
+- NATS Box
+  - Connects through NodePort: `{OCP_WORKER_HOST_IP:30222}`.
+  - Includes NATS CLI and benchmarking utilities.
+  - Reference: [NATS Box](https://github.com/nats-io/nats-box).

@@ -1,2 +1,7 @@
 *.html
 *.DS_Store
+
+AGENTS.md
+
+results/
+deploy/data
