@@ -1,349 +1,167 @@
-# NATS Capacity Benchmarking
+# NATS Capacity Benchmarking - Architecture & Methodology Design
 
-## 1. Overview
+## 1. Overview & Objectives
 
-The objective of NATS Capacity Benchmarking is to understand NATS Server resource consumption under different messaging workloads and identify sustainable throughput limits.
+The objective of NATS Capacity Benchmarking is to quantify NATS Server resource consumption under diverse messaging workloads and identify sustainable throughput limits.
 
-The benchmarking exercise focuses on:
+This benchmarking exercise provides empirical data to:
+- Understand Core NATS and JetStream performance characteristics under controlled conditions.
+- Measure CPU, memory, network, and storage consumption across cluster nodes.
+- Understand the performance impact of message size, client concurrency, replication factors, and consumer configurations.
+- Identify the maximum sustainable throughput boundary under fixed infrastructure limits.
+- Establish infrastructure sizing models, capacity planning guidelines, and TCO estimations.
 
-- Understanding Core NATS and JetStream performance characteristics.
-- Measuring CPU, memory, network and storage consumption.
-- Understanding the impact of message size, concurrency, replication and consumer configuration.
-- Identifying maximum sustainable throughput under a fixed infrastructure configuration.
-- Generating resource consumption data to support infrastructure capacity planning and TCO estimation.
+The benchmarking approach follows a controlled, workload-driven methodology inspired by Synadia's enterprise NATS benchmarking standards.
 
-The benchmarking approach follows a controlled, workload-driven methodology inspired by Synadia's NATS benchmarking exercises.
+---
 
 ## 2. Benchmarking Test Scenarios
 
-Benchmarking is divided into Core NATS and JetStream. Each messaging type has three primary scenarios.
+Benchmarking evaluates two core messaging engines: Core NATS (in-memory broadcast/queue) and JetStream (persisted, replicated streaming).
 
-### 2.1 Core NATS
+### 2.1 Core NATS Scenarios
 
-| Test Scenario | Description | Objective |
-|---|---|---|
-| Publish | Publishers send messages without active subscribers. | Measure publishing throughput and server resource consumption. |
-| Subscribe Setup | Subscribers establish connections and subscriptions without active publishers. | Understand connection and subscription overhead. |
-| Publish + Subscribe | Publishers and subscribers operate simultaneously. | Measure message delivery throughput and fan-out impact. |
+| Scenario | Description | Primary Objective |
+| :--- | :--- | :--- |
+| **Publish** | Publishers transmit messages without active subscribers. | Measure raw publishing throughput, connection handling, and server ingress/routing costs without egress delivery overhead. |
+| **Subscribe Setup** | Subscribers establish connections and active subscriptions without publishers. | Measure connection rate (`conns/sec`), handshake latency, and server memory footprint per active subscription. |
+| **Publish + Subscribe** | Publishers and subscribers operate concurrently. | Measure end-to-end delivery throughput, client-side latency distributions, and the server resource impact of fan-out replication. |
 
-**Considerations:**
+#### Architectural Considerations:
+- **In-Memory Semantics**: Core NATS does not persist messages to disk; disk block I/O is expected to be zero.
+- **Subscribe Setup vs Message Throughput**: Subscribe setup measures connection and subscription metadata overhead; it must not be reported as message throughput.
+- **Subscription Patterns**:
+  - **Normal Pub/Sub (Broadcast)**: Every matching subscriber receives a distinct copy of each published message ($Fan\text{-}out = \text{Subscriber Concurrency}$).
+  - **Queue Groups (Load Balancing)**: Messages published to a subject are distributed among members of the queue group ($Fan\text{-}out = 1\times$).
 
-- Core NATS does not persist messages.
-- Subscribe Setup is not a message-throughput benchmark; it measures subscription and connection overhead.
-- Normal Pub/Sub and Queue Group consumption should be treated as separate workload profiles.
-- In normal Pub/Sub, each matching subscriber receives a copy of the message.
-- In Queue Groups, messages are distributed among group members.
+### 2.2 JetStream Scenarios
 
-### 2.2 JetStream
+| Scenario | Description | Primary Objective |
+| :--- | :--- | :--- |
+| **Publish** | Publishers append messages to a JetStream Stream without active consumers. | Measure write throughput, disk I/O write rate, and Raft consensus replication latency. |
+| **Consume** | Consumers retrieve previously persisted messages from a pre-populated Stream without active publishers. | Measure historical replay throughput, disk I/O read rate, and batch acknowledgment performance. |
+| **Publish + Consume** | Publishers and consumers operate concurrently. | Measure sustainable throughput under concurrent publishing, disk persistence, Raft replication, delivery, and explicit acknowledgments. |
 
-| Test Scenario | Description | Objective |
-|---|---|---|
-| Publish | Publishers send messages to a JetStream Stream without active consumers. | Measure persistence and replication write performance. |
-| Consume | Consumers retrieve previously persisted messages without concurrent publishing. | Measure historical consumption and replay throughput. |
-| Publish + Consume | Publishers and consumers operate simultaneously. | Measure sustained throughput under concurrent publishing, persistence, replication and consumption. |
+#### Architectural Considerations:
+- **Prepopulation**: Consume-only tests must use a Stream pre-populated with steady-state message volumes.
+- **Consumer Isolation**: Initial profiles evaluate durable pull consumers with explicit acknowledgment (`Explicit`).
+- **Resource Cleanup**: Stream and consumer lifecycles must be isolated to benchmark-owned resources.
 
-**Considerations:**
+---
 
-- Publish-only tests should run without active consumers.
-- Consume-only tests should use a pre-populated Stream.
-- Publish + Consume tests should run publishing and consumption concurrently.
-- Consumer throughput should be recorded both per consumer and in aggregate.
-- The initial consumption profile will use durable pull consumers.
+## 3. Workload Evaluation Dimensions
 
-## 3. Benchmark Dimensions
-
-Benchmark dimensions define the workload and NATS configuration used during each test.
+Workload dimensions define the parameter space systematically explored across tests.
 
 ### 3.1 Common Workload Dimensions
 
-Applicable to both Core NATS and JetStream.
-
-| Dimension | Description | Initial Values |
-|---|---|---|
-| Message Size | Payload size of individual messages. | 1 KiB, 5 KiB, 10 KiB, 100 KiB |
-| Publisher Concurrency | Number of concurrent publisher clients. | 1, 2, 4, 8 |
-| Consumer Concurrency | Number of concurrent subscriber/consumer clients. | 1, 2, 4 |
-| Target Throughput | Configured publishing rate. | Unthrottled initially; fixed-rate tests subsequently |
-| Test Volume | Total payload volume processed. | At least 1 GiB per run as a reference |
-| Test Duration | Measurement duration. | Consistent duration sufficient to reach steady state |
-| Subject Distribution | Number of subjects used by the workload. | Single subject initially |
-
-Publisher and consumer concurrency should be varied independently to understand their individual impact.
-
-### 3.2 Core NATS Dimensions
-
-| Dimension | Description |
-|---|---|
-| Publisher Clients | Number of concurrent publishing clients. |
-| Subscriber Clients | Number of concurrent subscribing clients. |
-| Subscription Pattern | Normal Pub/Sub or Queue Group. |
-| Fan-out | Number of subscribers receiving each published message. |
-| Subject Distribution | Single or multiple subjects. |
-
-### 3.3 JetStream Stream Dimensions
-
-Stream configuration determines persistence, replication and storage characteristics.
-
-| Dimension | Description | Initial Baseline |
-|---|---|---|
-| Storage Type | File or Memory storage. | File |
-| Replication Factor | Number of Stream replicas. | 3 |
-| Retention Policy | Limits, WorkQueue or Interest. | Limits |
-| Stream Count | Number of Streams. | 1 |
-| Subjects per Stream | Number of subjects captured by a Stream. | 1 |
-| Maximum Stream Bytes | Configured storage limit. | Fixed and documented |
+| Dimension | Description | Baseline Values |
+| :--- | :--- | :--- |
+| **Message Size** | Payload size of individual messages. | 1 KiB, 5 KiB, 10 KiB, 100 KiB |
+| **Publisher Concurrency** | Number of concurrent publishing client processes/connections. | 1, 2, 4, 8 |
+| **Consumer Concurrency** | Number of concurrent subscribing or consuming clients. | 1, 2, 4, 8 |
+| **Target Throughput** | Configured rate ceiling (msgs/sec) or unthrottled. | 1k, 5k, 10k, 25k, 50k, unthrottled |
+| **Test Duration** | Measurement window sufficient to achieve steady-state. | 30s - 60s |
+| **Subject Cardinality** | Number of subjects traversed by the workload. | Single subject vs Multi-subject (1k, 10k) |
+
+### 3.2 Core NATS Specific Dimensions
+
+| Dimension | Scope & Impact |
+| :--- | :--- |
+| **Publisher Clients** | Concurrency of publishing connections through the load balancer. |
+| **Subscriber Clients** | Concurrency of subscribing connections receiving message streams. |
+| **Subscription Pattern** | Normal Pub/Sub broadcast vs Queue Group load-balancing. |
+| **Fan-Out Multiplier** | Ratio of delivered messages to published messages ($\text{Deliveries} / \text{Publications}$). |
+| **Subject Distribution** | Single subject vs tokenized multi-subject routing trees (`--multisubject`). |
+
+### 3.3 JetStream Specific Dimensions
+
+| Dimension | Description | Baseline Setting |
+| :--- | :--- | :--- |
+| **Storage Type** | Storage engine for stream persistence. | `File` (disk storage) |
+| **Replication Factor** | Number of Stream replicas maintained across cluster nodes. | `3` (R=3 Raft cluster) |
+| **Retention Policy** | Retention criteria for stream cleanup. | `Limits` (size / age / count) |
+| **Consumer Delivery** | Mechanism used to retrieve stream messages. | `Pull` (client batch fetch) |
+| **ACK Policy** | Message receipt acknowledgment contract. | `Explicit` (per-message ACK) |
+
+---
+
+## 4. Infrastructure Baseline & Deployment Architecture
+
+To ensure scientific validity and repeatability, the infrastructure configuration remains fixed throughout a benchmark series:
+
+```
+[ Benchmark Client (Host) ]
+            |
+            v  (Port :4222)
+    [ HAProxy L4 LB ]  (0.5 CPU, 512 MB)
+      /     |     \
+     /      |      \
+    v       v       v
+[nats-1] [nats-2] [nats-3]  (Each: 1.0 CPU, 1 GB RAM, Disk Quotas)
+   |<====== Full Mesh Cluster Routes (Port :6222) ======>|
+```
+
+### Infrastructure Specifications:
+- **Node Count**: 3-node NATS cluster running in full-mesh clustering (`nats-1`, `nats-2`, `nats-3`).
+- **Resource Constraints**: Fixed CPU quotas (`cpus: 1.0`) and memory limits (`mem_limit: 1g`) enforced via container configuration.
+- **Client Ingress**: Client connections access the cluster exclusively through an L4 TCP load balancer (HAProxy) using round-robin distribution.
+- **Isolation**: Benchmark workload clients run on the host machine outside the NATS container runtime to prevent client CPU contention with server nodes.
+
+---
+
+## 5. Capacity Identification Methodology
+
+The benchmark follows a **Fixed Infrastructure + Incremental Load** methodology:
+
+```mermaid
+flowchart LR
+    S1["1. Preflight Validation\n(Ports, Health, Routes)"] --> S2["2. Idle Baseline\n(15s Background Metrics)"]
+    S2 --> S3["3. Baseline Test\n(Standard Concurrency & 1 KiB)"]
+    S3 --> S4["4. Dimensional Sweeps\n(Vary 1 Parameter at a Time)"]
+    S4 --> S5["5. Load Ladder\n(Step Throughput to Limit)"]
+    S5 --> S6["6. Capacity Boundary\n(Identify Saturation Point)"]
+```
+
+### Steps:
+1. **Preflight Verification**: Validate network reachability, cluster quorum, monitoring URLs, and dependency tooling.
+2. **Idle Baseline**: Sample 15 seconds of idle cluster metrics to establish background CPU/RAM floors.
+3. **Controlled Incremental Load**: Progressively increase throughput while keeping message size and concurrency fixed.
+4. **Capacity Boundary Identification**: Maximum sustainable throughput is defined as the highest throughput achieved where:
+   - Message delivery efficiency is 100% (zero message drop or unhandled errors).
+   - Server CPU utilization exhibits headroom (<80-85% peak across all nodes).
+   - Client-side P99 latency remains within acceptable SLA thresholds (typically < 10 ms).
+   - Inter-node cluster routes remain healthy without queue overflows.
+
+---
+
+## 6. Telemetry & Results Architecture
+
+Every benchmark execution generates a structured, immutable artifact bundle within a timestamped directory:
+
+| Artifact | Purpose | Primary Consumer |
+| :--- | :--- | :--- |
+| **`report.html`** | Self-contained, zero-dependency offline HTML dashboard with KPI cards, latency percentiles, infrastructure summary, and print styles. | Humans, Architects, Stakeholders |
+| **`summary.csv`** | Machine-readable execution summary with cluster aggregates, achieved rates, fan-out, and exit status. | Automated tooling, CI/CD, Trend Analysis |
+| **`node-summary.csv`** | Per-node resource consumption breakdown (avg/peak CPU, RAM, Net RX/TX MB/s, Block Read/Write MB/s). | Capacity Engineers, Bottleneck Identification |
+| **`metrics.csv`** | Raw time-series telemetry sampled at regular intervals across all cluster containers. | Deep-dive telemetry, Time-series graphing |
+| **`workload.log`** | Standard output and error logs from publisher workload generation. | Debugging, Latency percentiles |
+| **`subscriber.log`** | Standard output and error logs from subscriber delivery clients. | Delivery verification, Bandwidth confirmation |
+| **`test-config.txt`** | Full configuration snapshot used for the benchmark run. | Repeatability, Audit trail |
+
+---
+
+## 7. Phased Implementation Roadmap
+
+- **Phase 1: Baseline Scenarios**: Core NATS and JetStream baseline workloads under standard parameters.
+- **Phase 2: Dimensional Scaling**: Systematic exploration of concurrency, message sizes, and fan-out multipliers.
+- **Phase 3: JetStream Persistence & Replication**: Evaluation of File vs Memory storage, R=1 vs R=3 replication overhead, and retention limits.
+- **Phase 4: Consumer Optimization**: Pull vs Push delivery modes, ACK policies, batch sizes, and worker concurrency.
+- **Phase 5: Production Capacity & Sizing Standards**: Deriving hardware sizing formulas, operational limits, and enterprise deployment guidelines.
 
-The initial benchmark should use one Stream, one subject, File storage, replication factor 3 and Limits retention.
+---
 
-Additional configurations should be evaluated independently rather than testing every possible combination.
+## 8. Related Documentation
 
-### 3.4 JetStream Consumer Dimensions
-
-Consumer configuration determines message delivery, acknowledgement and processing behaviour.
-
-| Dimension | Description | Initial Baseline |
-|---|---|---|
-| Consumer Type | Durable or Ephemeral. | Durable |
-| Delivery Mode | Pull or Push. | Pull |
-| ACK Policy | Explicit, None or All. | Explicit |
-| Consumer Count | Number of independent consumers. | 1 |
-| Worker Concurrency | Number of workers processing messages per consumer. | 1 |
-| Fetch Batch Size | Number of messages fetched per request. | Fixed and documented |
-| Max ACK Pending | Maximum number of unacknowledged messages. | Fixed and documented |
-| ACK Wait | Acknowledgement timeout. | Fixed and documented |
-
-**Important distinctions:**
-
-- Consumer count and worker concurrency are independent dimensions.
-- Multiple workers can share a consumer, whereas multiple consumers maintain independent consumption state.
-- Pull and Push delivery should be compared as separate workload profiles.
-- ACK policies should be evaluated independently.
-- Durable versus Ephemeral consumer comparison can be introduced as a subsequent experiment.
-
-## 4. Initial Benchmark Configuration
-
-The following configuration establishes a consistent starting point for the initial benchmark series.
-
-### 4.1 Infrastructure Baseline
-
-| Parameter | Configuration |
-|---|---|
-| NATS Nodes | 3 |
-| Deployment | Fixed three-node cluster |
-| Infrastructure Resources | Fixed CPU, Memory and Storage limits |
-| Client Location | Separate from NATS server nodes |
-| Client Connectivity | Exposed NATS endpoint / HAProxy |
-| Monitoring | Available container or platform metrics |
-
-Infrastructure configuration must remain unchanged throughout a benchmark series.
-
-### 4.2 Core NATS Baseline
-
-| Parameter | Configuration |
-|---|---|
-| Subject | Single benchmark subject |
-| Message Size | 1 KiB |
-| Publisher Concurrency | 8 |
-| Subscriber Concurrency | 1 |
-| Subscription Pattern | Normal Pub/Sub |
-
-### 4.3 JetStream Baseline
-
-**Stream Configuration**
-
-| Parameter | Configuration |
-|---|---|
-| Stream Count | 1 |
-| Subjects | 1 |
-| Storage | File |
-| Replication | 3 |
-| Retention | Limits |
-
-**Consumer Configuration**
-
-| Parameter | Configuration |
-|---|---|
-| Consumer Type | Durable |
-| Delivery Mode | Pull |
-| ACK Policy | Explicit |
-| Consumer Count | 1 |
-| Worker Concurrency | 1 |
-
-All other consumer parameters should be fixed and recorded for repeatability.
-
-## 5. Initial Benchmark Test Matrix
-
-The initial benchmark series should focus on establishing baseline performance and understanding the impact of message size and concurrency.
-
-| Messaging Type | Scenario | Publishers | Consumers | Message Sizes |
-|---|---|---:|---:|---|
-| Core NATS | Publish | 1, 2, 4, 8 | 0 | 1, 5, 10 KiB |
-| Core NATS | Publish + Subscribe | 8 | 1, 2, 4 | 1, 5, 10 KiB |
-| JetStream | Publish | 8 | 0 | 1, 5, 10 KiB |
-| JetStream | Consume | 0 | 1, 2, 4 | 1, 5, 10 KiB |
-| JetStream | Publish + Consume | 8 | 1, 2, 4 | 1, 5, 10 KiB |
-
-For JetStream Consume tests, prepopulate the Stream before starting the measurement.
-
-The initial test matrix is not intended to exhaust every possible configuration. Additional dimensions should be introduced after establishing the baseline.
-
-## 6. Results to Capture
-
-Results are divided into workload performance, infrastructure resource consumption and JetStream-specific measurements.
-
-### 6.1 Workload Performance
-
-| Metric | Description |
-|---|---|
-| Publish Throughput | Successfully published messages per second. |
-| Publish Bandwidth | Published data volume per second (MiB/sec). |
-| Consume Throughput | Consumed messages per second. |
-| Consume Bandwidth | Consumed data volume per second (MiB/sec). |
-| Aggregate Consume Throughput | Total consumption throughput across consumers. |
-| Per-Consumer Throughput | Individual consumer throughput. |
-| Achieved Throughput | Actual throughput compared with configured target. |
-| Total Messages | Successfully published and consumed messages. |
-| Test Duration | Actual elapsed measurement duration. |
-| Errors / Timeouts | Failed, timed-out or incomplete operations. |
-
-For Core NATS fan-out workloads, distinguish published messages from aggregate subscriber deliveries.
-
-### 6.2 Infrastructure Resource Consumption
-
-Infrastructure metrics should be captured individually for every NATS node.
-
-| Metric | Aggregation |
-|---|---|
-| CPU Utilization | Average and Peak (%) |
-| CPU Consumption | Average and Peak (cores) |
-| Memory Utilization | Average and Peak (%) |
-| Memory Consumption | Average and Peak (bytes) |
-| Network Ingress | Average and Peak (MiB/sec) |
-| Network Egress | Average and Peak (MiB/sec) |
-| Disk Read Throughput | Average and Peak (MiB/sec) |
-| Disk Write Throughput | Average and Peak (MiB/sec) |
-| Disk IOPS | Average and Peak, where available |
-| Disk Utilization | Used and Available Storage, where available |
-
-Cluster-level CPU and memory consumption should also be calculated.
-
-Per-node results must be retained to identify uneven resource distribution and individual node bottlenecks.
-
-### 6.3 JetStream-Specific Measurements
-
-| Metric | Purpose |
-|---|---|
-| Stream Message Count | Verify persisted message count. |
-| Stream Storage Consumed | Understand persistence footprint. |
-| Consumer Pending Messages | Identify consumer backlog. |
-| Consumer ACK Pending | Identify unacknowledged messages. |
-| Redelivered Messages | Identify repeated deliveries. |
-| Consumer Lag | Understand processing delay. |
-
-These measurements should be captured before and after each test, and during execution where practical.
-
-## 7. Benchmark Execution Methodology
-
-The benchmark follows a Fixed Infrastructure + Incremental Load approach.
-
-### Step 1: Establish Infrastructure Baseline
-
-- Deploy the NATS cluster.
-- Fix CPU, memory and storage limits.
-- Verify cluster health and replication configuration.
-- Verify client connectivity.
-- Capture idle resource consumption.
-
-### Step 2: Execute Workload
-
-- Select a benchmark scenario.
-- Configure message size and client concurrency.
-- Execute the workload.
-- Capture workload and infrastructure metrics.
-- Record the actual test duration and processed message volume.
-
-### Step 3: Incremental Load Testing
-
-- Increase target throughput progressively.
-- Keep other workload dimensions unchanged.
-- Capture resource consumption at each throughput level.
-- Identify the maximum sustainable throughput.
-- Perform finer-grained tests around the identified capacity boundary.
-
-### Step 4: Configuration Comparison
-
-After establishing the baseline, vary one dimension at a time.
-
-Examples:
-
-- Message size.
-- Publisher concurrency.
-- Consumer count.
-- Worker concurrency.
-- Stream storage type.
-- Replication factor.
-- Retention policy.
-- Consumer delivery mode.
-- ACK policy.
-
-### Step 5: Result Aggregation
-
-For each test:
-
-- Preserve raw time-series metrics.
-- Generate average and peak resource consumption.
-- Calculate network and disk throughput from counter deltas.
-- Generate per-node summaries.
-- Generate cluster-level summaries.
-- Record workload configuration and achieved throughput.
-
-### Step 6: Capacity Identification
-
-Identify maximum sustainable throughput based on:
-
-- Successful message processing.
-- Acceptable error and timeout rates.
-- CPU and memory headroom.
-- Network and disk resource consumption.
-- Stable consumer backlog and processing behaviour.
-
-The objective is to identify sustainable operating capacity, not the point at which the cluster fails.
-
-## 8. Result Organization
-
-Each benchmark execution should produce the following artifacts.
-
-| Artifact | Description |
-|---|---|
-| `config.json` | Complete workload and NATS configuration. |
-| `metrics.csv` | Raw infrastructure time-series metrics. |
-| `summary.csv` | Aggregated results for each benchmark test. |
-| `node-summary.csv` | Aggregated resource metrics for each NATS node. |
-| `workload.log` | Benchmark execution output and errors. |
-
-Each result should be identifiable by its messaging type, scenario and configuration.
-
-## 9. Benchmarking Phases
-
-| Phase | Scope | Objective |
-|---|---|---|
-| Phase 1 | Core NATS and JetStream baseline scenarios | Establish baseline performance and resource consumption. |
-| Phase 2 | Message size and publisher/consumer concurrency | Understand workload scaling characteristics. |
-| Phase 3 | JetStream Stream configuration | Understand storage, replication and retention impact. |
-| Phase 4 | JetStream Consumer configuration | Understand ACK, delivery mode, consumer and worker concurrency impact. |
-| Phase 5 | Capacity analysis | Identify sustainable throughput and infrastructure sizing requirements. |
-
-## 10. Expected Outcome
-
-The benchmarking exercise should provide the following:
-
-1. Maximum sustainable message throughput for Core NATS and JetStream.
-2. Resource consumption at different workload levels.
-3. Per-node and cluster-level CPU, memory, network and storage requirements.
-4. Impact of message size and client concurrency.
-5. Impact of JetStream replication, storage and consumer configuration.
-6. Resource requirements for expected production workloads.
-7. Data to support NATS infrastructure capacity planning and TCO estimation.
-
-## References
-- https://www.synadia.com/downloads/nats-kafka-tco-report.pdf
+- For the concrete catalog of executable test cases, test matrices, and execution run cards, refer to [`tests.md`](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/%20capacity-bench/tests.md).
+- For instructions on running the benchmark utility and configuring runtime parameters, refer to [`README.md`](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/%20capacity-bench/README.md).

@@ -33,9 +33,16 @@ source "$WORKLOAD_CONFIG"
 
 source "${ROOT_DIR}/scripts/preflight.sh"
 
+: "${MESSAGING_TYPE:=Core NATS}"
 : "${NATS_URL:=nats://127.0.0.1:4222}"
+: "${SCENARIO:=pubsub}"
+: "${SUBSCRIPTION_PATTERN:=pubsub}"
+: "${QUEUE_NAME:=benchmark-core-group}"
+: "${SUBJECT_DISTRIBUTION:=single}"
+: "${MULTI_SUBJECT_MAX:=10000}"
 : "${SUBJECT:=benchmark.core.test}"
 : "${TARGET_MSGS_PER_SEC:=1000}"
+: "${CONFIGURED_MESSAGE_COUNT:=}"
 : "${MESSAGE_SIZE:=1024}"
 : "${PUBLISHER_CONCURRENCY:=1}"
 : "${SUBSCRIBER_CONCURRENCY:=1}"
@@ -59,20 +66,60 @@ die() {
   exit 1
 }
 
+case "$SCENARIO" in
+  pubsub|publish|subscribe_setup) ;;
+  *) die "Invalid SCENARIO: $SCENARIO. Must be pubsub, publish, or subscribe_setup" ;;
+esac
+
+case "$SUBSCRIPTION_PATTERN" in
+  pubsub|queue) ;;
+  *) die "Invalid SUBSCRIPTION_PATTERN: $SUBSCRIPTION_PATTERN. Must be pubsub or queue" ;;
+esac
+
+case "$SUBJECT_DISTRIBUTION" in
+  single|multi) ;;
+  *) die "Invalid SUBJECT_DISTRIBUTION: $SUBJECT_DISTRIBUTION. Must be single or multi" ;;
+esac
+
 positive() {
-  [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "$1 must be a positive integer"
+  [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "$1 must be a positive integer (>= 1)"
+}
+
+non_negative() {
+  [[ "$2" =~ ^[0-9]+$ ]] || die "$1 must be a non-negative integer (>= 0)"
 }
 
 for x in \
-  "TARGET_MSGS_PER_SEC:$TARGET_MSGS_PER_SEC" \
   "MESSAGE_SIZE:$MESSAGE_SIZE" \
-  "PUBLISHER_CONCURRENCY:$PUBLISHER_CONCURRENCY" \
-  "SUBSCRIBER_CONCURRENCY:$SUBSCRIBER_CONCURRENCY" \
   "TEST_DURATION_SECONDS:$TEST_DURATION_SECONDS" \
   "METRICS_SAMPLE_INTERVAL:$METRICS_SAMPLE_INTERVAL" \
   "BASELINE_DURATION_SECONDS:$BASELINE_DURATION_SECONDS"; do
   positive "${x%%:*}" "${x#*:}"
 done
+
+non_negative "TARGET_MSGS_PER_SEC" "$TARGET_MSGS_PER_SEC"
+
+case "$SCENARIO" in
+  publish)
+    positive "PUBLISHER_CONCURRENCY" "$PUBLISHER_CONCURRENCY"
+    non_negative "SUBSCRIBER_CONCURRENCY" "$SUBSCRIBER_CONCURRENCY"
+    ;;
+  subscribe_setup)
+    non_negative "PUBLISHER_CONCURRENCY" "$PUBLISHER_CONCURRENCY"
+    positive "SUBSCRIBER_CONCURRENCY" "$SUBSCRIBER_CONCURRENCY"
+    ;;
+  pubsub)
+    positive "PUBLISHER_CONCURRENCY" "$PUBLISHER_CONCURRENCY"
+    positive "SUBSCRIBER_CONCURRENCY" "$SUBSCRIBER_CONCURRENCY"
+    ;;
+esac
+
+if [[ "$TARGET_MSGS_PER_SEC" -eq 0 ]]; then
+  TOTAL_MESSAGES="${CONFIGURED_MESSAGE_COUNT:-100000}"
+else
+  TOTAL_MESSAGES="${CONFIGURED_MESSAGE_COUNT:-$((TARGET_MSGS_PER_SEC * TEST_DURATION_SECONDS))}"
+fi
+positive "TOTAL_MESSAGES" "$TOTAL_MESSAGES"
 
 command -v nats >/dev/null || die "nats CLI not found"
 command -v python3 >/dev/null || die "python3 not found"
@@ -91,7 +138,12 @@ mkdir -p "$RESULT_DIR"
 
 cat > "$RESULT_DIR/test-config.txt" <<EOF
 test_id=${TEST_ID}
-messaging_type=Core NATS
+messaging_type=${MESSAGING_TYPE}
+scenario=${SCENARIO}
+subscription_pattern=${SUBSCRIPTION_PATTERN}
+queue_name=${QUEUE_NAME}
+subject_distribution=${SUBJECT_DISTRIBUTION}
+multi_subject_max=${MULTI_SUBJECT_MAX}
 nats_url=${NATS_URL}
 subject=${SUBJECT}
 target_publish_msgs_per_sec=${TARGET_MSGS_PER_SEC}
@@ -99,7 +151,7 @@ message_size_bytes=${MESSAGE_SIZE}
 publisher_concurrency=${PUBLISHER_CONCURRENCY}
 subscriber_concurrency=${SUBSCRIBER_CONCURRENCY}
 nominal_duration_seconds=${TEST_DURATION_SECONDS}
-configured_message_count=$((TARGET_MSGS_PER_SEC * TEST_DURATION_SECONDS))
+configured_message_count=${TOTAL_MESSAGES}
 metrics_backend=${METRICS_BACKEND}
 metrics_sample_interval_seconds=${METRICS_SAMPLE_INTERVAL}
 EOF
@@ -143,18 +195,33 @@ fi
 START="$(date +%s)"
 
 set +e
-"${ROOT_DIR}/scripts/workload.sh" \
-  "$NATS_URL" \
-  "$SUBJECT" \
-  "$PUBLISHER_CONCURRENCY" \
-  "$SUBSCRIBER_CONCURRENCY" \
-  "$((TARGET_MSGS_PER_SEC * TEST_DURATION_SECONDS))" \
-  "$MESSAGE_SIZE" \
-  "$TARGET_MSGS_PER_SEC" \
-  "$RESULT_DIR/subscriber.log" \
-  2>&1 | tee "$RESULT_DIR/workload.log"
-
-WORKLOAD_EXIT=${PIPESTATUS[0]}
+if [[ "$SCENARIO" == "subscribe_setup" ]]; then
+  bash "${ROOT_DIR}/scripts/sub_setup.sh" \
+    "$NATS_URL" \
+    "$SUBJECT" \
+    "$SUBSCRIBER_CONCURRENCY" \
+    "$TEST_DURATION_SECONDS" \
+    "$RESULT_DIR" \
+    2>&1 | tee "$RESULT_DIR/workload.log"
+  WORKLOAD_EXIT=${PIPESTATUS[0]}
+else
+  bash "${ROOT_DIR}/scripts/workload.sh" \
+    "$NATS_URL" \
+    "$SUBJECT" \
+    "$PUBLISHER_CONCURRENCY" \
+    "$SUBSCRIBER_CONCURRENCY" \
+    "$TOTAL_MESSAGES" \
+    "$MESSAGE_SIZE" \
+    "$TARGET_MSGS_PER_SEC" \
+    "$RESULT_DIR/subscriber.log" \
+    "$SCENARIO" \
+    "$SUBSCRIPTION_PATTERN" \
+    "$QUEUE_NAME" \
+    "$SUBJECT_DISTRIBUTION" \
+    "$MULTI_SUBJECT_MAX" \
+    2>&1 | tee "$RESULT_DIR/workload.log"
+  WORKLOAD_EXIT=${PIPESTATUS[0]}
+fi
 set -e
 
 END="$(date +%s)"

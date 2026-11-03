@@ -10,21 +10,108 @@ from collections import defaultdict
 from pathlib import Path
 
 
-(
-    result_dir,
-    test_id,
-    subject,
-    target_rate,
-    msg_size,
-    pubs,
-    subs,
-    nominal_duration,
-    actual_duration,
-    workload_exit,
-    backend
-) = sys.argv[1:]
+if len(sys.argv) == 2:
+    result_dir = Path(sys.argv[1])
+    test_id = result_dir.name
+    subject = ""
+    target_rate = "0"
+    msg_size = "0"
+    pubs = "1"
+    subs = "1"
+    nominal_duration = "0"
+    actual_duration = "0"
+    workload_exit = "0"
+    backend = "podman"
 
-result_dir = Path(result_dir)
+    summary_path = result_dir / "summary.csv"
+    config_path = result_dir / "test-config.txt"
+
+    if summary_path.exists():
+        with summary_path.open() as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                test_id = row.get("test_id", test_id)
+                subject = row.get("subject", subject)
+                target_rate = row.get("target_publish_msgs_per_sec", target_rate)
+                msg_size = row.get("message_size_bytes", msg_size)
+                pubs = row.get("publisher_concurrency", pubs)
+                subs = row.get("subscriber_concurrency", subs)
+                nominal_duration = row.get("nominal_duration_seconds", nominal_duration)
+                actual_duration = row.get("actual_duration_seconds", actual_duration)
+                workload_exit = row.get("workload_exit_code", workload_exit)
+                backend = row.get("metrics_backend", backend)
+                break
+    elif config_path.exists():
+        cfg = {}
+        for line in config_path.read_text(errors="replace").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                cfg[k.strip()] = v.strip()
+        test_id = cfg.get("test_id", test_id)
+        subject = cfg.get("subject", subject)
+        target_rate = cfg.get("target_publish_msgs_per_sec", target_rate)
+        msg_size = cfg.get("message_size_bytes", msg_size)
+        pubs = cfg.get("publisher_concurrency", pubs)
+        subs = cfg.get("subscriber_concurrency", subs)
+        nominal_duration = cfg.get("nominal_duration_seconds", nominal_duration)
+        backend = cfg.get("metrics_backend", backend)
+elif len(sys.argv) >= 12:
+    (
+        result_dir,
+        test_id,
+        subject,
+        target_rate,
+        msg_size,
+        pubs,
+        subs,
+        nominal_duration,
+        actual_duration,
+        workload_exit,
+        backend
+    ) = sys.argv[1:12]
+    result_dir = Path(result_dir)
+else:
+    print(
+        "Usage: aggregate.py <result_dir> [test_id subject target_rate msg_size pubs subs nominal_dur actual_dur exit backend]",
+        file=sys.stderr
+    )
+    sys.exit(1)
+
+scenario = "pubsub"
+subscription_pattern = "pubsub"
+queue_name = "benchmark-core-group"
+subject_distribution = "single"
+multi_subject_max = "10000"
+
+config_file_path = result_dir / "test-config.txt"
+if config_file_path.exists():
+    for line in config_file_path.read_text(errors="replace").splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            k = k.strip()
+            v = v.strip()
+            if k == "scenario":
+                scenario = v
+            elif k == "subscription_pattern":
+                subscription_pattern = v
+            elif k == "queue_name":
+                queue_name = v
+            elif k == "subject_distribution":
+                subject_distribution = v
+            elif k == "multi_subject_max":
+                multi_subject_max = v
+
+if scenario == "publish":
+    fanout_ratio = 0
+elif scenario == "subscribe_setup":
+    fanout_ratio = 0
+elif subscription_pattern == "queue":
+    fanout_ratio = 1
+else:
+    try:
+        fanout_ratio = int(subs)
+    except (ValueError, TypeError):
+        fanout_ratio = 1
 
 
 # -------------------------
@@ -353,7 +440,7 @@ def extract_rate(path, label):
     content = path.read_text(errors="replace")
 
     matches = re.findall(
-        rf"{label}\s+stats:\s*([\d,]+)\s+msgs/sec",
+        rf"{label}[a-z]*\s+stats:\s*([\d,]+)\s+msgs/sec",
         content,
         re.I
     )
@@ -381,14 +468,18 @@ def extract_publisher_stats(path):
     content = path.read_text(errors="replace")
     stats = {}
 
-    m_rate = re.search(r"stats:\s*([0-9,.]+)\s*msgs/sec\s*~\s*([0-9,.]+\s*[KMGT]?i?B/sec)", content, re.I)
+    m_rate = re.search(
+        r"stats:\s*([0-9,.]+)\s*msgs/sec\s*~\s*([0-9,.]+\s*[KMGT]?i?B/sec)",
+        content,
+        re.I
+    )
     if m_rate:
         stats["rate"] = m_rate.group(1).replace(",", "")
         stats["bandwidth"] = m_rate.group(2).strip()
 
     metrics = ["min", "avg", "max", "P50", "P90", "P99", "P99.9"]
     for m in metrics:
-        pattern = rf"\b{re.escape(m)}:\s*([0-9.]+)([a-zA-Z]+)"
+        pattern = rf"\b{re.escape(m)}:\s*([0-9,.]+)\s*([a-zA-Z]+)"
         match = re.search(pattern, content, re.I)
         if match:
             stats[m] = f"{match.group(1)} {match.group(2)}"
@@ -396,7 +487,45 @@ def extract_publisher_stats(path):
     return stats
 
 
+def extract_subscriber_stats(path):
+    if not path.exists():
+        return {}
+    content = path.read_text(errors="replace")
+    stats = {}
+
+    m_rate = re.search(
+        r"stats:\s*([0-9,.]+)\s*msgs/sec\s*~\s*([0-9,.]+\s*[KMGT]?i?B/sec)",
+        content,
+        re.I
+    )
+    if m_rate:
+        stats["rate"] = m_rate.group(1).replace(",", "")
+        stats["bandwidth"] = m_rate.group(2).strip()
+
+    return stats
+
+
+def extract_setup_stats(path):
+    if not path.exists():
+        return {}
+    content = path.read_text(errors="replace")
+    m = re.search(
+        r"setup stats:\s*established=(\d+),\s*duration=(\d+)s,\s*rate=(\d+)\s*conns/sec",
+        content,
+        re.I
+    )
+    if m:
+        return {
+            "established": int(m.group(1)),
+            "duration": int(m.group(2)),
+            "rate": int(m.group(3))
+        }
+    return {}
+
+
 publisher_stats = extract_publisher_stats(result_dir / "workload.log")
+subscriber_stats = extract_subscriber_stats(result_dir / "subscriber.log")
+setup_stats = extract_setup_stats(result_dir / "subscriber.log")
 
 
 # -------------------------
@@ -407,15 +536,19 @@ summary = {
 
     "test_id": test_id,
     "messaging_type": "Core NATS",
+    "scenario": scenario,
+    "subscription_pattern": subscription_pattern,
+    "subject_distribution": subject_distribution,
+    "fanout_ratio": fanout_ratio,
     "subject": subject,
 
-    "target_publish_msgs_per_sec": target_rate,
-    "actual_publish_msgs_per_sec": publish_rate,
-    "actual_subscriber_msgs_per_sec": subscriber_rate,
+    "target_publish_msgs_per_sec": target_rate if scenario != "subscribe_setup" else "",
+    "actual_publish_msgs_per_sec": publish_rate if scenario != "subscribe_setup" else "",
+    "actual_subscriber_msgs_per_sec": subscriber_rate if scenario == "pubsub" else "",
 
-    "message_size_bytes": msg_size,
+    "message_size_bytes": msg_size if scenario != "subscribe_setup" else "",
 
-    "publisher_concurrency": pubs,
+    "publisher_concurrency": pubs if scenario != "subscribe_setup" else 0,
     "subscriber_concurrency": subs,
 
     "nominal_duration_seconds": nominal_duration,
@@ -496,7 +629,12 @@ def generate_report_html():
 
     target_num = num(target_rate) or 0
     actual_pub_num = num(publish_rate) or 0
-    pub_achieved_pct = f"{(actual_pub_num / target_num * 100.0):.1f}%" if target_num > 0 else "-"
+    if target_num > 0:
+        pub_achieved_pct = f"{(actual_pub_num / target_num * 100.0):.1f}%"
+        pub_target_desc = f"Target: {target_rate} msgs/s ({pub_achieved_pct} achieved)"
+    else:
+        pub_achieved_pct = "unthrottled"
+        pub_target_desc = "Target: unthrottled (maximum achievable)"
 
     cluster_cpu_peak_display = f"{summary['cluster_cpu_peak_percent']}%" if summary["cluster_cpu_peak_percent"] != "" else "-"
     cluster_cpu_avg_display = f"{summary['cluster_cpu_avg_percent']}%" if summary["cluster_cpu_avg_percent"] != "" else "-"
@@ -519,6 +657,26 @@ def generate_report_html():
           <td class="num">{format_rate(n.get('block_read_avg_mbps'))} / {format_rate(n.get('block_write_avg_mbps'))}</td>
         </tr>""")
 
+    def sum_metric(nodes, key):
+        vals = [n.get(key) for n in nodes if n.get(key) is not None and n.get(key) != ""]
+        return sum(vals) if vals else None
+
+    cluster_net_rx = sum_metric(node_results, "network_rx_avg_mbps")
+    cluster_net_tx = sum_metric(node_results, "network_tx_avg_mbps")
+    cluster_block_read = sum_metric(node_results, "block_read_avg_mbps")
+    cluster_block_write = sum_metric(node_results, "block_write_avg_mbps")
+
+    cluster_net_display = (
+        f"{format_rate(cluster_net_rx)} / {format_rate(cluster_net_tx)}"
+        if cluster_net_rx is not None or cluster_net_tx is not None
+        else "-"
+    )
+    cluster_block_display = (
+        f"{format_rate(cluster_block_read)} / {format_rate(cluster_block_write)}"
+        if cluster_block_read is not None or cluster_block_write is not None
+        else "-"
+    )
+
     # Append Cluster Aggregate row
     node_rows_html.append(f"""
     <tr class="total-row">
@@ -528,8 +686,8 @@ def generate_report_html():
       <td class="num bold">{cluster_cpu_peak_display}</td>
       <td class="num">{cluster_mem_avg_display}</td>
       <td class="num bold">{cluster_mem_peak_display}</td>
-      <td class="num">-</td>
-      <td class="num">-</td>
+      <td class="num">{cluster_net_display}</td>
+      <td class="num">{cluster_block_display}</td>
     </tr>""")
 
     node_table_body = "\n".join(node_rows_html)
@@ -542,7 +700,112 @@ def generate_report_html():
     p99_lat = publisher_stats.get("P99", "-")
     p999_lat = publisher_stats.get("P99.9", "-")
     max_lat = publisher_stats.get("max", "-")
-    bandwidth_val = publisher_stats.get("bandwidth", "-")
+    pub_bandwidth = publisher_stats.get("bandwidth", "-")
+    sub_bandwidth = subscriber_stats.get("bandwidth", "-")
+
+    actual_sub_num = num(subscriber_rate) or 0
+    if actual_pub_num > 0 and actual_sub_num > 0:
+        delivery_pct = f"{(actual_sub_num / actual_pub_num * 100.0):.1f}% delivered"
+    else:
+        delivery_pct = ""
+
+    pub_bandwidth_sub = f" &bull; Bandwidth: {pub_bandwidth}" if pub_bandwidth != "-" else ""
+    delivery_sub = f" &bull; {delivery_pct}" if delivery_pct else ""
+
+    if scenario == "publish":
+        scenario_display = "Core NATS (Publish-only)"
+        pattern_display = "No Subscribers"
+    elif scenario == "subscribe_setup":
+        scenario_display = "Core NATS (Subscribe Setup)"
+        pattern_display = f"Concurrent Connections ({subs} clients)"
+    elif subscription_pattern == "queue":
+        scenario_display = "Core NATS (Publish + Subscribe)"
+        pattern_display = f"Queue Group '{queue_name}' ({subs} workers, 1x fan-out)"
+    else:
+        scenario_display = "Core NATS (Publish + Subscribe)"
+        pattern_display = f"Normal Pub/Sub ({subs} subscribers, {fanout_ratio}x fan-out)"
+
+    subject_dist_display = "Single Subject" if subject_distribution == "single" else f"Multi-subject (up to {multi_subject_max})"
+
+    if scenario == "subscribe_setup":
+        conns_val = setup_stats.get("established", subs)
+        rate_val = setup_stats.get("rate", "-")
+        dur_val = setup_stats.get("duration", actual_duration)
+        kpi_cards_html = f"""
+    <div class="card-kpi">
+      <div class="kpi-label">Established Connections</div>
+      <div class="kpi-value" style="color:var(--accent);">{conns_val} <span style="font-size:0.9rem; font-weight:400;">clients</span></div>
+      <div class="kpi-sub">Hold duration: {actual_duration}s</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Connection Rate</div>
+      <div class="kpi-value" style="color:var(--green);">{rate_val} <span style="font-size:0.9rem; font-weight:400;">conns/s</span></div>
+      <div class="kpi-sub">Setup elapsed: {dur_val}s</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Cluster Peak CPU</div>
+      <div class="kpi-value" style="color:var(--purple);">{cluster_cpu_peak_display}</div>
+      <div class="kpi-sub">Average: {cluster_cpu_avg_display} across cluster</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Cluster Peak RAM</div>
+      <div class="kpi-value" style="color:var(--yellow);">{cluster_mem_peak_display}</div>
+      <div class="kpi-sub">Average: {cluster_mem_avg_display} across cluster</div>
+    </div>"""
+    elif scenario == "publish":
+        kpi_cards_html = f"""
+    <div class="card-kpi">
+      <div class="kpi-label">Actual Publish Rate</div>
+      <div class="kpi-value" style="color:var(--accent);">{publish_rate if publish_rate != "" else "-"} <span style="font-size:0.9rem; font-weight:400;">msgs/s</span></div>
+      <div class="kpi-sub">{pub_target_desc}{pub_bandwidth_sub}</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Subscriber Delivery Rate</div>
+      <div class="kpi-value" style="color:var(--text-sec);">N/A <span style="font-size:0.9rem; font-weight:400;">(Publish-only)</span></div>
+      <div class="kpi-sub">No active subscribers in this scenario</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Cluster Peak CPU</div>
+      <div class="kpi-value" style="color:var(--purple);">{cluster_cpu_peak_display}</div>
+      <div class="kpi-sub">Average: {cluster_cpu_avg_display} across cluster</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Cluster Peak RAM</div>
+      <div class="kpi-value" style="color:var(--yellow);">{cluster_mem_peak_display}</div>
+      <div class="kpi-sub">Average: {cluster_mem_avg_display} across cluster</div>
+    </div>"""
+    else:
+        sub_desc = f"Bandwidth: {sub_bandwidth} &bull; Fan-out: {fanout_ratio}x ({delivery_pct})" if delivery_pct else f"Bandwidth: {sub_bandwidth} &bull; Fan-out: {fanout_ratio}x"
+        kpi_cards_html = f"""
+    <div class="card-kpi">
+      <div class="kpi-label">Actual Publish Rate</div>
+      <div class="kpi-value" style="color:var(--accent);">{publish_rate if publish_rate != "" else "-"} <span style="font-size:0.9rem; font-weight:400;">msgs/s</span></div>
+      <div class="kpi-sub">{pub_target_desc}{pub_bandwidth_sub}</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Subscriber Delivery Rate</div>
+      <div class="kpi-value" style="color:var(--green);">{subscriber_rate if subscriber_rate != "" else "-"} <span style="font-size:0.9rem; font-weight:400;">msgs/s</span></div>
+      <div class="kpi-sub">{sub_desc}</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Cluster Peak CPU</div>
+      <div class="kpi-value" style="color:var(--purple);">{cluster_cpu_peak_display}</div>
+      <div class="kpi-sub">Average: {cluster_cpu_avg_display} across cluster</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Cluster Peak RAM</div>
+      <div class="kpi-value" style="color:var(--yellow);">{cluster_mem_peak_display}</div>
+      <div class="kpi-sub">Average: {cluster_mem_avg_display} across cluster</div>
+    </div>"""
 
     # Config rows
     config_items = []
@@ -803,6 +1066,34 @@ def generate_report_html():
       font-size: 0.75rem;
       color: var(--text-sec);
     }}
+    @media print {{
+      body {{
+        background: #ffffff;
+        color: #000000;
+        padding: 0;
+      }}
+      .card, .header, .card-kpi, .lat-box {{
+        background: #ffffff !important;
+        border: 1px solid #cccccc !important;
+        box-shadow: none !important;
+        color: #000000 !important;
+      }}
+      th {{
+        background: #f0f0f0 !important;
+        color: #000000 !important;
+      }}
+      td {{
+        color: #000000 !important;
+      }}
+      details summary {{
+        background: #f0f0f0 !important;
+        color: #000000 !important;
+      }}
+      pre {{
+        background: #f8f8f8 !important;
+        color: #111111 !important;
+      }}
+    }}
   </style>
 </head>
 <body>
@@ -815,8 +1106,9 @@ def generate_report_html():
       <h1>NATS Capacity Benchmark Report</h1>
       <div class="header-subtitle">
         Test ID: <strong>{html.escape(test_id)}</strong> &bull;
-        Messaging: <strong>{html.escape(str(summary['messaging_type']))}</strong> &bull;
-        Subject: <strong>{html.escape(subject)}</strong> &bull;
+        Scenario: <strong>{html.escape(scenario_display)}</strong> &bull;
+        Pattern: <strong>{html.escape(pattern_display)}</strong> &bull;
+        Subject: <strong>{html.escape(subject)} ({subject_dist_display})</strong> &bull;
         Duration: <strong>{actual_duration}s</strong> (nominal: {nominal_duration}s)
       </div>
     </div>
@@ -827,29 +1119,7 @@ def generate_report_html():
 
   <!-- KPI Cards -->
   <div class="grid-kpi">
-    <div class="card-kpi">
-      <div class="kpi-label">Actual Publish Rate</div>
-      <div class="kpi-value" style="color:var(--accent);">{publish_rate if publish_rate != "" else "-"} <span style="font-size:0.9rem; font-weight:400;">msgs/s</span></div>
-      <div class="kpi-sub">Target: {target_rate} msgs/s ({pub_achieved_pct} achieved)</div>
-    </div>
-
-    <div class="card-kpi">
-      <div class="kpi-label">Subscriber Delivery Rate</div>
-      <div class="kpi-value" style="color:var(--green);">{subscriber_rate if subscriber_rate != "" else "-"} <span style="font-size:0.9rem; font-weight:400;">msgs/s</span></div>
-      <div class="kpi-sub">Bandwidth: {bandwidth_val}</div>
-    </div>
-
-    <div class="card-kpi">
-      <div class="kpi-label">Cluster Peak CPU</div>
-      <div class="kpi-value" style="color:var(--purple);">{cluster_cpu_peak_display}</div>
-      <div class="kpi-sub">Average: {cluster_cpu_avg_display} across cluster</div>
-    </div>
-
-    <div class="card-kpi">
-      <div class="kpi-label">Cluster Peak RAM</div>
-      <div class="kpi-value" style="color:var(--yellow);">{cluster_mem_peak_display}</div>
-      <div class="kpi-sub">Average: {cluster_mem_avg_display} across cluster</div>
-    </div>
+{kpi_cards_html}
   </div>
 
   <!-- Publisher Latency Section -->

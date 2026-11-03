@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-[[ $# -eq 8 ]] || {
-  echo "Usage: workload.sh NATS_URL SUBJECT PUBS SUBS TOTAL_MESSAGES MESSAGE_SIZE TARGET_RATE SUBSCRIBER_LOG" >&2
+[[ $# -ge 8 ]] || {
+  echo "Usage: workload.sh NATS_URL SUBJECT PUBS SUBS TOTAL_MESSAGES MESSAGE_SIZE TARGET_RATE SUBSCRIBER_LOG [SCENARIO PATTERN QUEUE_NAME SUBJECT_DIST MULTI_MAX]" >&2
   exit 2
 }
 
@@ -14,27 +14,61 @@ TOTAL="$5"
 SIZE="$6"
 RATE="$7"
 SUB_LOG="$8"
+SCENARIO="${9:-pubsub}"
+PATTERN="${10:-pubsub}"
+QUEUE_NAME="${11:-benchmark-core-group}"
+SUBJECT_DIST="${12:-single}"
+MULTI_MAX="${13:-10000}"
 
-# Start subscribers first
-nats --server "$NATS_URL" bench sub "$SUBJECT" \
-  --msgs "$TOTAL" \
-  --clients "$SUBS" \
-  --no-progress \
-  > "$SUB_LOG" 2>&1 &
+PUB_EXTRA_FLAGS=()
+if [[ "$SUBJECT_DIST" == "multi" ]]; then
+  PUB_EXTRA_FLAGS+=(--multisubject --multisubjectmax="$MULTI_MAX")
+fi
 
-SUB_PID=$!
-
+SUB_PIDS=()
 cleanup() {
-  if kill -0 "$SUB_PID" 2>/dev/null; then
-    kill -TERM "$SUB_PID" 2>/dev/null || true
-    wait "$SUB_PID" 2>/dev/null || true
-  fi
+  for pid in "${SUB_PIDS[@]}"; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+  done
 }
-
 trap cleanup EXIT INT TERM
 
-# Allow subscriber clients to establish subscriptions
-sleep 2
+if [[ "$SCENARIO" == "pubsub" ]]; then
+  if [[ "$PATTERN" == "queue" ]]; then
+    # Queue Group: Subscribers load-balance messages
+    echo "Starting Queue Group subscribers [group=$QUEUE_NAME, clients=$SUBS, total_msgs=$TOTAL, subject=$SUBJECT]" > "$SUB_LOG"
+    SUB_START=$(date +%s)
+    SHARE=$((TOTAL / SUBS))
+    (( SHARE > 0 )) || SHARE=1
+    for ((i=1; i<=SUBS; i++)); do
+      nats --server "$NATS_URL" sub --queue="$QUEUE_NAME" --count="$SHARE" --raw "$SUBJECT" > /dev/null 2>&1 &
+      SUB_PIDS+=($!)
+    done
+  else
+    # Normal Pub/Sub: Each subscriber receives every message (Fan-out = SUBS)
+    SUB_EXTRA_FLAGS=()
+    if [[ "$SUBJECT_DIST" == "multi" ]]; then
+      SUB_EXTRA_FLAGS+=(--multisubject)
+    fi
+    nats --server "$NATS_URL" bench sub "$SUBJECT" \
+      --msgs "$((TOTAL * SUBS))" \
+      --clients "$SUBS" \
+      --size "${SIZE}B" \
+      "${SUB_EXTRA_FLAGS[@]}" \
+      --no-progress \
+      > "$SUB_LOG" 2>&1 &
+    SUB_PIDS+=($!)
+  fi
+
+  # Allow subscriber clients to establish subscriptions
+  sleep 2
+else
+  # Publish-only scenario
+  echo "Publish-only scenario: no subscriber clients active." > "$SUB_LOG"
+fi
 
 # Start publishers
 nats --server "$NATS_URL" bench pub "$SUBJECT" \
@@ -42,9 +76,25 @@ nats --server "$NATS_URL" bench pub "$SUBJECT" \
   --clients "$PUBS" \
   --size "$SIZE" \
   --throughput "$RATE" \
+  "${PUB_EXTRA_FLAGS[@]}" \
   --no-progress
 
-# Wait for subscribers to finish
-wait "$SUB_PID"
+PUB_EXIT=$?
+
+# Wait for subscribers if any
+if [[ ${#SUB_PIDS[@]} -gt 0 ]]; then
+  for pid in "${SUB_PIDS[@]}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+  if [[ "$PATTERN" == "queue" ]]; then
+    SUB_END=$(date +%s)
+    SUB_DUR=$((SUB_END - SUB_START))
+    (( SUB_DUR > 0 )) || SUB_DUR=1
+    ACTUAL_SUB_RATE=$((TOTAL / SUB_DUR))
+    BW_KIB=$(( (TOTAL * SIZE) / SUB_DUR / 1024 ))
+    echo "NATS Core NATS subscriber stats: $ACTUAL_SUB_RATE msgs/sec ~ $BW_KIB KiB/sec (queue group: $QUEUE_NAME)" >> "$SUB_LOG"
+  fi
+fi
 
 trap - EXIT INT TERM
+exit "$PUB_EXIT"

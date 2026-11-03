@@ -54,8 +54,8 @@ while true; do
           (.cpu_percent // .CPUPerc // ""),
           (.mem_usage // .MemUsage // ""),
           (.mem_percent // .MemPerc // ""),
-          (.netio // .NetIO // ""),
-          (.blocki // .BlockIO // "")
+          (.net_io // .netio // .NetIO // ""),
+          (.block_io // .blocki // .BlockIO // "")
         ] | @csv
         ' >> "$OUT"
 
