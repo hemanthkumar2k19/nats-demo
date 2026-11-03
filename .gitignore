@@ -5,3 +5,11 @@ AGENTS.md
 
 results/
 deploy/data
+
+temp.md
+task.md
+
+# Python
+*.venv
+
+*.zip
