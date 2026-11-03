@@ -15,13 +15,15 @@ RESULT_DIR="$5"
 SUB_PIDS=()
 
 cleanup() {
-  echo "Cleaning up established subscriptions..."
-  for pid in "${SUB_PIDS[@]}"; do
-    if kill -0 "$pid" 2>/dev/null; then
-      kill -TERM "$pid" 2>/dev/null || true
-      wait "$pid" 2>/dev/null || true
-    fi
-  done
+  if [[ ${#SUB_PIDS[@]} -gt 0 ]]; then
+    echo "Cleaning up established subscriptions..."
+    for pid in ${SUB_PIDS[@]+"${SUB_PIDS[@]}"}; do
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -TERM "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+      fi
+    done
+  fi
 }
 trap cleanup EXIT INT TERM
 

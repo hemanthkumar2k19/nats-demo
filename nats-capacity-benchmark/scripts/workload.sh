@@ -25,14 +25,21 @@ if [[ "$SUBJECT_DIST" == "multi" ]]; then
   PUB_EXTRA_FLAGS+=(--multisubject --multisubjectmax="$MULTI_MAX")
 fi
 
+SUB_EXTRA_FLAGS=()
+if [[ "$SUBJECT_DIST" == "multi" ]]; then
+  SUB_EXTRA_FLAGS+=(--multisubject)
+fi
+
 SUB_PIDS=()
 cleanup() {
-  for pid in "${SUB_PIDS[@]}"; do
-    if kill -0 "$pid" 2>/dev/null; then
-      kill -TERM "$pid" 2>/dev/null || true
-      wait "$pid" 2>/dev/null || true
-    fi
-  done
+  if [[ ${#SUB_PIDS[@]} -gt 0 ]]; then
+    for pid in ${SUB_PIDS[@]+"${SUB_PIDS[@]}"}; do
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -TERM "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+      fi
+    done
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -49,15 +56,11 @@ if [[ "$SCENARIO" == "pubsub" ]]; then
     done
   else
     # Normal Pub/Sub: Each subscriber receives every message (Fan-out = SUBS)
-    SUB_EXTRA_FLAGS=()
-    if [[ "$SUBJECT_DIST" == "multi" ]]; then
-      SUB_EXTRA_FLAGS+=(--multisubject)
-    fi
     nats --server "$NATS_URL" bench sub "$SUBJECT" \
       --msgs "$((TOTAL * SUBS))" \
       --clients "$SUBS" \
       --size "${SIZE}B" \
-      "${SUB_EXTRA_FLAGS[@]}" \
+      ${SUB_EXTRA_FLAGS[@]+"${SUB_EXTRA_FLAGS[@]}"} \
       --no-progress \
       > "$SUB_LOG" 2>&1 &
     SUB_PIDS+=($!)
@@ -76,14 +79,14 @@ nats --server "$NATS_URL" bench pub "$SUBJECT" \
   --clients "$PUBS" \
   --size "$SIZE" \
   --throughput "$RATE" \
-  "${PUB_EXTRA_FLAGS[@]}" \
+  ${PUB_EXTRA_FLAGS[@]+"${PUB_EXTRA_FLAGS[@]}"} \
   --no-progress
 
 PUB_EXIT=$?
 
 # Wait for subscribers if any
 if [[ ${#SUB_PIDS[@]} -gt 0 ]]; then
-  for pid in "${SUB_PIDS[@]}"; do
+  for pid in ${SUB_PIDS[@]+"${SUB_PIDS[@]}"}; do
     wait "$pid" 2>/dev/null || true
   done
   if [[ "$PATTERN" == "queue" ]]; then
