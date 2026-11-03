@@ -184,6 +184,7 @@ python3 "${ROOT_DIR}/scripts/aggregate.py" \
   "$WORKLOAD_EXIT" \
   "$METRICS_BACKEND"
 
-echo "Results: $RESULT_DIR"
+echo "Results     : $RESULT_DIR"
+echo "Report HTML : $RESULT_DIR/report.html"
 
 exit "$WORKLOAD_EXIT"

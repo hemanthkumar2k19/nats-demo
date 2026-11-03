@@ -13,3 +13,5 @@ task.md
 *.venv
 
 *.zip
+
+__pycache__
