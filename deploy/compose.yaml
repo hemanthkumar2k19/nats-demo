@@ -3,6 +3,13 @@ services:
   haproxy:
     image: haproxy:alpine
     container_name: haproxy
+    cpus: 0.5
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
     ports:
       - "4222:4222"
       - "8404:8404"
@@ -16,6 +23,13 @@ services:
   nats-1:
     image: nats:latest
     container_name: nats-1
+    cpus: 1.0
+    mem_limit: 1g
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
     ports:
       - "4223:4222"
       - "8222:8222"
@@ -27,10 +41,16 @@ services:
   nats-2:
     image: nats:latest
     container_name: nats-2
+    cpus: 1.0
+    mem_limit: 1g
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
     ports:
       - "4224:4222"
       - "8223:8222"
-
     volumes:
       - ./nats-2.conf:/etc/nats/nats.conf:ro
       - ./data/nats-2:/data
@@ -39,6 +59,13 @@ services:
   nats-3:
     image: nats:latest
     container_name: nats-3
+    cpus: 1.0
+    mem_limit: 1g
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
     ports:
       - "4225:4222"
       - "8224:8222"
