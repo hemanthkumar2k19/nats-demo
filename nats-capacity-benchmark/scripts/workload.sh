@@ -57,7 +57,7 @@ if [[ "$SCENARIO" == "pubsub" ]]; then
   else
     # Normal Pub/Sub: Each subscriber receives every message (Fan-out = SUBS)
     nats --server "$NATS_URL" bench sub "$SUBJECT" \
-      --msgs "$((TOTAL * SUBS))" \
+      --msgs "$TOTAL" \
       --clients "$SUBS" \
       --size "${SIZE}B" \
       ${SUB_EXTRA_FLAGS[@]+"${SUB_EXTRA_FLAGS[@]}"} \
@@ -84,9 +84,20 @@ nats --server "$NATS_URL" bench pub "$SUBJECT" \
 
 PUB_EXIT=$?
 
-# Wait for subscribers if any
+# Wait for subscribers if any with drain timeout safety margin
 if [[ ${#SUB_PIDS[@]} -gt 0 ]]; then
+  DRAIN_TIMEOUT=10
+  DRAIN_START=$(date +%s)
   for pid in ${SUB_PIDS[@]+"${SUB_PIDS[@]}"}; do
+    while kill -0 "$pid" 2>/dev/null; do
+      NOW=$(date +%s)
+      if (( NOW - DRAIN_START >= DRAIN_TIMEOUT )); then
+        echo "Subscriber drain timeout reached (${DRAIN_TIMEOUT}s); terminating subscriber PID $pid" >> "$SUB_LOG"
+        kill -TERM "$pid" 2>/dev/null || true
+        break
+      fi
+      sleep 0.5
+    done
     wait "$pid" 2>/dev/null || true
   done
   if [[ "$PATTERN" == "queue" ]]; then

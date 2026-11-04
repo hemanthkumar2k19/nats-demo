@@ -82,6 +82,8 @@ subscription_pattern = "pubsub"
 queue_name = "benchmark-core-group"
 subject_distribution = "single"
 multi_subject_max = "10000"
+test_description = ""
+run_timestamp = ""
 
 config_file_path = result_dir / "test-config.txt"
 if config_file_path.exists():
@@ -100,6 +102,10 @@ if config_file_path.exists():
                 subject_distribution = v
             elif k == "multi_subject_max":
                 multi_subject_max = v
+            elif k == "test_description":
+                test_description = v
+            elif k == "run_timestamp":
+                run_timestamp = v
 
 if scenario == "publish":
     fanout_ratio = 0
@@ -439,16 +445,18 @@ def extract_rate(path, label):
 
     content = path.read_text(errors="replace")
 
-    matches = re.findall(
-        rf"{label}[a-z]*\s+stats:\s*([\d,]+)\s+msgs/sec",
-        content,
-        re.I
-    )
+    # Match aggregated stats (multi-client) or standard stats (single-client)
+    pattern = rf"(?:{label}[a-z]*\s+aggregated\s+stats|{label}[a-z]*\s+stats):\s*([\d,.]+)\s+msgs/sec"
+    m = re.search(pattern, content, re.I)
+    if m:
+        return int(round(float(m.group(1).replace(",", ""))))
 
-    if not matches:
-        return ""
+    # Fallback to any "stats: X msgs/sec" in the file
+    matches = re.findall(r"stats:\s*([\d,.]+)\s+msgs/sec", content, re.I)
+    if matches:
+        return int(round(float(matches[-1].replace(",", ""))))
 
-    return int(matches[-1].replace(",", ""))
+    return ""
 
 
 publish_rate = extract_rate(
@@ -469,7 +477,7 @@ def extract_publisher_stats(path):
     stats = {}
 
     m_rate = re.search(
-        r"stats:\s*([0-9,.]+)\s*msgs/sec\s*~\s*([0-9,.]+\s*[KMGT]?i?B/sec)",
+        r"(?:publisher\s+(?:aggregated\s+)?stats|stats):\s*([0-9,.]+)\s*msgs/sec\s*~\s*([0-9,.]+\s*[KMGT]?i?B/sec)",
         content,
         re.I
     )
@@ -478,9 +486,14 @@ def extract_publisher_stats(path):
         stats["bandwidth"] = m_rate.group(2).strip()
 
     metrics = ["min", "avg", "max", "P50", "P90", "P99", "P99.9"]
+
+    # In multi-client runs, latencies per operation reports aggregated metrics across all concurrent publishers
+    m_agg_lat = re.search(r"latencies per operation\s+([^\n\r]+)", content, re.I)
+    latency_source = m_agg_lat.group(1) if m_agg_lat else content
+
     for m in metrics:
-        pattern = rf"\b{re.escape(m)}:\s*([0-9,.]+)\s*([a-zA-Z]+)"
-        match = re.search(pattern, content, re.I)
+        pattern = rf"\b{re.escape(m)}:?\s*([0-9,.]+)\s*([a-zA-Z]+)"
+        match = re.search(pattern, latency_source, re.I)
         if match:
             stats[m] = f"{match.group(1)} {match.group(2)}"
 
@@ -494,7 +507,7 @@ def extract_subscriber_stats(path):
     stats = {}
 
     m_rate = re.search(
-        r"stats:\s*([0-9,.]+)\s*msgs/sec\s*~\s*([0-9,.]+\s*[KMGT]?i?B/sec)",
+        r"(?:subscriber\s+(?:aggregated\s+)?stats|stats):\s*([0-9,.]+)\s*msgs/sec\s*~\s*([0-9,.]+\s*[KMGT]?i?B/sec)",
         content,
         re.I
     )
@@ -535,6 +548,8 @@ setup_stats = extract_setup_stats(result_dir / "subscriber.log")
 summary = {
 
     "test_id": test_id,
+    "test_description": test_description,
+    "run_timestamp": run_timestamp,
     "messaging_type": "Core NATS",
     "scenario": scenario,
     "subscription_pattern": subscription_pattern,
@@ -807,32 +822,92 @@ def generate_report_html():
       <div class="kpi-sub">Average: {cluster_mem_avg_display} across cluster</div>
     </div>"""
 
-    # Config rows
-    config_items = []
+    # Parse configuration items
+    config_dict = {}
     if config_content:
         for line in config_content.strip().splitlines():
             if "=" in line:
                 k, v = line.split("=", 1)
-                config_items.append((k.strip(), v.strip()))
+                config_dict[k.strip()] = v.strip()
             elif ":" in line:
                 k, v = line.split(":", 1)
-                config_items.append((k.strip(), v.strip()))
+                config_dict[k.strip()] = v.strip()
 
-    config_rows_html = []
-    for k, v in config_items:
-        config_rows_html.append(f"""
-        <tr>
-          <td class="config-key">{html.escape(k)}</td>
-          <td class="config-val">{html.escape(v)}</td>
-        </tr>""")
-    config_table_body = "\n".join(config_rows_html) if config_rows_html else "<tr><td colspan='2'>No configuration records found</td></tr>"
+    # Monitored containers fallback from node_results
+    if "nats_containers" not in config_dict and node_results:
+        node_names = [str(n.get("container", "")) for n in node_results if n.get("container")]
+        if node_names:
+            config_dict["nats_containers"] = ", ".join(node_names)
+
+    # 1. Setup Details fields
+    setup_fields = [
+        ("nats_url", "NATS Endpoint", config_dict.get("nats_url", "-")),
+        ("messaging_type", "Messaging Platform", config_dict.get("messaging_type", "Core NATS")),
+        ("nats_containers", "Monitored Containers", config_dict.get("nats_containers", "-")),
+        ("metrics_backend", "Metrics Backend", config_dict.get("metrics_backend", backend)),
+        ("metrics_sample_interval_seconds", "Telemetry Sample Interval", f"{config_dict.get('metrics_sample_interval_seconds', '-')}s" if config_dict.get('metrics_sample_interval_seconds') else "-"),
+        ("baseline_duration_seconds", "Baseline Phase Duration", f"{config_dict.get('baseline_duration_seconds', '-')}s" if config_dict.get('baseline_duration_seconds') else "-"),
+    ]
+    known_setup_keys = {"nats_url", "messaging_type", "nats_containers", "metrics_backend", "metrics_sample_interval_seconds", "baseline_duration_seconds"}
+    for k, v in config_dict.items():
+        if k not in known_setup_keys and any(sub in k.lower() for sub in ["endpoint", "monitor", "replica", "node", "cluster", "backend", "container", "baseline"]):
+            setup_fields.append((k, k.replace("_", " ").title(), v))
+
+    # 2. Test Details fields
+    test_fields = [
+        ("test_id", "Test Run ID", test_id),
+    ]
+    if test_description:
+        test_fields.append(("test_description", "Test Description", test_description))
+    if run_timestamp:
+        test_fields.append(("run_timestamp", "Execution Timestamp", run_timestamp))
+    test_fields.extend([
+        ("scenario", "Workload Scenario", scenario_display),
+        ("subscription_pattern", "Subscription Pattern", pattern_display),
+    ])
+    if subscription_pattern == "queue" and queue_name:
+        test_fields.append(("queue_name", "Queue Group Name", queue_name))
+    test_fields.extend([
+        ("subject", "Target Subject", f"{subject} ({subject_dist_display})"),
+        ("target_publish_msgs_per_sec", "Target Publish Rate", pub_target_desc if scenario != "subscribe_setup" else "N/A (Connection Setup)"),
+        ("message_size_bytes", "Message Payload Size", f"{msg_size} B ({format_bytes(int(msg_size))})" if (msg_size and scenario != "subscribe_setup") else "N/A"),
+        ("publisher_concurrency", "Publisher Concurrency", f"{pubs} client(s)" if scenario != "subscribe_setup" else "0 (N/A)"),
+        ("subscriber_concurrency", "Subscriber Concurrency", f"{subs} client(s)" if scenario != "publish" else "0 (Publish-only)"),
+        ("nominal_duration_seconds", "Nominal Duration", f"{nominal_duration}s (Actual: {actual_duration}s)"),
+        ("configured_message_count", "Configured Messages", f"{config_dict.get('configured_message_count', '-')} msgs" if config_dict.get('configured_message_count') else "-"),
+    ])
+    known_test_keys = {"test_id", "test_description", "run_timestamp", "scenario", "subscription_pattern", "queue_name", "subject", "subject_distribution", "multi_subject_max", "target_publish_msgs_per_sec", "message_size_bytes", "publisher_concurrency", "subscriber_concurrency", "nominal_duration_seconds", "configured_message_count"}
+    for k, v in config_dict.items():
+        if k not in known_setup_keys and k not in known_test_keys and not any(sub in k.lower() for sub in ["endpoint", "monitor", "replica", "node", "cluster", "backend", "container", "baseline"]):
+            test_fields.append((k, k.replace("_", " ").title(), v))
+
+    def render_details_rows(fields):
+        rows = []
+        for key, label, val in fields:
+            if val is None or str(val).strip() == "" or str(val).strip() == "-":
+                continue
+            rows.append(f"""
+            <tr>
+              <td class="config-key">{html.escape(label)}<span class="config-raw">{html.escape(key)}</span></td>
+              <td class="config-val">{html.escape(str(val))}</td>
+            </tr>""")
+        return "\n".join(rows) if rows else "<tr><td colspan='2'>No configuration records found</td></tr>"
+
+    setup_table_body = render_details_rows(setup_fields)
+    test_table_body = render_details_rows(test_fields)
+
+    doc_title = f"NATS Benchmark Report: {html.escape(test_id)}"
+    if test_description:
+        doc_title += f" - {html.escape(test_description)}"
+
+    desc_subtitle = f" &bull; Description: <strong>{html.escape(test_description)}</strong>" if test_description else ""
 
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NATS Benchmark Report: {html.escape(test_id)}</title>
+  <title>{doc_title}</title>
   <style>
     * {{
       box-sizing: border-box;
@@ -904,6 +979,29 @@ def generate_report_html():
       background: rgba(248, 81, 73, 0.15);
       color: var(--red);
       border: 1px solid rgba(248, 81, 73, 0.4);
+    }}
+    .section-title {{
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 28px 0 16px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }}
+    .grid-details {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+      align-items: start;
+    }}
+    @media (max-width: 900px) {{
+      .grid-details {{
+        grid-template-columns: 1fr;
+      }}
     }}
     .grid-kpi {{
       display: grid;
@@ -1024,13 +1122,26 @@ def generate_report_html():
     }}
     .config-key {{
       color: var(--text-sec);
-      width: 35%;
-      font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+      width: 44%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 0.8rem;
+      vertical-align: top;
     }}
     .config-val {{
       color: var(--text);
-      font-weight: 500;
+      font-weight: 600;
       font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.82rem;
+      word-break: break-all;
+    }}
+    .config-raw {{
+      color: var(--text-sec);
+      font-size: 0.7rem;
+      font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+      font-weight: normal;
+      display: block;
+      opacity: 0.65;
+      margin-top: 2px;
     }}
     details {{
       background: var(--bg);
@@ -1105,7 +1216,7 @@ def generate_report_html():
     <div class="header-left">
       <h1>NATS Capacity Benchmark Report</h1>
       <div class="header-subtitle">
-        Test ID: <strong>{html.escape(test_id)}</strong> &bull;
+        Test ID: <strong>{html.escape(test_id)}</strong>{desc_subtitle} &bull;
         Scenario: <strong>{html.escape(scenario_display)}</strong> &bull;
         Pattern: <strong>{html.escape(pattern_display)}</strong> &bull;
         Subject: <strong>{html.escape(subject)} ({subject_dist_display})</strong> &bull;
@@ -1115,6 +1226,45 @@ def generate_report_html():
     <div>
       <span class="badge {status_badge_class}">{status_label}</span>
     </div>
+  </div>
+
+  <!-- 1. Setup Details & 2. Test Details -->
+  <div class="grid-details">
+    <!-- 1. Setup Details -->
+    <div class="card" style="margin-bottom:0;">
+      <div class="card-title">
+        <span>1. Setup Details</span>
+        <span style="font-size:0.75rem; color:var(--text-sec); font-weight:normal;">Environment &amp; Infrastructure</span>
+      </div>
+      <div class="table-wrap">
+        <table class="config-table">
+          <tbody>
+            {setup_table_body}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 2. Test Details -->
+    <div class="card" style="margin-bottom:0;">
+      <div class="card-title">
+        <span>2. Test Details</span>
+        <span style="font-size:0.75rem; color:var(--text-sec); font-weight:normal;">Workload &amp; Parameters</span>
+      </div>
+      <div class="table-wrap">
+        <table class="config-table">
+          <tbody>
+            {test_table_body}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Test Results -->
+  <div class="section-title">
+    <span>3. Test Results</span>
+    <span class="badge {status_badge_class}">{status_label}</span>
   </div>
 
   <!-- KPI Cards -->
@@ -1182,21 +1332,6 @@ def generate_report_html():
         </thead>
         <tbody>
           {node_table_body}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Test Configuration -->
-  <div class="card">
-    <div class="card-title">
-      <span>Benchmark Configuration</span>
-      <span style="font-size:0.75rem; color:var(--text-sec); font-weight:normal;">From test-config.txt &amp; runtime parameters</span>
-    </div>
-    <div class="table-wrap">
-      <table class="config-table">
-        <tbody>
-          {config_table_body}
         </tbody>
       </table>
     </div>

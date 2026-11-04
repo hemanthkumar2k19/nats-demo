@@ -119,6 +119,24 @@ SUBSCRIBER_CONCURRENCY=1       # Concurrent subscriber client connections
 TEST_DURATION_SECONDS=60       # Nominal test duration in seconds
 ```
 
+### C. Test Identification Configuration (`config/test.conf`)
+
+Controls test naming, intent descriptions, and results folder mapping:
+
+```bash
+# Unique Test Identifier corresponding to tests.md (e.g. TEST-1.0, TEST-2.A1)
+# Used as the child folder name under results/ (e.g. results/TEST-1.0/)
+TEST_ID="TEST-1.0"
+
+# Human-readable test intent and scope description
+TEST_DESCRIPTION="Core NATS Baseline (Symmetric 1 Pub, 1 Sub, 1 KiB, 1K msgs/s)"
+
+# Results directory hierarchy:
+# false: store directly in results/${TEST_ID}/ (default)
+# true : store in results/${TEST_ID}/${RUN_TIMESTAMP}/ to preserve historical runs
+TIMESTAMP_SUBFOLDER=false
+```
+
 ---
 
 ## 5. Execution Guide
@@ -135,15 +153,15 @@ Validates local dependencies, port reachability (`:4222`, `:8404`, monitoring po
 ```
 
 ### 2. Run Default Benchmark
-Executes the workload defined in `config/core-nats.conf` against `config/environment.conf`:
+Executes the workload defined in `config/core-nats.conf` against `config/environment.conf` and `config/test.conf`:
 ```bash
 ./benchmark.sh
 ```
 
 ### 3. Run with Custom Configuration Files
-Execute specific workloads without modifying base configuration files:
+Execute specific workloads and test IDs without modifying base configuration files:
 ```bash
-./benchmark.sh path/to/custom-workload.conf path/to/custom-env.conf
+./benchmark.sh path/to/custom-workload.conf path/to/custom-env.conf path/to/custom-test.conf
 ```
 
 ### 4. Re-aggregate Past Test Runs
@@ -169,11 +187,11 @@ python3 scripts/aggregate.py results/<TEST_ID>
 
 ## 7. Results & Output Artifacts
 
-Every benchmark run creates an immutable, timestamped directory under `results/<TIMESTAMP>/`:
+Every benchmark run creates an organized output directory under `results/<TEST_ID>/` (or `results/<TEST_ID>/<TIMESTAMP>/` if `TIMESTAMP_SUBFOLDER=true`):
 
 | File | Description | Primary Purpose |
 | :--- | :--- | :--- |
-| **`report.html`** | Standalone, self-contained offline HTML report with dark mode, responsive KPI cards, latency percentiles, node infrastructure table, cluster totals, and print/PDF export styling. | Visual review, architecture reports, executive dashboards |
+| **`report.html`** | Standalone, self-contained offline HTML report organized into Setup Details, Test Details, and Test Results (responsive KPI cards, latency percentiles, node infrastructure table, cluster totals, console logs, and print/PDF export styling). | Visual review, architecture reports, executive dashboards |
 | **`summary.csv`** | Benchmark execution summary with test parameters, achieved publication/delivery rates, fan-out multiplier, cluster average/peak CPU and RAM, and exit codes. | Automated data collection, CI/CD, spreadsheet analysis |
 | **`node-summary.csv`** | Per-container resource consumption breakdown: average and peak CPU %, RAM usage, Network RX/TX (MB/s), and Block Read/Write (MB/s). | Node balance analysis, identifying cluster bottlenecks |
 | **`metrics.csv`** | Raw time-series telemetry sampled every `METRICS_SAMPLE_INTERVAL` seconds across all monitored cluster nodes. | Time-series charting, deep-dive resource analysis |

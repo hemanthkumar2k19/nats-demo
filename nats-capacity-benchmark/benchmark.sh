@@ -12,10 +12,11 @@ if [[ "${1:-}" == "--check" ]]; then
 fi
 
 # Usage:
-#   ./benchmark.sh [--check] [WORKLOAD_CONFIG] [ENVIRONMENT_CONFIG]
+#   ./benchmark.sh [--check] [WORKLOAD_CONFIG] [ENVIRONMENT_CONFIG] [TEST_CONFIG]
 # Defaults preserve the original one-argument invocation.
 WORKLOAD_CONFIG="${1:-${ROOT_DIR}/config/core-nats.conf}"
 ENVIRONMENT_CONFIG="${2:-${ROOT_DIR}/config/environment.conf}"
+TEST_CONFIG="${3:-${ROOT_DIR}/config/test.conf}"
 
 [[ -f "$WORKLOAD_CONFIG" ]] || {
   echo "Workload config not found: $WORKLOAD_CONFIG" >&2
@@ -27,9 +28,18 @@ ENVIRONMENT_CONFIG="${2:-${ROOT_DIR}/config/environment.conf}"
   exit 1
 }
 
-# Load environment first, then workload-specific settings.
+# Load environment first, then workload-specific settings, then test identification.
 source "$ENVIRONMENT_CONFIG"
 source "$WORKLOAD_CONFIG"
+
+if [[ -f "$TEST_CONFIG" ]]; then
+  source "$TEST_CONFIG"
+fi
+
+RUN_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+: "${TEST_ID:=${RUN_TIMESTAMP}}"
+: "${TEST_DESCRIPTION:=}"
+: "${TIMESTAMP_SUBFOLDER:=false}"
 
 source "${ROOT_DIR}/scripts/preflight.sh"
 
@@ -131,13 +141,18 @@ elif [[ "$METRICS_BACKEND" != "none" ]]; then
   die "METRICS_BACKEND must be podman or none"
 fi
 
-TEST_ID="$(date -u +%Y%m%dT%H%M%SZ)"
-RESULT_DIR="${ROOT_DIR}/${RESULTS_DIR}/${TEST_ID}"
+if [[ "$TIMESTAMP_SUBFOLDER" == true ]]; then
+  RESULT_DIR="${ROOT_DIR}/${RESULTS_DIR}/${TEST_ID}/${RUN_TIMESTAMP}"
+else
+  RESULT_DIR="${ROOT_DIR}/${RESULTS_DIR}/${TEST_ID}"
+fi
 
 mkdir -p "$RESULT_DIR"
 
 cat > "$RESULT_DIR/test-config.txt" <<EOF
 test_id=${TEST_ID}
+test_description=${TEST_DESCRIPTION}
+run_timestamp=${RUN_TIMESTAMP}
 messaging_type=${MESSAGING_TYPE}
 scenario=${SCENARIO}
 subscription_pattern=${SUBSCRIPTION_PATTERN}
@@ -154,6 +169,8 @@ nominal_duration_seconds=${TEST_DURATION_SECONDS}
 configured_message_count=${TOTAL_MESSAGES}
 metrics_backend=${METRICS_BACKEND}
 metrics_sample_interval_seconds=${METRICS_SAMPLE_INTERVAL}
+nats_containers=${NATS_CONTAINERS}
+baseline_duration_seconds=${BASELINE_DURATION_SECONDS}
 EOF
 
 METRICS_PID=""
