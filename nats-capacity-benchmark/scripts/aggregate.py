@@ -212,144 +212,115 @@ if metrics_file.exists():
         rows = list(csv.DictReader(file))
 
 
-# Only workload samples are used for workload aggregation
+def process_phase_samples(phase_rows):
+    nodes = defaultdict(list)
+    for row in phase_rows:
+        nodes[row.get("container", "unknown")].append(row)
+
+    results = []
+    for node, samples in nodes.items():
+        samples.sort(key=lambda row: num(row.get("timestamp_epoch")) or 0)
+        cpu_values = []
+        memory_values = []
+        network_rx_rates = []
+        network_tx_rates = []
+        disk_read_rates = []
+        disk_write_rates = []
+        previous = None
+
+        for row in samples:
+            cpu = num(row.get("cpu_percent"))
+            if cpu is not None:
+                cpu_values.append(cpu)
+
+            memory_text = (row.get("memory_usage") or "").split("/", 1)[0].strip()
+            memory = bytes_value(memory_text)
+            if memory is not None:
+                memory_values.append(memory)
+
+            if previous:
+                t0 = num(previous.get("timestamp_epoch"))
+                t1 = num(row.get("timestamp_epoch"))
+                elapsed = (t1 - t0 if t0 is not None and t1 is not None else 0)
+                if elapsed > 0:
+                    old_rx, old_tx = pair_bytes(previous.get("network_io"))
+                    new_rx, new_tx = pair_bytes(row.get("network_io"))
+                    old_read, old_write = pair_bytes(previous.get("block_io"))
+                    new_read, new_write = pair_bytes(row.get("block_io"))
+
+                    pairs = [
+                        (old_rx, new_rx, network_rx_rates),
+                        (old_tx, new_tx, network_tx_rates),
+                        (old_read, new_read, disk_read_rates),
+                        (old_write, new_write, disk_write_rates)
+                    ]
+                    for old, new, destination in pairs:
+                        if old is not None and new is not None and new >= old:
+                            mbps = (new - old) / elapsed / 1_000_000
+                            destination.append(mbps)
+            previous = row
+
+        def average(values):
+            return round(statistics.fmean(values), 3) if values else ""
+
+        def peak(values):
+            return round(max(values), 3) if values else ""
+
+        results.append({
+            "test_id": test_id,
+            "container": node,
+            "samples": len(samples),
+            "cpu_avg_percent": average(cpu_values),
+            "cpu_peak_percent": peak(cpu_values),
+            "memory_avg_bytes": average(memory_values),
+            "memory_peak_bytes": peak(memory_values),
+            "network_rx_avg_mbps": average(network_rx_rates),
+            "network_rx_peak_mbps": peak(network_rx_rates),
+            "network_tx_avg_mbps": average(network_tx_rates),
+            "network_tx_peak_mbps": peak(network_tx_rates),
+            "block_read_avg_mbps": average(disk_read_rates),
+            "block_read_peak_mbps": peak(disk_read_rates),
+            "block_write_avg_mbps": average(disk_write_rates),
+            "block_write_peak_mbps": peak(disk_write_rates)
+        })
+
+    samples_by_time = defaultdict(list)
+    for row in phase_rows:
+        samples_by_time[row.get("timestamp_epoch")].append(row)
+
+    cluster_cpu = []
+    cluster_memory = []
+    for group in samples_by_time.values():
+        cpu_vals = [num(row.get("cpu_percent")) for row in group if num(row.get("cpu_percent")) is not None]
+        mem_vals = [bytes_value((row.get("memory_usage") or "").split("/", 1)[0].strip()) for row in group if bytes_value((row.get("memory_usage") or "").split("/", 1)[0].strip()) is not None]
+        if cpu_vals:
+            cluster_cpu.append(sum(cpu_vals))
+        if mem_vals:
+            cluster_memory.append(sum(mem_vals))
+
+    return results, cluster_cpu, cluster_memory
+
+
+baseline_rows = [
+    row for row in rows
+    if row.get("phase") == "baseline"
+]
+
 workload_rows = [
     row for row in rows
     if row.get("phase") == "workload"
 ]
 
+baseline_results, baseline_cluster_cpu, baseline_cluster_memory = process_phase_samples(baseline_rows)
+node_results, cluster_cpu, cluster_memory = process_phase_samples(workload_rows)
+
+cluster_baseline_cpu_avg = round(statistics.fmean(baseline_cluster_cpu), 3) if baseline_cluster_cpu else ""
+cluster_baseline_cpu_peak = round(max(baseline_cluster_cpu), 3) if baseline_cluster_cpu else ""
+cluster_baseline_mem_avg = round(statistics.fmean(baseline_cluster_memory), 0) if baseline_cluster_memory else ""
+cluster_baseline_mem_peak = round(max(baseline_cluster_memory), 0) if baseline_cluster_memory else ""
 
 # -------------------------
-# Group samples by node
-# -------------------------
-
-nodes = defaultdict(list)
-
-for row in workload_rows:
-    nodes[row.get("container", "unknown")].append(row)
-
-
-node_results = []
-
-
-for node, samples in nodes.items():
-
-    samples.sort(
-        key=lambda row: num(row.get("timestamp_epoch")) or 0
-    )
-
-    cpu_values = []
-    memory_values = []
-
-    network_rx_rates = []
-    network_tx_rates = []
-
-    disk_read_rates = []
-    disk_write_rates = []
-
-    previous = None
-
-    for row in samples:
-
-        cpu = num(row.get("cpu_percent"))
-
-        if cpu is not None:
-            cpu_values.append(cpu)
-
-        memory_text = (
-            row.get("memory_usage") or ""
-        ).split("/", 1)[0].strip()
-
-        memory = bytes_value(memory_text)
-
-        if memory is not None:
-            memory_values.append(memory)
-
-        # Calculate throughput from cumulative counters
-        if previous:
-
-            t0 = num(previous.get("timestamp_epoch"))
-            t1 = num(row.get("timestamp_epoch"))
-
-            elapsed = (
-                t1 - t0
-                if t0 is not None and t1 is not None
-                else 0
-            )
-
-            if elapsed > 0:
-
-                old_rx, old_tx = pair_bytes(
-                    previous.get("network_io")
-                )
-
-                new_rx, new_tx = pair_bytes(
-                    row.get("network_io")
-                )
-
-                old_read, old_write = pair_bytes(
-                    previous.get("block_io")
-                )
-
-                new_read, new_write = pair_bytes(
-                    row.get("block_io")
-                )
-
-                pairs = [
-                    (old_rx, new_rx, network_rx_rates),
-                    (old_tx, new_tx, network_tx_rates),
-                    (old_read, new_read, disk_read_rates),
-                    (old_write, new_write, disk_write_rates)
-                ]
-
-                for old, new, destination in pairs:
-
-                    if (
-                        old is not None
-                        and new is not None
-                        and new >= old
-                    ):
-                        mbps = (new - old) / elapsed / 1_000_000
-                        destination.append(mbps)
-
-        previous = row
-
-    def average(values):
-        return (
-            round(statistics.fmean(values), 3)
-            if values else ""
-        )
-
-    def peak(values):
-        return round(max(values), 3) if values else ""
-
-    node_results.append({
-        "test_id": test_id,
-        "container": node,
-        "samples": len(samples),
-
-        "cpu_avg_percent": average(cpu_values),
-        "cpu_peak_percent": peak(cpu_values),
-
-        "memory_avg_bytes": average(memory_values),
-        "memory_peak_bytes": peak(memory_values),
-
-        "network_rx_avg_mbps": average(network_rx_rates),
-        "network_rx_peak_mbps": peak(network_rx_rates),
-
-        "network_tx_avg_mbps": average(network_tx_rates),
-        "network_tx_peak_mbps": peak(network_tx_rates),
-
-        "block_read_avg_mbps": average(disk_read_rates),
-        "block_read_peak_mbps": peak(disk_read_rates),
-
-        "block_write_avg_mbps": average(disk_write_rates),
-        "block_write_peak_mbps": peak(disk_write_rates)
-    })
-
-
-# -------------------------
-# Write node summary
+# Write node summary (Workload Phase)
 # -------------------------
 
 node_fields = [
@@ -385,53 +356,6 @@ with (result_dir / "node-summary.csv").open(
 
     writer.writeheader()
     writer.writerows(node_results)
-
-
-# -------------------------
-# Cluster-level aggregation
-# -------------------------
-
-# Sum node CPU and memory at each timestamp.
-# Do not sum independent node peaks.
-
-samples_by_time = defaultdict(list)
-
-for row in workload_rows:
-    samples_by_time[row.get("timestamp_epoch")].append(row)
-
-
-cluster_cpu = []
-cluster_memory = []
-
-for group in samples_by_time.values():
-
-    cpu_values = [
-        num(row.get("cpu_percent"))
-        for row in group
-    ]
-
-    cpu_values = [
-        value for value in cpu_values
-        if value is not None
-    ]
-
-    memory_values = [
-        bytes_value(
-            (row.get("memory_usage") or "").split("/", 1)[0].strip()
-        )
-        for row in group
-    ]
-
-    memory_values = [
-        value for value in memory_values
-        if value is not None
-    ]
-
-    if cpu_values:
-        cluster_cpu.append(sum(cpu_values))
-
-    if memory_values:
-        cluster_memory.append(sum(memory_values))
 
 
 # -------------------------
@@ -572,6 +496,11 @@ summary = {
     "workload_exit_code": workload_exit,
     "metrics_backend": backend,
 
+    "cluster_baseline_cpu_avg_percent": cluster_baseline_cpu_avg,
+    "cluster_baseline_cpu_peak_percent": cluster_baseline_cpu_peak,
+    "cluster_baseline_memory_avg_bytes": cluster_baseline_mem_avg,
+    "cluster_baseline_memory_peak_bytes": cluster_baseline_mem_peak,
+
     "cluster_cpu_avg_percent": (
         round(statistics.fmean(cluster_cpu), 3)
         if cluster_cpu else ""
@@ -651,30 +580,153 @@ def generate_report_html():
         pub_achieved_pct = "unthrottled"
         pub_target_desc = "Target: unthrottled (maximum achievable)"
 
-    cluster_cpu_peak_display = f"{summary['cluster_cpu_peak_percent']}%" if summary["cluster_cpu_peak_percent"] != "" else "-"
-    cluster_cpu_avg_display = f"{summary['cluster_cpu_avg_percent']}%" if summary["cluster_cpu_avg_percent"] != "" else "-"
+    node_count = len(node_results) or len(baseline_results) or 1
+    total_cluster_vcpu = float(node_count)
+
+    def format_cpu_cell(cpu_pct, capacity_vcpu=1.0, sub_text=None):
+        if cpu_pct is None or cpu_pct == "" or cpu_pct == "-":
+            return "-"
+        try:
+            val = float(cpu_pct)
+            vcpu = val / 100.0
+            if capacity_vcpu > 1.0:
+                vcpu_str = f"{vcpu:.3f} vCPU of {capacity_vcpu:.1f} vCPUs"
+            else:
+                vcpu_str = f"{vcpu:.3f} vCPU"
+
+            if sub_text:
+                sub = f"<span class='sub-metric'>{vcpu_str} &bull; {sub_text}</span>"
+            else:
+                sub = f"<span class='sub-metric'>{vcpu_str}</span>"
+            return f"{val:.2f}%{sub}"
+        except (ValueError, TypeError):
+            return f"{cpu_pct}%"
+
+    cluster_cpu_peak_val = summary["cluster_cpu_peak_percent"]
+    if cluster_cpu_peak_val != "" and cluster_cpu_peak_val is not None:
+        try:
+            peak_pct = float(cluster_cpu_peak_val)
+            peak_vcpu = peak_pct / 100.0
+            cluster_cpu_peak_display = f"{peak_pct:.2f}% <span style='font-size:0.9rem; font-weight:400; color:var(--text-sec);'>({peak_vcpu:.3f} vCPU)</span>"
+        except (ValueError, TypeError):
+            cluster_cpu_peak_display = f"{cluster_cpu_peak_val}%"
+    else:
+        cluster_cpu_peak_display = "-"
+
+    cluster_cpu_avg_val = summary["cluster_cpu_avg_percent"]
+    if cluster_cpu_avg_val != "" and cluster_cpu_avg_val is not None:
+        try:
+            avg_pct = float(cluster_cpu_avg_val)
+            avg_vcpu = avg_pct / 100.0
+            cluster_cpu_avg_display = f"{avg_pct:.2f}% ({avg_vcpu:.3f} vCPU of {total_cluster_vcpu:.1f} vCPUs)"
+        except (ValueError, TypeError):
+            cluster_cpu_avg_display = f"{cluster_cpu_avg_val}% across cluster"
+    else:
+        cluster_cpu_avg_display = "-"
 
     cluster_mem_peak_display = format_bytes(summary["cluster_memory_peak_bytes"])
     cluster_mem_avg_display = format_bytes(summary["cluster_memory_avg_bytes"])
 
+    def sum_metric(nodes, key):
+        vals = [n.get(key) for n in nodes if n.get(key) is not None and n.get(key) != ""]
+        return sum(vals) if vals else None
+
+    baseline_map = {b.get("container"): b for b in baseline_results}
+
+    baseline_rows_html = []
+    for b in baseline_results:
+        baseline_rows_html.append(f"""
+        <tr>
+          <td><strong>{html.escape(str(b.get('container', '')))}</strong></td>
+          <td class="num">{b.get('samples', 0)}</td>
+          <td class="num">{format_cpu_cell(b.get('cpu_avg_percent'), 1.0)}</td>
+          <td class="num bold">{format_cpu_cell(b.get('cpu_peak_percent'), 1.0)}</td>
+          <td class="num">{format_bytes(b.get('memory_avg_bytes'))}</td>
+          <td class="num bold">{format_bytes(b.get('memory_peak_bytes'))}</td>
+          <td class="num">{format_rate(b.get('network_rx_avg_mbps'))} / {format_rate(b.get('network_tx_avg_mbps'))}</td>
+        </tr>""")
+
+    baseline_net_rx = sum_metric(baseline_results, "network_rx_avg_mbps")
+    baseline_net_tx = sum_metric(baseline_results, "network_tx_avg_mbps")
+    baseline_net_display = (
+        f"{format_rate(baseline_net_rx)} / {format_rate(baseline_net_tx)}"
+        if baseline_net_rx is not None or baseline_net_tx is not None
+        else "-"
+    )
+    baseline_cpu_avg_display = f"{cluster_baseline_cpu_avg}%" if cluster_baseline_cpu_avg != "" else "-"
+    baseline_cpu_peak_display = f"{cluster_baseline_cpu_peak}%" if cluster_baseline_cpu_peak != "" else "-"
+    baseline_mem_avg_display = format_bytes(cluster_baseline_mem_avg)
+    baseline_mem_peak_display = format_bytes(cluster_baseline_mem_peak)
+
+    if baseline_results:
+        baseline_rows_html.append(f"""
+        <tr class="total-row">
+          <td><strong>CLUSTER IDLE TOTAL</strong></td>
+          <td class="num">{len(baseline_rows)}</td>
+          <td class="num">{format_cpu_cell(cluster_baseline_cpu_avg, total_cluster_vcpu)}</td>
+          <td class="num bold">{format_cpu_cell(cluster_baseline_cpu_peak, total_cluster_vcpu)}</td>
+          <td class="num">{baseline_mem_avg_display}</td>
+          <td class="num bold">{baseline_mem_peak_display}</td>
+          <td class="num">{baseline_net_display}</td>
+        </tr>""")
+        baseline_table_body = "\n".join(baseline_rows_html)
+        baseline_section_html = f"""
+  <!-- Pre-Workload Idle Baseline Breakdown -->
+  <div class="card">
+    <div class="card-title">
+      <span>Pre-Workload Idle Baseline Telemetry</span>
+      <span style="font-size:0.75rem; color:var(--text-sec); font-weight:normal;">{len(baseline_rows)} samples across {len(baseline_results)} nodes &bull; Baseline Phase Samples</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Container Name</th>
+            <th style="text-align:right;">Samples</th>
+            <th style="text-align:right;">Idle CPU Avg (% / vCPU)</th>
+            <th style="text-align:right;">Idle CPU Peak (% / vCPU)</th>
+            <th style="text-align:right;">Idle RAM Avg</th>
+            <th style="text-align:right;">Idle RAM Peak</th>
+            <th style="text-align:right;">Idle Net RX / TX</th>
+          </tr>
+        </thead>
+        <tbody>
+          {baseline_table_body}
+        </tbody>
+      </table>
+    </div>
+  </div>"""
+    else:
+        baseline_section_html = """
+  <!-- Pre-Workload Idle Baseline Breakdown -->
+  <div class="card">
+    <div class="card-title">
+      <span>Pre-Workload Idle Baseline Telemetry</span>
+      <span style="font-size:0.75rem; color:var(--text-sec); font-weight:normal;">No samples collected</span>
+    </div>
+    <div style="padding:12px; color:var(--text-sec); font-size:0.8rem;">
+      No idle baseline telemetry samples were captured (baseline duration was 0s or metrics backend was none).
+    </div>
+  </div>"""
+
     # Table rows for nodes
     node_rows_html = []
     for n in node_results:
+        b = baseline_map.get(n.get("container"))
+        base_cpu_text = f"idle: {b.get('cpu_avg_percent', '-')}%" if b else None
+        base_mem_sub = f"<span class='sub-metric'>idle: {format_bytes(b.get('memory_avg_bytes'))}</span>" if b else ""
+
         node_rows_html.append(f"""
         <tr>
           <td><strong>{html.escape(str(n.get('container', '')))}</strong></td>
           <td class="num">{n.get('samples', 0)}</td>
-          <td class="num">{n.get('cpu_avg_percent', '-')}%</td>
-          <td class="num bold">{n.get('cpu_peak_percent', '-')}%</td>
+          <td class="num">{format_cpu_cell(n.get('cpu_avg_percent'), 1.0, sub_text=base_cpu_text)}</td>
+          <td class="num bold">{format_cpu_cell(n.get('cpu_peak_percent'), 1.0)}</td>
           <td class="num">{format_bytes(n.get('memory_avg_bytes'))}</td>
-          <td class="num bold">{format_bytes(n.get('memory_peak_bytes'))}</td>
+          <td class="num bold">{format_bytes(n.get('memory_peak_bytes'))}{base_mem_sub}</td>
           <td class="num">{format_rate(n.get('network_rx_avg_mbps'))} / {format_rate(n.get('network_tx_avg_mbps'))}</td>
           <td class="num">{format_rate(n.get('block_read_avg_mbps'))} / {format_rate(n.get('block_write_avg_mbps'))}</td>
         </tr>""")
-
-    def sum_metric(nodes, key):
-        vals = [n.get(key) for n in nodes if n.get(key) is not None and n.get(key) != ""]
-        return sum(vals) if vals else None
 
     cluster_net_rx = sum_metric(node_results, "network_rx_avg_mbps")
     cluster_net_tx = sum_metric(node_results, "network_tx_avg_mbps")
@@ -692,15 +744,18 @@ def generate_report_html():
         else "-"
     )
 
+    cluster_idle_cpu_text = f"idle: {baseline_cpu_avg_display}" if baseline_results else None
+    cluster_base_mem_sub = f"<span class='sub-metric'>idle: {baseline_mem_avg_display}</span>" if baseline_results else ""
+
     # Append Cluster Aggregate row
     node_rows_html.append(f"""
     <tr class="total-row">
       <td><strong>CLUSTER TOTAL</strong></td>
       <td class="num">{len(workload_rows)}</td>
-      <td class="num">{cluster_cpu_avg_display}</td>
-      <td class="num bold">{cluster_cpu_peak_display}</td>
+      <td class="num">{format_cpu_cell(summary['cluster_cpu_avg_percent'], total_cluster_vcpu, sub_text=cluster_idle_cpu_text)}</td>
+      <td class="num bold">{format_cpu_cell(summary['cluster_cpu_peak_percent'], total_cluster_vcpu)}</td>
       <td class="num">{cluster_mem_avg_display}</td>
-      <td class="num bold">{cluster_mem_peak_display}</td>
+      <td class="num bold">{cluster_mem_peak_display}{cluster_base_mem_sub}</td>
       <td class="num">{cluster_net_display}</td>
       <td class="num">{cluster_block_display}</td>
     </tr>""")
@@ -762,7 +817,7 @@ def generate_report_html():
     <div class="card-kpi">
       <div class="kpi-label">Cluster Peak CPU</div>
       <div class="kpi-value" style="color:var(--purple);">{cluster_cpu_peak_display}</div>
-      <div class="kpi-sub">Average: {cluster_cpu_avg_display} across cluster</div>
+      <div class="kpi-sub">Average: {cluster_cpu_avg_display}</div>
     </div>
 
     <div class="card-kpi">
@@ -787,7 +842,7 @@ def generate_report_html():
     <div class="card-kpi">
       <div class="kpi-label">Cluster Peak CPU</div>
       <div class="kpi-value" style="color:var(--purple);">{cluster_cpu_peak_display}</div>
-      <div class="kpi-sub">Average: {cluster_cpu_avg_display} across cluster</div>
+      <div class="kpi-sub">Average: {cluster_cpu_avg_display}</div>
     </div>
 
     <div class="card-kpi">
@@ -813,7 +868,7 @@ def generate_report_html():
     <div class="card-kpi">
       <div class="kpi-label">Cluster Peak CPU</div>
       <div class="kpi-value" style="color:var(--purple);">{cluster_cpu_peak_display}</div>
-      <div class="kpi-sub">Average: {cluster_cpu_avg_display} across cluster</div>
+      <div class="kpi-sub">Average: {cluster_cpu_avg_display}</div>
     </div>
 
     <div class="card-kpi">
@@ -1117,6 +1172,14 @@ def generate_report_html():
       font-weight: 700;
       color: var(--accent);
     }}
+    .sub-metric {{
+      display: block;
+      font-size: 0.7rem;
+      color: var(--text-sec);
+      font-weight: normal;
+      font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+      margin-top: 2px;
+    }}
     .config-table {{
       width: 100%;
     }}
@@ -1310,6 +1373,9 @@ def generate_report_html():
     </div>
   </div>
 
+  <!-- Pre-Workload Idle Baseline Breakdown -->
+  {baseline_section_html}
+
   <!-- Node Infrastructure Breakdown -->
   <div class="card">
     <div class="card-title">
@@ -1322,8 +1388,8 @@ def generate_report_html():
           <tr>
             <th>Container Name</th>
             <th style="text-align:right;">Samples</th>
-            <th style="text-align:right;">CPU Avg</th>
-            <th style="text-align:right;">CPU Peak</th>
+            <th style="text-align:right;">CPU Avg (% / vCPU)</th>
+            <th style="text-align:right;">CPU Peak (% / vCPU)</th>
             <th style="text-align:right;">Memory Avg</th>
             <th style="text-align:right;">Memory Peak</th>
             <th style="text-align:right;">Net RX / TX</th>
