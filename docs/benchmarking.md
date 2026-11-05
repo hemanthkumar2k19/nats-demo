@@ -11,7 +11,7 @@ This benchmarking exercise provides empirical data to:
 - Identify the maximum sustainable throughput boundary under fixed infrastructure limits.
 - Establish infrastructure sizing models, capacity planning guidelines, and TCO estimations.
 
-The benchmarking approach follows a controlled, workload-driven methodology inspired by Synadia's enterprise NATS benchmarking standards.
+The benchmarking approach follows a controlled, workload-driven methodology aligned with the Linux Foundation's OpenMessaging Benchmark (OMB) framework and Synadia's enterprise NATS benchmarking and TCO evaluation methodology (McKnight Consulting Group study).
 
 ---
 
@@ -112,12 +112,12 @@ To ensure scientific validity and repeatability, the infrastructure configuratio
 
 ## 5. Capacity Identification Methodology
 
-The benchmark follows a **Fixed Infrastructure + Incremental Load** methodology:
+The benchmark follows a **Time-Bound Fixed Infrastructure + Incremental Load** methodology (aligned with OpenMessaging Benchmark and SPEC standards):
 
 ```mermaid
 flowchart LR
     S1["1. Preflight Validation\n(Ports, Health, Routes)"] --> S2["2. Idle Baseline\n(15s Background Metrics)"]
-    S2 --> S3["3. Baseline Test\n(Standard Concurrency & 1 KiB)"]
+    S2 --> S3["3. Baseline Test\n(Fixed Duration Window)"]
     S3 --> S4["4. Dimensional Sweeps\n(Vary 1 Parameter at a Time)"]
     S4 --> S5["5. Load Ladder\n(Step Throughput to Limit)"]
     S5 --> S6["6. Capacity Boundary\n(Identify Saturation Point)"]
@@ -126,12 +126,19 @@ flowchart LR
 ### Steps:
 1. **Preflight Verification**: Validate network reachability, cluster quorum, monitoring URLs, and dependency tooling.
 2. **Idle Baseline**: Sample 15 seconds of idle cluster metrics to establish background CPU/RAM floors.
-3. **Controlled Incremental Load**: Progressively increase throughput while keeping message size and concurrency fixed.
+3. **Time-Bound Execution**: All workload tests execute within a strictly enforced duration window (`TEST_DURATION_SECONDS`). Even when an offered rate exceeds hardware limits (e.g. 1M msgs/s), the test terminates predictably at the configured duration and captures the true achieved throughput and saturation latency.
 4. **Capacity Boundary Identification**: Maximum sustainable throughput is defined as the highest throughput achieved where:
    - Message delivery efficiency is 100% (zero message drop or unhandled errors).
    - Server CPU utilization exhibits headroom (<80-85% peak across all nodes).
    - Client-side P99 latency remains within acceptable SLA thresholds (typically < 10 ms).
    - Inter-node cluster routes remain healthy without queue overflows.
+
+### Formal Test Execution Outcomes:
+Every test run classifies its lifecycle into one of four standard states:
+- **`COMPLETED`**: Workload executed as expected within the designated duration with exit code 0.
+- **`TIMEOUT`**: Execution exceeded the allowed duration window (e.g. unresponsive process or subscriber drain timeout).
+- **`FAILED`**: Publisher, consumer, or benchmark process exited with a runtime error or non-zero exit code.
+- **`INTERRUPTED`**: Workload was aborted or cancelled manually via `Ctrl+C` (`SIGINT`/`SIGTERM`).
 
 ---
 
@@ -141,13 +148,22 @@ Every benchmark execution generates a structured, immutable artifact bundle with
 
 | Artifact | Purpose | Primary Consumer |
 | :--- | :--- | :--- |
-| **`report.html`** | Self-contained, zero-dependency offline HTML dashboard with KPI cards, latency percentiles, infrastructure summary, and print styles. | Humans, Architects, Stakeholders |
-| **`summary.csv`** | Machine-readable execution summary with cluster aggregates, achieved rates, fan-out, and exit status. | Automated tooling, CI/CD, Trend Analysis |
-| **`node-summary.csv`** | Per-node resource consumption breakdown (avg/peak CPU, RAM, Net RX/TX MB/s, Block Read/Write MB/s). | Capacity Engineers, Bottleneck Identification |
+| **`report.html`** | Self-contained, zero-dependency offline HTML dashboard with test outcome badge, KPI cards, latency percentiles, infrastructure summary, and print styles. | Humans, Architects, Stakeholders |
+| **`summary.csv`** | Machine-readable execution summary with `test_outcome`, cluster aggregates, achieved rates, fan-out, physical storage growth, and exit status. | Automated tooling, CI/CD, Trend Analysis |
+| **`node-summary.csv`** | Per-node resource consumption breakdown (avg/peak CPU, RAM, Net RX/TX MB/s, Block Read/Write MB/s, start/final bytes, storage growth). | Capacity Engineers, Bottleneck Identification |
 | **`metrics.csv`** | Raw time-series telemetry sampled at regular intervals across all cluster containers. | Deep-dive telemetry, Time-series graphing |
 | **`workload.log`** | Standard output and error logs from publisher workload generation. | Debugging, Latency percentiles |
 | **`subscriber.log`** | Standard output and error logs from subscriber delivery clients. | Delivery verification, Bandwidth confirmation |
 | **`test-config.txt`** | Full configuration snapshot used for the benchmark run. | Repeatability, Audit trail |
+
+### 6.1 Executive Suite Comparative Deliverables
+
+When running benchmark suites (`./suite.sh <suite-name>`), individual test runs are aggregated into an executive-level presentation bundle located in `results/suites/<SUITE_ID>/<TIMESTAMP>/`:
+
+| Artifact | Purpose | Primary Consumer |
+| :--- | :--- | :--- |
+| **`executive-report.html`** | Offline dashboard featuring: (1) Sizing recommendations and sustained operating boundary, (2) Inline SVG Throughput vs Latency saturation curve ("hockey stick" curve) with P50/P99 latency knee callouts, and (3) Comparative "Cost of Guarantees" Matrix table with links to individual test runs. | Enterprise Architects, Engineering Leadership |
+| **`executive-summary.md`** | Portable Markdown summary suitable for Confluence, PR descriptions, and architectural records. | Technical Leads, Project Managers |
 
 ---
 
@@ -163,5 +179,6 @@ Every benchmark execution generates a structured, immutable artifact bundle with
 
 ## 8. Related Documentation
 
-- For the concrete catalog of executable test cases, test matrices, and execution run cards, refer to [`tests.md`](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/%20capacity-bench/tests.md).
-- For instructions on running the benchmark utility and configuring runtime parameters, refer to [`README.md`](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/%20capacity-bench/README.md).
+- For the Core NATS test case inventory and run cards, refer to `tests.md`.
+- For the JetStream test case inventory and parameter sweep matrices, refer to `tests-jetstream.md`.
+- For instructions on running the benchmark utility and configuring runtime parameters, refer to `README.md`.

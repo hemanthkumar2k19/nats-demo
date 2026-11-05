@@ -12,6 +12,7 @@ CONCURRENCY="$3"
 DURATION="$4"
 RESULT_DIR="$5"
 
+OUTCOME_FILE="${RESULT_DIR}/workload_outcome.txt"
 SUB_PIDS=()
 
 cleanup() {
@@ -25,7 +26,15 @@ cleanup() {
     done
   fi
 }
-trap cleanup EXIT INT TERM
+
+interrupted() {
+  echo "INTERRUPTED" > "$OUTCOME_FILE"
+  cleanup
+  exit 130
+}
+
+trap interrupted INT TERM
+trap cleanup EXIT
 
 echo "Starting Core NATS Subscribe Setup Benchmark"
 echo "Target Connections : $CONCURRENCY"
@@ -64,7 +73,8 @@ echo "Holding subscriptions open for ${DURATION}s to sample server resource over
 sleep "$DURATION"
 
 echo "Subscribe Setup benchmark complete."
+echo "COMPLETED" > "$OUTCOME_FILE"
+
 trap - EXIT INT TERM
 cleanup
 exit 0
-

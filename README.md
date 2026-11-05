@@ -6,7 +6,7 @@ A lightweight, portable benchmarking utility to evaluate NATS cluster throughput
 
 ## 1. Architecture Overview
 
-The benchmarking utility tests a fixed multi-node NATS cluster through an L4 TCP load balancer:
+The benchmarking utility tests a fixed multi-node NATS cluster through an L4 TCP load balancer, implementing the **OpenMessaging Benchmark (OMB)** time-bound execution standard and aligning with **Synadia's enterprise NATS benchmarking and TCO methodology** (McKnight Consulting Group evaluation):
 
 ```
 [ Benchmark Runner (Host) ]
@@ -76,6 +76,12 @@ NATS_URL="nats://127.0.0.1:4222"
 # Infrastructure telemetry backend: "podman" or "none"
 METRICS_BACKEND="podman"
 
+# Physical disk metrics backend: "local" (host filesystem scan) or "cgroup" (container engine blkio)
+DISK_METRICS_BACKEND="local"
+
+# Host path containing per-node data directories (nats-1, nats-2, nats-3)
+NATS_DATA_BASE_DIR="../deploy/data"
+
 # Podman container names to monitor
 NATS_CONTAINERS="nats-1 nats-2 nats-3"
 
@@ -119,7 +125,42 @@ SUBSCRIBER_CONCURRENCY=1       # Concurrent subscriber client connections
 TEST_DURATION_SECONDS=60       # Nominal test duration in seconds
 ```
 
-### C. Test Identification Configuration (`config/test.conf`)
+### C. JetStream Workload Configuration (`config/jetstream.conf`)
+
+Controls stream persistence, Raft replication quorum, consensus publish modes, and pull consumers:
+
+```bash
+MESSAGING_TYPE="JetStream"
+
+# 1. Test Scenario:
+#   pubsub   - Concurrent JetStream publish and pull consume (default)
+#   publish  - Publishers append messages to stream without active consumers
+#   consume  - Consumers replay from pre-populated stream without active publishers
+SCENARIO="pubsub"
+
+# 2. Stream Persistence & Quorum:
+STREAM_NAME="BENCH_STREAM"
+STREAM_SUBJECT="benchmark.js.test"
+STORAGE_TYPE="file"               # "file" (disk storage) or "memory" (RAM-backed)
+REPLICATION_FACTOR=3              # 1 (single node) or 3 (R=3 Raft quorum)
+MAX_BYTES="5GB"                   # Stream max storage quota
+RETENTION_POLICY="limits"         # "limits", "interest", or "workqueue"
+
+# 3. Publishing & Consumer Settings:
+JS_PUB_MODE="sync"                # "sync" (consensus commit wait) or "async" (pipelined)
+CONSUMER_NAME="bench-consumer"
+CONSUMER_ACK_POLICY="explicit"    # Explicit per-message acknowledgment
+CONSUMER_BATCH_SIZE=500           # Pull batch fetch size
+
+# 4. Workload Limits:
+TARGET_MSGS_PER_SEC=1000
+MESSAGE_SIZE=1024
+PUBLISHER_CONCURRENCY=4
+SUBSCRIBER_CONCURRENCY=2
+TEST_DURATION_SECONDS=60
+```
+
+### D. Test Identification Configuration (`config/test.conf`)
 
 Controls test naming, intent descriptions, and results folder mapping:
 
@@ -170,10 +211,27 @@ Regenerate summary CSVs and HTML reports from an existing test directory without
 python3 scripts/aggregate.py results/<TEST_ID>
 ```
 
+### 5. Run Unattended Executive Benchmark Suites
+Execute an entire test matrix unattended with automated cluster isolation, 10-second quiescence settling between runs, and consolidated executive reporting:
+```bash
+# Run predefined JetStream Cost of Guarantees suite:
+./suite.sh jetstream-guarantees
+
+# Or run by explicit path:
+./suite.sh suites/core-ladder.conf
+```
+
+Available Predefined Suites (`suites/*.conf`):
+- `jetstream-guarantees.conf`: Compares Core NATS, JetStream Memory R=3, JetStream File R=1, and JetStream File R=3.
+- `core-ladder.conf`: Core NATS saturation ladder across offered rates (1k to 100k msgs/s).
+- `jetstream-ladder.conf`: JetStream synchronous write saturation ladder (250 to 10,000 msgs/s).
+- `payload-scaling.conf`: Payload dimension scaling from 128 B to 32 KiB.
+
 ---
 
-## 6. Supported Core NATS Workload Scenarios
+## 6. Supported Workload Scenarios
 
+### A. Core NATS
 1. **Publish + Subscribe (`SCENARIO="pubsub"`)**:
    - Publishers and subscribers run simultaneously.
    - **Broadcast Mode (`SUBSCRIPTION_PATTERN="pubsub"`)**: Each subscriber receives a copy of all published messages ($Fan\text{-}out = \text{Subscriber Concurrency}$).
@@ -182,6 +240,14 @@ python3 scripts/aggregate.py results/<TEST_ID>
    - Publishers push messages without active subscribers to measure raw publishing throughput, connection handling, and server ingress routing without delivery costs.
 3. **Subscribe Setup (`SCENARIO="subscribe_setup"`)**:
    - Measures connection and subscription establishment overhead without message traffic. Reports connection rate (`conns/sec`) and server memory overhead per subscription.
+
+### B. JetStream
+1. **Publish + Consume (`SCENARIO="pubsub"`)**:
+   - Concurrent publishing (sync or async) and durable pull consumers.
+2. **Publish-Only (`SCENARIO="publish"`)**:
+   - Measures write throughput, disk I/O write rate, and Raft consensus replication latency without consumer drain.
+3. **Consume-Only (`SCENARIO="consume"`)**:
+   - Pull consumer replay throughput, disk I/O read rate, and batch acknowledgment performance from a pre-populated stream.
 
 ---
 
@@ -199,6 +265,15 @@ Every benchmark run creates an organized output directory under `results/<TEST_I
 | **`subscriber.log`** | Execution console output from subscriber clients. | Delivery verification, bandwidth confirmation, connection setup stats |
 | **`test-config.txt`** | Complete snapshot of runtime parameters and configurations used during the test. | Test auditability, repeatability |
 
+### Executive Suite Deliverables
+
+When executing benchmark suites via `./suite.sh <suite-name>`, a consolidated suite directory is created under `results/suites/<SUITE_ID>/<TIMESTAMP>/` containing all individual test runs plus two executive deliverables:
+
+| File | Description | Primary Purpose |
+| :--- | :--- | :--- |
+| **`executive-report.html`** | Offline executive dashboard featuring: (1) Sizing & Capacity Recommendation cards, (2) Pure SVG Throughput vs Latency Saturation Curve ("hockey stick" curve) with P50/P99 latency knee callouts, and (3) Comparative "Cost of Guarantees" Matrix with direct links to per-test diagnostic reports. Includes professional print/PDF styling. | Architecture reviews, leadership presentations, capacity sign-off |
+| **`executive-summary.md`** | Portable GitHub Flavored Markdown summary of the suite recommendations and comparative matrix table. | Confluence documentation, PR descriptions, issue tracking |
+
 ---
 
 ## 8. Operational Notes & Troubleshooting
@@ -211,5 +286,6 @@ Every benchmark run creates an organized output directory under `results/<TEST_I
 
 ## 9. Next Steps & Cross-References
 
-- To plan and select test matrices across concurrency, payload sizes, and fan-out multipliers, see the **[Test Case Inventory (`tests.md`)](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/%20capacity-bench/tests.md)**.
-- For the architectural design, evaluation methodology, and capacity planning standards, see the **[Benchmarking Design Document (`benchmarking.md`)](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/%20capacity-bench/benchmarking.md)**.
+- For the Core NATS test case inventory and run cards, see `tests.md`.
+- For the JetStream test case inventory and parameter sweep matrices, see `tests-jetstream.md`.
+- For the architectural design, evaluation methodology, and capacity planning standards, see `benchmarking.md`.

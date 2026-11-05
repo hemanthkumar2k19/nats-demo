@@ -27,6 +27,33 @@ interval = float(sys.argv[2])
 phase = sys.argv[3]
 containers = sys.argv[4:]
 
+disk_backend = os.environ.get("DISK_METRICS_BACKEND", "cgroup")
+data_base_dir = os.environ.get("NATS_DATA_BASE_DIR", "")
+
+def get_dir_size(path):
+    total = 0
+    try:
+        with os.scandir(path) as it:
+            for entry in it:
+                try:
+                    if entry.is_file(follow_symlinks=False):
+                        total += entry.stat(follow_symlinks=False).st_size
+                    elif entry.is_dir(follow_symlinks=False):
+                        total += get_dir_size(entry.path)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
+
+def get_disk_block_io(c_name, default_val):
+    if disk_backend == "local" and data_base_dir:
+        node_dir = os.path.join(data_base_dir, c_name)
+        if os.path.isdir(node_dir):
+            dir_bytes = get_dir_size(node_dir)
+            return f"0B / {dir_bytes}B"
+    return default_val or "0B / 0B"
+
 running = True
 def handle_term(signum, frame):
     global running
@@ -83,10 +110,35 @@ if not os.path.exists(out_file) or os.path.getsize(out_file) == 0:
 prev_samples = {}
 init_stats = query_stats(containers)
 t_init = time.time()
+t_init_epoch = int(t_init)
+t_init_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+init_rows = []
 for item in init_stats:
     c_name = item.get("name") or item.get("Name") or ""
     if c_name:
         prev_samples[c_name] = (t_init, parse_time(item.get("cpu_time") or item.get("CPUTime")))
+        mem_usage = item.get("mem_usage") or item.get("MemUsage") or ""
+        mem_pct = item.get("mem_percent") or item.get("MemPerc") or ""
+        net_io = item.get("net_io") or item.get("NetIO") or ""
+        raw_block_io = item.get("block_io") or item.get("BlockIO") or ""
+        block_io = get_disk_block_io(c_name, raw_block_io)
+        init_rows.append([
+            t_init_epoch,
+            t_init_utc,
+            phase,
+            c_name,
+            "",
+            mem_usage,
+            mem_pct,
+            net_io,
+            block_io
+        ])
+
+if init_rows:
+    with open(out_file, "a", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerows(init_rows)
 
 while running:
     elapsed_sleep = 0.0
@@ -129,7 +181,8 @@ while running:
         mem_usage = item.get("mem_usage") or item.get("MemUsage") or ""
         mem_pct = item.get("mem_percent") or item.get("MemPerc") or ""
         net_io = item.get("net_io") or item.get("NetIO") or ""
-        block_io = item.get("block_io") or item.get("BlockIO") or ""
+        raw_block_io = item.get("block_io") or item.get("BlockIO") or ""
+        block_io = get_disk_block_io(c_name, raw_block_io)
 
         rows_to_write.append([
             now_epoch,

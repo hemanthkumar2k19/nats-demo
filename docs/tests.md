@@ -2,7 +2,9 @@
 
 ## 1. Objective and Methodology
 
-The objective is to establish a performance baseline for Core NATS and understand how workload characteristics influence throughput and infrastructure resource consumption.
+The objective is to establish an empirical performance baseline for Core NATS and understand how workload characteristics influence throughput and infrastructure resource consumption.
+
+The methodology adheres to the **OpenMessaging Benchmark (OMB)** framework and **Synadia's enterprise NATS benchmarking standards**, evaluating time-bound workloads across standardized 1 KiB payloads, publisher/subscriber concurrency, broadcast fan-out, queue groups, and dynamic subject routing.
 
 The benchmark focuses on:
 
@@ -55,6 +57,18 @@ Override individual workload parameters during execution.
 PUBLISHER_CONCURRENCY=4 \
 TARGET_MSGS_PER_SEC=5000 \
 ./benchmark.sh
+```
+
+### Option C: Automated Executive Suite Execution
+
+Execute entire test ladders or comparative matrices unattended with automated cluster isolation, 10-second quiescence settling between runs, and consolidated executive reporting (`executive-report.html` and `executive-summary.md`):
+
+```bash
+# Run Core NATS saturation ladder suite:
+./suite.sh core-ladder
+
+# Run payload dimension scaling suite:
+./suite.sh payload-scaling
 ```
 
 Each execution should produce:

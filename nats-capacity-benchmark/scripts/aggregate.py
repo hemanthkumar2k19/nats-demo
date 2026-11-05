@@ -70,12 +70,32 @@ elif len(sys.argv) >= 12:
         backend
     ) = sys.argv[1:12]
     result_dir = Path(result_dir)
+    cli_outcome = sys.argv[12] if len(sys.argv) >= 13 else None
 else:
     print(
-        "Usage: aggregate.py <result_dir> [test_id subject target_rate msg_size pubs subs nominal_dur actual_dur exit backend]",
+        "Usage: aggregate.py <result_dir> [test_id subject target_rate msg_size pubs subs nominal_dur actual_dur exit backend [test_outcome]]",
         file=sys.stderr
     )
     sys.exit(1)
+
+test_outcome = "COMPLETED"
+outcome_file = result_dir / "workload_outcome.txt"
+if outcome_file.exists():
+    test_outcome = outcome_file.read_text(errors="replace").strip()
+elif len(sys.argv) >= 13 and sys.argv[12]:
+    test_outcome = sys.argv[12].strip()
+elif (result_dir / "summary.csv").exists():
+    with (result_dir / "summary.csv").open() as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            test_outcome = row.get("test_outcome", test_outcome)
+            break
+elif str(workload_exit) == "0":
+    test_outcome = "COMPLETED"
+elif str(workload_exit) == "130":
+    test_outcome = "INTERRUPTED"
+else:
+    test_outcome = "FAILED"
 
 scenario = "pubsub"
 subscription_pattern = "pubsub"
@@ -84,6 +104,18 @@ subject_distribution = "single"
 multi_subject_max = "10000"
 test_description = ""
 run_timestamp = ""
+messaging_type = "Core NATS"
+stream_name = "BENCH_STREAM"
+storage_type = "file"
+replication_factor = "3"
+max_bytes = "5GB"
+retention_policy = "limits"
+js_pub_mode = "sync"
+consumer_name = "bench-consumer"
+consumer_ack_policy = "explicit"
+consumer_batch_size = "500"
+prepopulate_count = "0"
+disk_metrics_backend = "cgroup"
 
 config_file_path = result_dir / "test-config.txt"
 if config_file_path.exists():
@@ -106,11 +138,37 @@ if config_file_path.exists():
                 test_description = v
             elif k == "run_timestamp":
                 run_timestamp = v
+            elif k == "messaging_type":
+                messaging_type = v
+            elif k == "stream_name":
+                stream_name = v
+            elif k == "storage_type":
+                storage_type = v
+            elif k == "replication_factor":
+                replication_factor = v
+            elif k == "max_bytes":
+                max_bytes = v
+            elif k == "retention_policy":
+                retention_policy = v
+            elif k == "js_pub_mode":
+                js_pub_mode = v
+            elif k == "consumer_name":
+                consumer_name = v
+            elif k == "consumer_ack_policy":
+                consumer_ack_policy = v
+            elif k == "consumer_batch_size":
+                consumer_batch_size = v
+            elif k == "prepopulate_count":
+                prepopulate_count = v
+            elif k == "disk_metrics_backend":
+                disk_metrics_backend = v
 
-if scenario == "publish":
+if scenario in ("publish", "subscribe_setup"):
     fanout_ratio = 0
-elif scenario == "subscribe_setup":
-    fanout_ratio = 0
+elif scenario == "consume":
+    fanout_ratio = 1
+elif messaging_type == "JetStream":
+    fanout_ratio = 1
 elif subscription_pattern == "queue":
     fanout_ratio = 1
 else:
@@ -226,6 +284,8 @@ def process_phase_samples(phase_rows):
         network_tx_rates = []
         disk_read_rates = []
         disk_write_rates = []
+        disk_start_bytes = None
+        disk_final_bytes = None
         previous = None
 
         for row in samples:
@@ -237,6 +297,12 @@ def process_phase_samples(phase_rows):
             memory = bytes_value(memory_text)
             if memory is not None:
                 memory_values.append(memory)
+
+            _, r_write = pair_bytes(row.get("block_io"))
+            if r_write is not None:
+                if disk_start_bytes is None:
+                    disk_start_bytes = r_write
+                disk_final_bytes = r_write
 
             if previous:
                 t0 = num(previous.get("timestamp_epoch"))
@@ -266,10 +332,16 @@ def process_phase_samples(phase_rows):
         def peak(values):
             return round(max(values), 3) if values else ""
 
+        disk_growth = (
+            (disk_final_bytes - disk_start_bytes)
+            if (disk_start_bytes is not None and disk_final_bytes is not None and disk_final_bytes >= disk_start_bytes)
+            else 0
+        )
+
         results.append({
             "test_id": test_id,
             "container": node,
-            "samples": len(samples),
+            "samples": len(cpu_values) if cpu_values else len(samples),
             "cpu_avg_percent": average(cpu_values),
             "cpu_peak_percent": peak(cpu_values),
             "memory_avg_bytes": average(memory_values),
@@ -281,7 +353,10 @@ def process_phase_samples(phase_rows):
             "block_read_avg_mbps": average(disk_read_rates),
             "block_read_peak_mbps": peak(disk_read_rates),
             "block_write_avg_mbps": average(disk_write_rates),
-            "block_write_peak_mbps": peak(disk_write_rates)
+            "block_write_peak_mbps": peak(disk_write_rates),
+            "disk_start_bytes": int(disk_start_bytes) if disk_start_bytes is not None else "",
+            "disk_final_bytes": int(disk_final_bytes) if disk_final_bytes is not None else "",
+            "disk_growth_bytes": int(disk_growth) if disk_start_bytes is not None else 0
         })
 
     samples_by_time = defaultdict(list)
@@ -338,7 +413,10 @@ node_fields = [
     "block_read_avg_mbps",
     "block_read_peak_mbps",
     "block_write_avg_mbps",
-    "block_write_peak_mbps"
+    "block_write_peak_mbps",
+    "disk_start_bytes",
+    "disk_final_bytes",
+    "disk_growth_bytes"
 ]
 
 if not node_results:
@@ -370,7 +448,10 @@ def extract_rate(path, label):
     content = path.read_text(errors="replace")
 
     # Match aggregated stats (multi-client) or standard stats (single-client)
-    pattern = rf"(?:{label}[a-z]*\s+aggregated\s+stats|{label}[a-z]*\s+stats):\s*([\d,.]+)\s+msgs/sec"
+    if label.lower().startswith("sub"):
+        pattern = r"(?:(?:subscriber|consumer)[a-z]*\s+(?:\([^)]*\)\s+)?(?:aggregated\s+)?stats|stats):\s*([\d,.]+)\s+msgs/sec"
+    else:
+        pattern = r"(?:(?:publisher)[a-z]*\s+(?:\([^)]*\)\s+)?(?:aggregated\s+)?stats|stats):\s*([\d,.]+)\s+msgs/sec"
     m = re.search(pattern, content, re.I)
     if m:
         return int(round(float(m.group(1).replace(",", ""))))
@@ -431,7 +512,7 @@ def extract_subscriber_stats(path):
     stats = {}
 
     m_rate = re.search(
-        r"(?:subscriber\s+(?:aggregated\s+)?stats|stats):\s*([0-9,.]+)\s*msgs/sec\s*~\s*([0-9,.]+\s*[KMGT]?i?B/sec)",
+        r"(?:(?:subscriber|consumer)\s+(?:\([^)]*\)\s+)?(?:aggregated\s+)?stats|stats):\s*([0-9,.]+)\s*msgs/sec\s*~\s*([0-9,.]+\s*[KMGT]?i?B/sec)",
         content,
         re.I
     )
@@ -469,26 +550,40 @@ setup_stats = extract_setup_stats(result_dir / "subscriber.log")
 # Build summary
 # -------------------------
 
+cluster_disk_growth = sum(
+    int(n.get("disk_growth_bytes", 0)) for n in node_results
+    if isinstance(n.get("disk_growth_bytes"), (int, float)) or (isinstance(n.get("disk_growth_bytes"), str) and str(n.get("disk_growth_bytes")).isdigit())
+)
+
 summary = {
 
     "test_id": test_id,
     "test_description": test_description,
     "run_timestamp": run_timestamp,
-    "messaging_type": "Core NATS",
+    "test_outcome": test_outcome,
+    "messaging_type": messaging_type,
     "scenario": scenario,
     "subscription_pattern": subscription_pattern,
     "subject_distribution": subject_distribution,
     "fanout_ratio": fanout_ratio,
     "subject": subject,
 
-    "target_publish_msgs_per_sec": target_rate if scenario != "subscribe_setup" else "",
-    "actual_publish_msgs_per_sec": publish_rate if scenario != "subscribe_setup" else "",
-    "actual_subscriber_msgs_per_sec": subscriber_rate if scenario == "pubsub" else "",
+    "target_publish_msgs_per_sec": target_rate if scenario not in ("subscribe_setup", "consume") else "",
+    "actual_publish_msgs_per_sec": publish_rate if scenario not in ("subscribe_setup", "consume") else "",
+    "actual_subscriber_msgs_per_sec": subscriber_rate if scenario in ("pubsub", "consume") else "",
 
     "message_size_bytes": msg_size if scenario != "subscribe_setup" else "",
 
-    "publisher_concurrency": pubs if scenario != "subscribe_setup" else 0,
+    "publisher_concurrency": pubs if scenario not in ("subscribe_setup", "consume") else 0,
     "subscriber_concurrency": subs,
+
+    "stream_name": stream_name if messaging_type == "JetStream" else "",
+    "storage_type": storage_type if messaging_type == "JetStream" else "",
+    "replication_factor": replication_factor if messaging_type == "JetStream" else "",
+    "js_pub_mode": js_pub_mode if messaging_type == "JetStream" else "",
+    "consumer_name": consumer_name if messaging_type == "JetStream" else "",
+    "consumer_ack_policy": consumer_ack_policy if messaging_type == "JetStream" else "",
+    "consumer_batch_size": consumer_batch_size if messaging_type == "JetStream" else "",
 
     "nominal_duration_seconds": nominal_duration,
     "actual_duration_seconds": actual_duration,
@@ -520,6 +615,8 @@ summary = {
         round(max(cluster_memory), 0)
         if cluster_memory else ""
     ),
+
+    "cluster_disk_growth_bytes": cluster_disk_growth if cluster_disk_growth > 0 else 0,
 
     "node_summary_file": "node-summary.csv",
     "metrics_file": "metrics.csv",
@@ -567,15 +664,27 @@ subscriber_log_content = read_text_safe(result_dir / "subscriber.log")
 # -------------------------
 
 def generate_report_html():
-    is_success = str(workload_exit) == "0"
-    status_label = "PASS" if is_success else f"FAIL (exit {workload_exit})"
-    status_badge_class = "badge-pass" if is_success else "badge-fail"
+    if test_outcome == "COMPLETED":
+        status_label = "COMPLETED"
+        status_badge_class = "badge-pass"
+    elif test_outcome == "TIMEOUT":
+        status_label = "TIMEOUT"
+        status_badge_class = "badge-warn"
+    elif test_outcome == "INTERRUPTED":
+        status_label = "INTERRUPTED"
+        status_badge_class = "badge-interrupt"
+    else:
+        status_label = f"FAILED (exit {workload_exit})"
+        status_badge_class = "badge-fail"
 
     target_num = num(target_rate) or 0
     actual_pub_num = num(publish_rate) or 0
     if target_num > 0:
         pub_achieved_pct = f"{(actual_pub_num / target_num * 100.0):.1f}%"
-        pub_target_desc = f"Target: {target_rate} msgs/s ({pub_achieved_pct} achieved)"
+        if (actual_pub_num / target_num) < 0.90:
+            pub_target_desc = f"Target: {target_rate} msgs/s ({pub_achieved_pct} achieved &bull; Capacity Saturated)"
+        else:
+            pub_target_desc = f"Target: {target_rate} msgs/s ({pub_achieved_pct} achieved)"
     else:
         pub_achieved_pct = "unthrottled"
         pub_target_desc = "Target: unthrottled (maximum achievable)"
@@ -715,6 +824,13 @@ def generate_report_html():
         b = baseline_map.get(n.get("container"))
         base_cpu_text = f"idle: {b.get('cpu_avg_percent', '-')}%" if b else None
         base_mem_sub = f"<span class='sub-metric'>idle: {format_bytes(b.get('memory_avg_bytes'))}</span>" if b else ""
+        growth_val = n.get("disk_growth_bytes")
+        if isinstance(growth_val, (int, float)) and growth_val > 0:
+            growth_text = f"+{format_bytes(growth_val)}"
+        elif isinstance(growth_val, str) and growth_val.isdigit() and int(growth_val) > 0:
+            growth_text = f"+{format_bytes(int(growth_val))}"
+        else:
+            growth_text = "-"
 
         node_rows_html.append(f"""
         <tr>
@@ -726,12 +842,14 @@ def generate_report_html():
           <td class="num bold">{format_bytes(n.get('memory_peak_bytes'))}{base_mem_sub}</td>
           <td class="num">{format_rate(n.get('network_rx_avg_mbps'))} / {format_rate(n.get('network_tx_avg_mbps'))}</td>
           <td class="num">{format_rate(n.get('block_read_avg_mbps'))} / {format_rate(n.get('block_write_avg_mbps'))}</td>
+          <td class="num bold">{growth_text}</td>
         </tr>""")
 
     cluster_net_rx = sum_metric(node_results, "network_rx_avg_mbps")
     cluster_net_tx = sum_metric(node_results, "network_tx_avg_mbps")
     cluster_block_read = sum_metric(node_results, "block_read_avg_mbps")
     cluster_block_write = sum_metric(node_results, "block_write_avg_mbps")
+    cluster_growth_display = f"+{format_bytes(cluster_disk_growth)}" if cluster_disk_growth > 0 else "-"
 
     cluster_net_display = (
         f"{format_rate(cluster_net_rx)} / {format_rate(cluster_net_tx)}"
@@ -758,6 +876,7 @@ def generate_report_html():
       <td class="num bold">{cluster_mem_peak_display}{cluster_base_mem_sub}</td>
       <td class="num">{cluster_net_display}</td>
       <td class="num">{cluster_block_display}</td>
+      <td class="num bold">{cluster_growth_display}</td>
     </tr>""")
 
     node_table_body = "\n".join(node_rows_html)
@@ -782,7 +901,59 @@ def generate_report_html():
     pub_bandwidth_sub = f" &bull; Bandwidth: {pub_bandwidth}" if pub_bandwidth != "-" else ""
     delivery_sub = f" &bull; {delivery_pct}" if delivery_pct else ""
 
-    if scenario == "publish":
+    if scenario not in ("subscribe_setup", "consume"):
+        latency_card_html = f"""
+  <!-- Publisher Latency Section -->
+  <div class="card">
+    <div class="card-title">
+      <span>Publisher Client Latency Distribution</span>
+      <span style="font-size:0.75rem; color:var(--text-sec); font-weight:normal;">Throughput cap: {target_rate} msg/s &bull; Payload: {msg_size} B</span>
+    </div>
+    <div class="grid-latencies">
+      <div class="lat-box">
+        <div class="lat-label">Min</div>
+        <div class="lat-value">{min_lat}</div>
+      </div>
+      <div class="lat-box">
+        <div class="lat-label">Avg</div>
+        <div class="lat-value">{avg_lat}</div>
+      </div>
+      <div class="lat-box">
+        <div class="lat-label">P50</div>
+        <div class="lat-value">{p50_lat}</div>
+      </div>
+      <div class="lat-box">
+        <div class="lat-label">P90</div>
+        <div class="lat-value">{p90_lat}</div>
+      </div>
+      <div class="lat-box">
+        <div class="lat-label">P99</div>
+        <div class="lat-value">{p99_lat}</div>
+      </div>
+      <div class="lat-box">
+        <div class="lat-label">P99.9</div>
+        <div class="lat-value">{p999_lat}</div>
+      </div>
+      <div class="lat-box">
+        <div class="lat-label">Max</div>
+        <div class="lat-value">{max_lat}</div>
+      </div>
+    </div>
+  </div>"""
+    else:
+        latency_card_html = ""
+
+    if messaging_type == "JetStream":
+        if scenario == "publish":
+            scenario_display = f"JetStream (Publish-only, {js_pub_mode.title()})"
+            pattern_display = f"Stream '{stream_name}' (No Consumers)"
+        elif scenario == "consume":
+            scenario_display = "JetStream (Consume-only Replay)"
+            pattern_display = f"Durable Pull Consumer '{consumer_name}' ({subs} workers, batch {consumer_batch_size})"
+        else:
+            scenario_display = f"JetStream (Publish + Pull Consume, {js_pub_mode.title()})"
+            pattern_display = f"Durable Pull Consumer '{consumer_name}' ({subs} workers, {storage_type.title()} R={replication_factor})"
+    elif scenario == "publish":
         scenario_display = "Core NATS (Publish-only)"
         pattern_display = "No Subscribers"
     elif scenario == "subscribe_setup":
@@ -796,6 +967,17 @@ def generate_report_html():
         pattern_display = f"Normal Pub/Sub ({subs} subscribers, {fanout_ratio}x fan-out)"
 
     subject_dist_display = "Single Subject" if subject_distribution == "single" else f"Multi-subject (up to {multi_subject_max})"
+
+    jetstream_disk_kpi = ""
+    if messaging_type == "JetStream":
+        disk_rate_str = format_rate(cluster_block_write) if cluster_block_write is not None else "-"
+        disk_growth_str = f"+{format_bytes(cluster_disk_growth)}" if cluster_disk_growth > 0 else "-"
+        jetstream_disk_kpi = f"""
+    <div class="card-kpi">
+      <div class="kpi-label">JetStream Physical Disk Write</div>
+      <div class="kpi-value" style="color:var(--accent);">{disk_rate_str}</div>
+      <div class="kpi-sub">Physical Growth: {disk_growth_str} (R={replication_factor})</div>
+    </div>"""
 
     if scenario == "subscribe_setup":
         conns_val = setup_stats.get("established", subs)
@@ -849,7 +1031,32 @@ def generate_report_html():
       <div class="kpi-label">Cluster Peak RAM</div>
       <div class="kpi-value" style="color:var(--yellow);">{cluster_mem_peak_display}</div>
       <div class="kpi-sub">Average: {cluster_mem_avg_display} across cluster</div>
-    </div>"""
+    </div>{jetstream_disk_kpi}"""
+    elif scenario == "consume":
+        kpi_cards_html = f"""
+    <div class="card-kpi">
+      <div class="kpi-label">Actual Publish Rate</div>
+      <div class="kpi-value" style="color:var(--text-sec);">N/A <span style="font-size:0.9rem; font-weight:400;">(Replay-only)</span></div>
+      <div class="kpi-sub">Historical replay from pre-populated stream</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Consumer Delivery Rate</div>
+      <div class="kpi-value" style="color:var(--green);">{subscriber_rate if subscriber_rate != "" else "-"} <span style="font-size:0.9rem; font-weight:400;">msgs/s</span></div>
+      <div class="kpi-sub">Bandwidth: {sub_bandwidth} &bull; Pull Batch: {consumer_batch_size}</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Cluster Peak CPU</div>
+      <div class="kpi-value" style="color:var(--purple);">{cluster_cpu_peak_display}</div>
+      <div class="kpi-sub">Average: {cluster_cpu_avg_display}</div>
+    </div>
+
+    <div class="card-kpi">
+      <div class="kpi-label">Cluster Peak RAM</div>
+      <div class="kpi-value" style="color:var(--yellow);">{cluster_mem_peak_display}</div>
+      <div class="kpi-sub">Average: {cluster_mem_avg_display} across cluster</div>
+    </div>{jetstream_disk_kpi}"""
     else:
         sub_desc = f"Bandwidth: {sub_bandwidth} &bull; Fan-out: {fanout_ratio}x ({delivery_pct})" if delivery_pct else f"Bandwidth: {sub_bandwidth} &bull; Fan-out: {fanout_ratio}x"
         kpi_cards_html = f"""
@@ -875,7 +1082,7 @@ def generate_report_html():
       <div class="kpi-label">Cluster Peak RAM</div>
       <div class="kpi-value" style="color:var(--yellow);">{cluster_mem_peak_display}</div>
       <div class="kpi-sub">Average: {cluster_mem_avg_display} across cluster</div>
-    </div>"""
+    </div>{jetstream_disk_kpi}"""
 
     # Parse configuration items
     config_dict = {}
@@ -900,10 +1107,19 @@ def generate_report_html():
         ("messaging_type", "Messaging Platform", config_dict.get("messaging_type", "Core NATS")),
         ("nats_containers", "Monitored Containers", config_dict.get("nats_containers", "-")),
         ("metrics_backend", "Metrics Backend", config_dict.get("metrics_backend", backend)),
+        ("disk_metrics_backend", "Disk Metrics Backend", config_dict.get("disk_metrics_backend", disk_metrics_backend)),
         ("metrics_sample_interval_seconds", "Telemetry Sample Interval", f"{config_dict.get('metrics_sample_interval_seconds', '-')}s" if config_dict.get('metrics_sample_interval_seconds') else "-"),
         ("baseline_duration_seconds", "Baseline Phase Duration", f"{config_dict.get('baseline_duration_seconds', '-')}s" if config_dict.get('baseline_duration_seconds') else "-"),
     ]
-    known_setup_keys = {"nats_url", "messaging_type", "nats_containers", "metrics_backend", "metrics_sample_interval_seconds", "baseline_duration_seconds"}
+    if messaging_type == "JetStream":
+        setup_fields.extend([
+            ("stream_name", "JetStream Stream", config_dict.get("stream_name", stream_name)),
+            ("storage_type", "Storage Engine", f"{config_dict.get('storage_type', storage_type).title()} Storage"),
+            ("replication_factor", "Replication Quorum", f"R={config_dict.get('replication_factor', replication_factor)} ({config_dict.get('replication_factor', replication_factor)} replicas)"),
+            ("max_bytes", "Max Storage Quota", config_dict.get("max_bytes", max_bytes)),
+            ("retention_policy", "Retention Policy", config_dict.get("retention_policy", retention_policy).title()),
+        ])
+    known_setup_keys = {"nats_url", "messaging_type", "nats_containers", "metrics_backend", "disk_metrics_backend", "metrics_sample_interval_seconds", "baseline_duration_seconds", "stream_name", "storage_type", "replication_factor", "max_bytes", "retention_policy"}
     for k, v in config_dict.items():
         if k not in known_setup_keys and any(sub in k.lower() for sub in ["endpoint", "monitor", "replica", "node", "cluster", "backend", "container", "baseline"]):
             setup_fields.append((k, k.replace("_", " ").title(), v))
@@ -911,6 +1127,7 @@ def generate_report_html():
     # 2. Test Details fields
     test_fields = [
         ("test_id", "Test Run ID", test_id),
+        ("test_outcome", "Execution Outcome", test_outcome),
     ]
     if test_description:
         test_fields.append(("test_description", "Test Description", test_description))
@@ -920,13 +1137,20 @@ def generate_report_html():
         ("scenario", "Workload Scenario", scenario_display),
         ("subscription_pattern", "Subscription Pattern", pattern_display),
     ])
-    if subscription_pattern == "queue" and queue_name:
+    if messaging_type == "JetStream":
+        test_fields.extend([
+            ("js_pub_mode", "Publish Mode", f"{config_dict.get('js_pub_mode', js_pub_mode).title()} (Consensus Wait)" if config_dict.get('js_pub_mode', js_pub_mode) == 'sync' else f"{config_dict.get('js_pub_mode', js_pub_mode).title()} (Pipelined)"),
+            ("consumer_name", "Durable Consumer", config_dict.get("consumer_name", consumer_name)),
+            ("consumer_ack_policy", "ACK Policy", f"{config_dict.get('consumer_ack_policy', consumer_ack_policy).title()} Acknowledgment"),
+            ("consumer_batch_size", "Pull Batch Size", f"{config_dict.get('consumer_batch_size', consumer_batch_size)} messages"),
+        ])
+    if subscription_pattern == "queue" and queue_name and messaging_type != "JetStream":
         test_fields.append(("queue_name", "Queue Group Name", queue_name))
     test_fields.extend([
         ("subject", "Target Subject", f"{subject} ({subject_dist_display})"),
-        ("target_publish_msgs_per_sec", "Target Publish Rate", pub_target_desc if scenario != "subscribe_setup" else "N/A (Connection Setup)"),
+        ("target_publish_msgs_per_sec", "Target Publish Rate", pub_target_desc if scenario not in ("subscribe_setup", "consume") else ("N/A (Replay-only)" if scenario == "consume" else "N/A (Connection Setup)")),
         ("message_size_bytes", "Message Payload Size", f"{msg_size} B ({format_bytes(int(msg_size))})" if (msg_size and scenario != "subscribe_setup") else "N/A"),
-        ("publisher_concurrency", "Publisher Concurrency", f"{pubs} client(s)" if scenario != "subscribe_setup" else "0 (N/A)"),
+        ("publisher_concurrency", "Publisher Concurrency", f"{pubs} client(s)" if scenario not in ("subscribe_setup", "consume") else "0 (N/A)"),
         ("subscriber_concurrency", "Subscriber Concurrency", f"{subs} client(s)" if scenario != "publish" else "0 (Publish-only)"),
         ("nominal_duration_seconds", "Nominal Duration", f"{nominal_duration}s (Actual: {actual_duration}s)"),
         ("configured_message_count", "Configured Messages", f"{config_dict.get('configured_message_count', '-')} msgs" if config_dict.get('configured_message_count') else "-"),
@@ -1030,10 +1254,20 @@ def generate_report_html():
       color: var(--green);
       border: 1px solid rgba(63, 185, 80, 0.4);
     }}
+    .badge-warn {{
+      background: rgba(210, 153, 34, 0.15);
+      color: var(--yellow);
+      border: 1px solid rgba(210, 153, 34, 0.4);
+    }}
     .badge-fail {{
       background: rgba(248, 81, 73, 0.15);
       color: var(--red);
       border: 1px solid rgba(248, 81, 73, 0.4);
+    }}
+    .badge-interrupt {{
+      background: rgba(188, 140, 255, 0.15);
+      color: var(--purple);
+      border: 1px solid rgba(188, 140, 255, 0.4);
     }}
     .section-title {{
       font-size: 1.05rem;
@@ -1336,42 +1570,7 @@ def generate_report_html():
   </div>
 
   <!-- Publisher Latency Section -->
-  <div class="card">
-    <div class="card-title">
-      <span>Publisher Client Latency Distribution</span>
-      <span style="font-size:0.75rem; color:var(--text-sec); font-weight:normal;">Throughput cap: {target_rate} msg/s &bull; Payload: {msg_size} B</span>
-    </div>
-    <div class="grid-latencies">
-      <div class="lat-box">
-        <div class="lat-label">Min</div>
-        <div class="lat-value">{min_lat}</div>
-      </div>
-      <div class="lat-box">
-        <div class="lat-label">Avg</div>
-        <div class="lat-value">{avg_lat}</div>
-      </div>
-      <div class="lat-box">
-        <div class="lat-label">P50</div>
-        <div class="lat-value">{p50_lat}</div>
-      </div>
-      <div class="lat-box">
-        <div class="lat-label">P90</div>
-        <div class="lat-value">{p90_lat}</div>
-      </div>
-      <div class="lat-box">
-        <div class="lat-label">P99</div>
-        <div class="lat-value">{p99_lat}</div>
-      </div>
-      <div class="lat-box">
-        <div class="lat-label">P99.9</div>
-        <div class="lat-value">{p999_lat}</div>
-      </div>
-      <div class="lat-box">
-        <div class="lat-label">Max</div>
-        <div class="lat-value">{max_lat}</div>
-      </div>
-    </div>
-  </div>
+  {latency_card_html}
 
   <!-- Pre-Workload Idle Baseline Breakdown -->
   {baseline_section_html}
@@ -1394,6 +1593,7 @@ def generate_report_html():
             <th style="text-align:right;">Memory Peak</th>
             <th style="text-align:right;">Net RX / TX</th>
             <th style="text-align:right;">Block Read / Write</th>
+            <th style="text-align:right;">Storage Growth</th>
           </tr>
         </thead>
         <tbody>

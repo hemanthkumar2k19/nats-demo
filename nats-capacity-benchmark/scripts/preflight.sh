@@ -44,7 +44,14 @@ preflight_checks() {
   echo
   echo "[2/3] Checking JetStream replication..."
 
-  if [[ -z "${REPLICATION_STREAMS:-}" ]]; then
+  if [[ "${MESSAGING_TYPE:-}" == "JetStream" ]]; then
+    if nats --server "$NATS_URL" stream ls >/dev/null 2>&1; then
+      echo "OK: JetStream enabled and accessible at ${NATS_URL}"
+    else
+      echo "FAIL: JetStream is not enabled or accessible at ${NATS_URL}"
+      failures=$((failures + 1))
+    fi
+  elif [[ -z "${REPLICATION_STREAMS:-}" ]]; then
     echo "SKIP: REPLICATION_STREAMS is not configured"
   else
     for stream in $REPLICATION_STREAMS; do
