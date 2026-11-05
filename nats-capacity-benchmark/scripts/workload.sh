@@ -84,41 +84,16 @@ run_time_bound_publisher() {
   "${cmd[@]}" &
   PUB_PID=$!
 
-  # Asynchronous Time-Bound Watchdog
+  # Asynchronous Time-Bound Watchdog (fires only if workload exceeds duration + grace window)
+  local watchdog_timeout=$(( DURATION + PUBLISHER_GRACE_SECONDS ))
   (
-    sleep "$DURATION"
+    sleep "$watchdog_timeout"
     if [[ -n "$PUB_PID" ]] && kill -0 "$PUB_PID" 2>/dev/null; then
-      # Phase 1: Signal publisher gracefully via SIGINT to prompt stats finalization
-      kill -INT "$PUB_PID" 2>/dev/null || true
-
-      # Poll for graceful exit during first half of grace period
-      HALF_GRACE=$(( PUBLISHER_GRACE_SECONDS / 2 ))
-      (( HALF_GRACE > 2 )) || HALF_GRACE=2
-      for ((k=0; k < HALF_GRACE * 2; k++)); do
-        if ! kill -0 "$PUB_PID" 2>/dev/null; then
-          break
-        fi
-        sleep 0.5
-      done
-
-      # Phase 2: If still running, send SIGTERM
-      if kill -0 "$PUB_PID" 2>/dev/null; then
-        kill -TERM "$PUB_PID" 2>/dev/null || true
-        REM_GRACE=$(( PUBLISHER_GRACE_SECONDS - HALF_GRACE ))
-        (( REM_GRACE > 2 )) || REM_GRACE=2
-        for ((k=0; k < REM_GRACE * 2; k++)); do
-          if ! kill -0 "$PUB_PID" 2>/dev/null; then
-            break
-          fi
-          sleep 0.5
-        done
-      fi
-
-      # Phase 3: Final escalation to SIGKILL only if process is completely unresponsive
-      if kill -0 "$PUB_PID" 2>/dev/null; then
-        echo "TIMEOUT" > "$OUTCOME_FILE"
-        kill -KILL "$PUB_PID" 2>/dev/null || true
-      fi
+      echo "TIMEOUT" > "$OUTCOME_FILE"
+      echo "Publisher watchdog timeout reached (${watchdog_timeout}s); terminating publisher PID $PUB_PID" >> "$PUB_LOG"
+      kill -TERM "$PUB_PID" 2>/dev/null || true
+      sleep 2
+      kill -KILL "$PUB_PID" 2>/dev/null || true
     fi
   ) &
   WATCHDOG_PID=$!
@@ -136,13 +111,15 @@ run_time_bound_publisher() {
   WATCHDOG_PID=""
   PUB_PID=""
 
-  # Exit code 130 (SIGINT) or 143 (SIGTERM) or 0 indicates time-bound completion
-  if [[ "$PUB_EXIT" -eq 130 || "$PUB_EXIT" -eq 143 || "$PUB_EXIT" -eq 0 ]]; then
+  # Exit code 0 indicates clean completion; TIMEOUT outcome is preserved
+  if [[ "$PUB_EXIT" -eq 0 ]]; then
     PUB_EXIT=0
+  elif [[ -f "$OUTCOME_FILE" && "$(cat "$OUTCOME_FILE" | tr -d '[:space:]')" == "TIMEOUT" ]]; then
+    PUB_EXIT=0
+  elif [[ "$PUB_EXIT" -eq 130 ]]; then
+    WORKLOAD_OUTCOME="INTERRUPTED"
   else
-    if [[ ! -f "$OUTCOME_FILE" || "$(cat "$OUTCOME_FILE")" != "TIMEOUT" ]]; then
-      WORKLOAD_OUTCOME="FAILED"
-    fi
+    WORKLOAD_OUTCOME="FAILED"
   fi
 }
 
@@ -226,15 +203,8 @@ else
       --no-progress
 fi
 
-# Drain subscribers gracefully
+# Drain subscribers gracefully: wait for subscribers to finish receiving and output stats
 if [[ ${#SUB_PIDS[@]} -gt 0 ]]; then
-  # Instruct subscriber clients to finalize and output stats
-  for pid in ${SUB_PIDS[@]+"${SUB_PIDS[@]}"}; do
-    if kill -0 "$pid" 2>/dev/null; then
-      kill -INT "$pid" 2>/dev/null || true
-    fi
-  done
-
   DRAIN_START=$(date +%s)
   TERM_THRESHOLD=$(( SUBSCRIBER_DRAIN_SECONDS * 3 / 4 ))
   (( TERM_THRESHOLD > 3 )) || TERM_THRESHOLD=3

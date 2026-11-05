@@ -3,8 +3,10 @@ services:
   haproxy:
     image: haproxy:alpine
     container_name: haproxy
+    restart: unless-stopped
     cpus: 0.5
     mem_limit: 512m
+    memswap_limit: 512m
     deploy:
       resources:
         limits:
@@ -23,8 +25,11 @@ services:
   nats-1:
     image: nats:latest
     container_name: nats-1
+    restart: unless-stopped
+    stop_grace_period: 15s
     cpus: 1.0
     mem_limit: 1g
+    memswap_limit: 1g
     deploy:
       resources:
         limits:
@@ -41,8 +46,11 @@ services:
   nats-2:
     image: nats:latest
     container_name: nats-2
+    restart: unless-stopped
+    stop_grace_period: 15s
     cpus: 1.0
     mem_limit: 1g
+    memswap_limit: 1g
     deploy:
       resources:
         limits:
@@ -59,8 +67,11 @@ services:
   nats-3:
     image: nats:latest
     container_name: nats-3
+    restart: unless-stopped
+    stop_grace_period: 15s
     cpus: 1.0
     mem_limit: 1g
+    memswap_limit: 1g
     deploy:
       resources:
         limits:

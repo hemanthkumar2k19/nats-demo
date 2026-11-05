@@ -66,8 +66,8 @@ def parse_latency_to_ms(lat_str):
     s = str(lat_str).strip().lower()
     if s.endswith("ms"):
         return num(s.rstrip("ms"))
-    elif s.endswith("us") or s.endswith("µs"):
-        val = num(s.rstrip("us").rstrip("µs"))
+    elif s.endswith("us") or s.endswith("\u00b5s"):
+        val = num(s.rstrip("us").rstrip("\u00b5s"))
         return round(val / 1000.0, 3) if val is not None else None
     elif s.endswith("s"):
         val = num(s.rstrip("s"))

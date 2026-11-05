@@ -8,15 +8,24 @@ A lightweight, portable benchmarking utility to evaluate NATS cluster throughput
 
 The benchmarking utility tests a fixed multi-node NATS cluster through an L4 TCP load balancer, implementing the **OpenMessaging Benchmark (OMB)** time-bound execution standard and aligning with **Synadia's enterprise NATS benchmarking and TCO methodology** (McKnight Consulting Group evaluation):
 
-```
-[ Benchmark Runner (Host) ]
-            |
-            v  (Port :4222)
-    [ HAProxy L4 LB ]  (:4222 traffic, :8404 stats)
-      /     |     \
-     /      |      \
-    v       v       v
-[nats-1] [nats-2] [nats-3]  (3-node cluster, full mesh routing :6222)
+```mermaid
+flowchart TD
+    Runner["Benchmark Runner (Host)"]
+    HAProxy["HAProxy L4 LB (Port :4222, Stats :8404)"]
+
+    subgraph Cluster["3-Node NATS Cluster (Full Mesh :6222)"]
+        N1["nats-1 (1 vCPU, 1 GB RAM)"]
+        N2["nats-2 (1 vCPU, 1 GB RAM)"]
+        N3["nats-3 (1 vCPU, 1 GB RAM)"]
+        N1 <-->|Cluster Route| N2
+        N2 <-->|Cluster Route| N3
+        N3 <-->|Cluster Route| N1
+    end
+
+    Runner -->|TCP Ingress :4222| HAProxy
+    HAProxy -->|Round Robin| N1
+    HAProxy -->|Round Robin| N2
+    HAProxy -->|Round Robin| N3
 ```
 
 - **Client Isolation**: The benchmark runner executes on the host machine outside container resource limits.
@@ -34,6 +43,19 @@ Ensure the following tools are installed on your workstation:
 - **Python 3** (Standard library only; no external pip dependencies)
 - **Podman** & **Podman Compose**
 - **jq**
+
+### Podman Machine Sizing (macOS)
+The benchmarking cluster requests up to **3.5 vCPUs** and **3.5 GiB RAM** across the 3 NATS nodes and HAProxy. To provide headroom for macOS hypervisor daemons (`gvproxy`, `virtiofsd`), ensure your Podman machine has at least **5 vCPUs** and **6 GiB RAM**:
+
+```bash
+# Check current Podman VM resource allocations:
+podman machine info
+
+# If resizing is needed:
+podman machine stop
+podman machine set --cpus 5 --memory 6144 --disk-size 50
+podman machine start
+```
 
 ---
 
