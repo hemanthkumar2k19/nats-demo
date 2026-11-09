@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NATS Capacity Benchmark</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-dim: #8b949e;
+      --text-bright: #f0f6fc;
+      --accent: #58a6ff;
+      --accent-bg: rgba(88, 166, 255, 0.1);
+      --green: #3fb950;
+      --green-bg: rgba(63, 185, 80, 0.15);
+      --red: #f85149;
+      --red-bg: rgba(248, 81, 73, 0.15);
+      --yellow: #d29922;
+      --yellow-bg: rgba(210, 153, 34, 0.15);
+      --purple: #bc8cff;
+      --radius: 6px;
+      --font-mono: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      line-height: 1.5;
+      padding: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .title-area h1 { font-size: 24px; color: var(--text-bright); font-weight: 600; }
+    .title-area p { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
+    .header-actions { display: flex; gap: 12px; align-items: center; }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-completed { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); }
+    .badge-failed { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+    .badge-timeout { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
+    .badge-idle { background: var(--border); color: var(--text-dim); }
+
+    .btn {
+      background: #21262d;
+      color: var(--text-bright);
+      border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn:hover { background: #30363d; border-color: var(--text-dim); }
+    .btn-primary { background: #238636; border-color: rgba(240,246,252,0.1); color: #fff; }
+    .btn-primary:hover { background: #2ea043; }
+
+    .nav-tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .tab-btn {
+      background: transparent;
+      color: var(--text-dim);
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      margin-bottom: -1px;
+    }
+    .tab-btn.active {
+      color: var(--text-bright);
+      border-bottom-color: var(--accent);
+    }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    .grid-kpi {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .kpi-card .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; }
+    .kpi-card .value { font-size: 26px; font-weight: 700; color: var(--text-bright); margin: 6px 0 2px 0; }
+    .kpi-card .sub { font-size: 12px; color: var(--text-dim); }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .card h2 { font-size: 16px; color: var(--text-bright); margin-bottom: 14px; font-weight: 600; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--text-dim);
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.02);
+      white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr.clickable-row { cursor: pointer; transition: background 0.15s; }
+    tr.clickable-row:hover { background: rgba(88, 166, 255, 0.06); }
+    tr.selected-row { background: rgba(88, 166, 255, 0.12); border-left: 3px solid var(--accent); }
+    .mono { font-family: var(--font-mono); }
+    .table-container { overflow-x: auto; }
+
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      text-align: center;
+      background: rgba(22, 27, 34, 0.5);
+      cursor: pointer;
+      margin-bottom: 24px;
+      transition: border-color 0.15s;
+    }
+    .dropzone:hover { border-color: var(--accent); }
+    .dropzone p { color: var(--text-dim); font-size: 13px; margin-top: 6px; }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-group label { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+    .form-group input, .form-group select {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      color: var(--text-bright);
+      padding: 8px 12px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-family: inherit;
+    }
+    .form-group input:focus, .form-group select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .code-box {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #79c0ff;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin-bottom: 16px;
+    }
+    .chart-container {
+      width: 100%;
+      height: 340px;
+      position: relative;
+    }
+    svg.chart { width: 100%; height: 100%; }
+    .axis-line { stroke: var(--border); stroke-width: 1; }
+    .grid-line { stroke: rgba(48, 54, 61, 0.5); stroke-dasharray: 3 3; }
+    .axis-label { fill: var(--text-dim); font-size: 11px; }
+    .series-line { fill: none; stroke-width: 2.5; stroke-linecap: round; }
+    .series-dot { fill: var(--card-bg); stroke-width: 2; }
+    .series-p50 { stroke: var(--accent); }
+    .series-p99 { stroke: var(--red); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title-area">
+      <h1>NATS Capacity Benchmark</h1>
+      <p id="sub-header">Evaluation, Capacity Profiling &amp; Sizing Standard</p>
+    </div>
+    <div class="header-actions">
+      <span id="status-badge" class="badge badge-idle">NO DATA</span>
+      <input type="file" id="file-input" accept=".json" style="display:none;" />
+      <button class="btn" onclick="document.getElementById('file-input').click()">
+        Upload results.json
+      </button>
+    </div>
+  </header>
+
+  <nav class="nav-tabs">
+    <button class="tab-btn active" id="tab-btn-dashboard" onclick="switchTab('dashboard')">Run Dashboard</button>
+    <button class="tab-btn" id="tab-btn-comparison" onclick="switchTab('comparison')">Executive Suite &amp; Comparison</button>
+    <button class="tab-btn" id="tab-btn-configurator" onclick="switchTab('configurator')">Configurator &amp; Runner</button>
+  </nav>
+
+  <main>
+    <!-- TAB 1: RUN DASHBOARD -->
+    <section id="tab-dashboard" class="tab-pane active">
+      <div id="no-data-notice" class="dropzone" onclick="document.getElementById('file-input').click()">
+        <h3>No benchmark data loaded</h3>
+        <p>Drop a results.json file here or run a benchmark to view results</p>
+      </div>
+
+      <div id="data-view" style="display:none;">
+        <div class="grid-kpi">
+          <div class="kpi-card">
+            <div class="label">Achieved Throughput</div>
+            <div class="value mono" id="kpi-rate">-</div>
+            <div class="sub" id="kpi-rate-sub">Target: - msgs/sec</div>
+          </div>
+          <div class="kpi-card">
+            <div class="label">P50 Latency</div>
+            <div class="value mono" id="kpi-p50">-</div>
+            <div class="sub">Median client latency</div>
+          </div>
+          <div class="kpi-card">
+            <div class="label">P99 Latency</div>
+            <div class="value mono" id="kpi-p99">-</div>
+            <div class="sub">Tail client latency</div>
+          </div>
+          <div class="kpi-card">
+            <div class="label">Bandwidth</div>
+            <div class="value mono" id="kpi-bw">-</div>
+            <div class="sub" id="kpi-bw-sub">Payload transfer rate</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Latency Distribution</h2>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Percentile</th>
+                  <th>Operation Latency</th>
+                  <th>Deliveries</th>
+                  <th>Standard Deviation</th>
+                </tr>
+              </thead>
+              <tbody id="latency-rows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Node Resource Consumption Breakdown</h2>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Node Name</th>
+                  <th>Avg CPU %</th>
+                  <th>Peak CPU %</th>
+                  <th>Baseline RAM</th>
+                  <th>Peak RAM</th>
+                  <th>RAM Delta</th>
+                  <th>Net RX / TX</th>
+                  <th>Block Read / Write</th>
+                  <th>Disk Growth</th>
+                </tr>
+              </thead>
+              <tbody id="node-rows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Run Configuration &amp; Metadata</h2>
+          <div class="table-container">
+            <table>
+              <tbody id="config-rows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: SUITE & COMPARISON -->
+    <section id="tab-comparison" class="tab-pane">
+      <!-- Executive Sizing Cards -->
+      <div class="grid-kpi" id="suite-sizing-cards">
+        <div class="kpi-card">
+          <div class="label">Sustained Operating Limit</div>
+          <div class="value mono" id="rec-sustained">-</div>
+          <div class="sub">Highest rate with 100% delivery &amp; P99 &lt; 15ms</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Saturation Knee Rate</div>
+          <div class="value mono" id="rec-knee">-</div>
+          <div class="sub">P99 inflection threshold</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Cluster Peak CPU</div>
+          <div class="value mono" id="rec-cpu">-</div>
+          <div class="sub" id="rec-cpu-sub">Max node utilization</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Cluster Peak RAM</div>
+          <div class="value mono" id="rec-mem">-</div>
+          <div class="sub">Max combined memory footprint</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Throughput vs Latency Saturation Curve</h2>
+        <div class="chart-container" id="chart-box">
+          <p id="chart-empty" style="text-align:center; padding-top:120px; color:var(--text-dim);">
+            Load a suite-results.json or multiple results.json files to render the curve.
+          </p>
+          <svg class="chart" id="svg-chart" viewBox="0 0 800 340" preserveAspectRatio="xMidYMid meet" style="display:none;"></svg>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Comparative Ladder Matrix (Click row to inspect child run details)</h2>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Test ID</th>
+                <th>Target Rate</th>
+                <th>Achieved Rate</th>
+                <th>P50 Latency</th>
+                <th>P99 Latency</th>
+                <th>Max Latency</th>
+                <th>Avg CPU</th>
+                <th>Peak CPU</th>
+                <th>Peak RAM</th>
+                <th>Net RX/TX</th>
+                <th>Disk Write / Growth</th>
+                <th>CPU Efficiency</th>
+                <th>Delivery %</th>
+              </tr>
+            </thead>
+            <tbody id="suite-rows">
+              <tr><td colspan="13" style="text-align:center; color:var(--text-dim);">No suite data loaded</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Level 2 Interactive In-Page Drill-Down Drawer -->
+      <div id="drilldown-container" class="card" style="display:none; border:1px solid var(--accent); background:rgba(22, 27, 34, 0.95);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+          <h2 id="drilldown-title" style="margin:0; color:var(--accent);">Child Test Deep Dive</h2>
+          <div style="display:flex; gap:10px;">
+            <a id="drilldown-link" href="#" class="btn btn-primary" target="_blank">Open Dedicated Report File</a>
+            <button class="btn" onclick="document.getElementById('drilldown-container').style.display='none'">Close</button>
+          </div>
+        </div>
+        <div id="drilldown-content"></div>
+      </div>
+    </section>
+
+    <!-- TAB 3: CONFIGURATOR & RUNNER -->
+    <section id="tab-configurator" class="tab-pane">
+      <div class="card">
+        <h2>Interactive Workload Configurator</h2>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="cfg-scenario">Engine &amp; Scenario</label>
+            <select id="cfg-scenario" onchange="updateGeneratedCommand()">
+              <option value="pubsub">Core NATS (Pub/Sub Broadcast)</option>
+              <option value="publish">Core NATS (Publish Only)</option>
+              <option value="subscribe">Core NATS (Subscribe Only)</option>
+              <option value="js-pub-sync">JetStream Sync Publish</option>
+              <option value="js-pub-async">JetStream Async Publish</option>
+              <option value="js-consume">JetStream Pull Consume</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="cfg-rate">Target Rate (msgs/sec, 0 for unthrottled)</label>
+            <input type="number" id="cfg-rate" value="1000" oninput="updateGeneratedCommand()" />
+          </div>
+          <div class="form-group">
+            <label for="cfg-clients">Concurrency (Clients)</label>
+            <input type="number" id="cfg-clients" value="4" oninput="updateGeneratedCommand()" />
+          </div>
+          <div class="form-group">
+            <label for="cfg-duration">Duration (e.g. 30s, 60s)</label>
+            <input type="text" id="cfg-duration" value="30s" oninput="updateGeneratedCommand()" />
+          </div>
+          <div class="form-group">
+            <label for="cfg-size">Payload Size (e.g. 1024B, 5KiB)</label>
+            <input type="text" id="cfg-size" value="1024B" oninput="updateGeneratedCommand()" />
+          </div>
+          <div class="form-group">
+            <label for="cfg-subject">Subject</label>
+            <input type="text" id="cfg-subject" value="benchmark.core.test" oninput="updateGeneratedCommand()" />
+          </div>
+        </div>
+
+        <h3 style="font-size:14px; margin-bottom:10px; color:var(--text-bright);">Generated CLI Command:</h3>
+        <div class="code-box" id="cmd-preview">DURATION=30s THROUGHPUT=1000 CLIENTS=4 ./benchmark.sh</div>
+        <div style="display:flex; gap:12px; align-items:center;">
+          <button class="btn btn-primary" onclick="copyCommand()">Copy Command</button>
+          <button class="btn" onclick="downloadConf()">Download benchmark.conf</button>
+          <button class="btn" id="btn-run-live" onclick="triggerLiveRun()" style="display:none;">Run Benchmark Now</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!--
+    IMPORTANT: DO NOT REFORMAT OR EDIT THIS SCRIPT BLOCK.
+    scripts/aggregate.py and scripts/aggregate_suite.py perform a literal string
+    replacement on this exact block to inject JSON benchmark results for offline viewing.
+  -->
+  <script id="benchmark-data">
+    window.BENCHMARK_DATA = null;
+  </script>
+
+  <script>
+    // =========================================================================
+    // 1. State & UI Utilities
+    // =========================================================================
+    let activeData = null;
+    let suiteData = [];
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      const activeBtn = document.getElementById('tab-btn-' + tabId);
+      if (activeBtn) activeBtn.classList.add('active');
+      const activePane = document.getElementById('tab-' + tabId);
+      if (activePane) activePane.classList.add('active');
+    }
+
+    function formatNumber(num) {
+      if (num === null || num === undefined || num === '') return '-';
+      return Number(num).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    }
+
+    function formatLatency(us) {
+      if (us === null || us === undefined || us === '') return '-';
+      if (us >= 1000000) return (us / 1000000).toFixed(2) + ' s';
+      if (us >= 1000) return (us / 1000).toFixed(2) + ' ms';
+      return Number(us).toFixed(2) + ' us';
+    }
+
+    // =========================================================================
+    // 2. Single-Run Dashboard & KPI Rendering
+    // =========================================================================
+    function renderDashboard(data, targetContainerId = null) {
+      if (!data) return;
+      if (!targetContainerId) activeData = data;
+
+      const outcome = data.status || 'COMPLETED';
+      if (!targetContainerId) {
+        document.getElementById('no-data-notice').style.display = 'none';
+        document.getElementById('data-view').style.display = 'block';
+
+        const badge = document.getElementById('status-badge');
+        badge.textContent = outcome;
+        badge.className = 'badge ' + (outcome === 'COMPLETED' ? 'badge-completed' : (outcome === 'TIMEOUT' ? 'badge-timeout' : 'badge-failed'));
+        document.getElementById('sub-header').textContent = (data.test_id || '') + ' - ' + (data.metadata?.test_description || '');
+      }
+
+      const client = data.client || {};
+      const lat = client.latency_us || {};
+
+      const htmlContent = `
+        <div class="grid-kpi" style="margin-bottom:16px;">
+          <div class="kpi-card">
+            <div class="label">Achieved Throughput</div>
+            <div class="value mono">${formatNumber(client.throughput_msgs_sec)} /s</div>
+            <div class="sub">Target: ${formatNumber(data.metadata?.target_rate)} msgs/sec</div>
+          </div>
+          <div class="kpi-card">
+            <div class="label">P50 Latency</div>
+            <div class="value mono">${formatLatency(lat.p50)}</div>
+            <div class="sub">Median client latency</div>
+          </div>
+          <div class="kpi-card">
+            <div class="label">P99 Latency</div>
+            <div class="value mono" style="color:var(--red);">${formatLatency(lat.p99)}</div>
+            <div class="sub">Tail client latency</div>
+          </div>
+          <div class="kpi-card">
+            <div class="label">Bandwidth</div>
+            <div class="value mono">${(client.bandwidth_mb_sec || 0).toFixed(2)} MB/s</div>
+            <div class="sub">Payload: ${data.metadata?.payload_size || '-'}</div>
+          </div>
+        </div>
+
+        <h3 style="font-size:14px; margin-bottom:8px; color:var(--text-bright);">Latency Percentiles</h3>
+        <div class="table-container" style="margin-bottom:16px;">
+          <table>
+            <thead>
+              <tr><th>Percentile</th><th>Operation Latency</th><th>Deliveries</th><th>Std Dev</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Min Latency</td><td class="mono">${formatLatency(lat.min)}</td><td class="mono">${formatNumber(client.published_msgs)} msgs</td><td class="mono">-</td></tr>
+              <tr><td>Median (P50)</td><td class="mono">${formatLatency(lat.p50)}</td><td class="mono">-</td><td class="mono">-</td></tr>
+              <tr><td>P90 Latency</td><td class="mono">${formatLatency(lat.p90)}</td><td class="mono">-</td><td class="mono">-</td></tr>
+              <tr><td>P99 Latency</td><td class="mono" style="color:var(--red); font-weight:600;">${formatLatency(lat.p99)}</td><td class="mono">-</td><td class="mono">-</td></tr>
+              <tr><td>P99.9 Latency</td><td class="mono">${formatLatency(lat.p999)}</td><td class="mono">-</td><td class="mono">-</td></tr>
+              <tr><td>Max Latency</td><td class="mono">${formatLatency(lat.max)}</td><td class="mono">-</td><td class="mono">${formatLatency(lat.std_dev)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 style="font-size:14px; margin-bottom:8px; color:var(--text-bright);">Node Resource Telemetry</h3>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Node</th><th>Avg CPU %</th><th>Peak CPU %</th><th>Baseline RAM</th><th>Peak RAM</th><th>RAM Delta</th><th>Net RX/TX</th><th>Block Read/Write</th><th>Disk Growth</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(data.nodes || []).map(n => `
+                <tr>
+                  <td class="mono" style="font-weight:600;">${n.name}</td>
+                  <td class="mono">${n.avg_cpu_pct?.toFixed(2) || '0'}%</td>
+                  <td class="mono">${n.peak_cpu_pct?.toFixed(2) || '0'}%</td>
+                  <td class="mono">${n.baseline_mem_mb?.toFixed(1) || '0'} MB</td>
+                  <td class="mono">${n.peak_mem_mb?.toFixed(1) || '0'} MB</td>
+                  <td class="mono">${n.mem_growth_mb ? '+' + n.mem_growth_mb.toFixed(1) + ' MB' : '0 MB'}</td>
+                  <td class="mono">${n.net_rx_mb_sec?.toFixed(2) || '0'} / ${n.net_tx_mb_sec?.toFixed(2) || '0'} MB/s</td>
+                  <td class="mono">${n.disk_read_mb_sec?.toFixed(2) || '0'} / ${n.disk_write_mb_sec?.toFixed(2) || '0'} MB/s</td>
+                  <td class="mono">${n.disk_growth_bytes ? (n.disk_growth_bytes / 1024).toFixed(1) + ' KiB' : '0 B'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      if (targetContainerId) {
+        document.getElementById(targetContainerId).innerHTML = htmlContent;
+      } else {
+        document.getElementById('kpi-rate').textContent = formatNumber(client.throughput_msgs_sec) + ' /s';
+        document.getElementById('kpi-rate-sub').textContent = 'Target: ' + formatNumber(data.metadata?.target_rate) + ' msgs/sec';
+        document.getElementById('kpi-p50').textContent = formatLatency(lat.p50);
+        document.getElementById('kpi-p99').textContent = formatLatency(lat.p99);
+        document.getElementById('kpi-bw').textContent = (client.bandwidth_mb_sec || 0).toFixed(2) + ' MB/s';
+        document.getElementById('kpi-bw-sub').textContent = 'Payload: ' + (data.metadata?.payload_size || '-');
+
+        const tbodyLat = document.getElementById('latency-rows');
+        tbodyLat.innerHTML = `
+          <tr><td>Min Latency</td><td class="mono">${formatLatency(lat.min)}</td><td class="mono">${formatNumber(client.published_msgs)} msgs</td><td class="mono">-</td></tr>
+          <tr><td>Median (P50)</td><td class="mono">${formatLatency(lat.p50)}</td><td class="mono">-</td><td class="mono">-</td></tr>
+          <tr><td>P90 Latency</td><td class="mono">${formatLatency(lat.p90)}</td><td class="mono">-</td><td class="mono">-</td></tr>
+          <tr><td>P99 Latency</td><td class="mono" style="color:var(--red); font-weight:600;">${formatLatency(lat.p99)}</td><td class="mono">-</td><td class="mono">-</td></tr>
+          <tr><td>P99.9 Latency</td><td class="mono">${formatLatency(lat.p999)}</td><td class="mono">-</td><td class="mono">-</td></tr>
+          <tr><td>Max Latency</td><td class="mono">${formatLatency(lat.max)}</td><td class="mono">-</td><td class="mono">${formatLatency(lat.std_dev)}</td></tr>
+        `;
+
+        const tbodyNode = document.getElementById('node-rows');
+        tbodyNode.innerHTML = (data.nodes || []).map(n => `
+          <tr>
+            <td class="mono" style="font-weight:600;">${n.name}</td>
+            <td class="mono">${n.avg_cpu_pct?.toFixed(2) || '0'}%</td>
+            <td class="mono">${n.peak_cpu_pct?.toFixed(2) || '0'}%</td>
+            <td class="mono">${n.baseline_mem_mb?.toFixed(1) || '0'} MB</td>
+            <td class="mono">${n.peak_mem_mb?.toFixed(1) || '0'} MB</td>
+            <td class="mono">${n.mem_growth_mb ? '+' + n.mem_growth_mb.toFixed(1) + ' MB' : '0 MB'}</td>
+            <td class="mono">${n.net_rx_mb_sec?.toFixed(2) || '0'} / ${n.net_tx_mb_sec?.toFixed(2) || '0'} MB/s</td>
+            <td class="mono">${n.disk_read_mb_sec?.toFixed(2) || '0'} / ${n.disk_write_mb_sec?.toFixed(2) || '0'} MB/s</td>
+            <td class="mono">${n.disk_growth_bytes ? (n.disk_growth_bytes / 1024).toFixed(1) + ' KiB' : '0 B'}</td>
+          </tr>
+        `).join('');
+
+        const tbodyCfg = document.getElementById('config-rows');
+        tbodyCfg.innerHTML = Object.entries(data.metadata || {}).map(([k, v]) => `
+          <tr><td style="color:var(--text-dim); text-transform:capitalize;">${k.replace(/_/g, ' ')}</td><td class="mono">${v}</td></tr>
+        `).join('');
+      }
+    }
+
+    // =========================================================================
+    // 3. Suite Executive Summary & Comparison Table
+    // =========================================================================
+    function renderSuite(suitePayload) {
+      const runs = Array.isArray(suitePayload) ? suitePayload : (suitePayload.tests || []);
+      const recs = suitePayload.recommendations || {};
+      suiteData = runs;
+
+      // Update Header Status Badge and Subheader
+      const allPassed = runs.length > 0 && runs.every(r => (r.status || 'COMPLETED') === 'COMPLETED');
+      const anyFailed = runs.some(r => r.status === 'FAILED');
+      const suiteStatus = runs.length === 0 ? 'NO DATA' : (allPassed ? 'COMPLETED' : (anyFailed ? 'FAILED' : 'PARTIAL'));
+
+      const badge = document.getElementById('status-badge');
+      if (badge) {
+        badge.textContent = suiteStatus;
+        badge.className = 'badge ' + (suiteStatus === 'COMPLETED' ? 'badge-completed' : (suiteStatus === 'FAILED' ? 'badge-failed' : 'badge-idle'));
+      }
+      const subHeader = document.getElementById('sub-header');
+      if (subHeader) {
+        const title = suitePayload.suite_title || suitePayload.suite_id || 'Benchmark Suite';
+        subHeader.textContent = title + ' - ' + runs.length + ' test run' + (runs.length === 1 ? '' : 's');
+      }
+
+      // Populate Executive Sizing Cards
+      document.getElementById('rec-sustained').textContent = recs.sustained_capacity_msgs_sec ? formatNumber(recs.sustained_capacity_msgs_sec) + ' /s' : '-';
+      document.getElementById('rec-knee').textContent = recs.saturation_knee_msgs_sec ? formatNumber(recs.saturation_knee_msgs_sec) + ' /s' : '-';
+      document.getElementById('rec-cpu').textContent = recs.cluster_peak_cpu_pct ? recs.cluster_peak_cpu_pct.toFixed(1) + '%' : '-';
+      document.getElementById('rec-cpu-sub').textContent = 'Headroom: ' + (recs.cpu_headroom_pct || 0) + '%';
+      document.getElementById('rec-mem').textContent = recs.cluster_peak_mem_mb ? recs.cluster_peak_mem_mb.toFixed(1) + ' MB' : '-';
+
+      const tbody = document.getElementById('suite-rows');
+      tbody.innerHTML = '';
+
+      if (!runs || runs.length === 0) {
+        drawCurve([]);
+        return;
+      }
+
+      runs.forEach((r, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = 'clickable-row';
+        tr.onclick = () => selectChildRun(idx, r);
+
+        const lat = r.client?.latency_us || {};
+        const avgCpu = r.cluster?.avg_cpu_pct ? r.cluster.avg_cpu_pct.toFixed(1) + '%' : (r.nodes ? (r.nodes.reduce((s, n) => s + (n.avg_cpu_pct || 0), 0) / r.nodes.length).toFixed(1) + '%' : '-');
+        const peakCpu = r.cluster?.peak_cpu_pct ? r.cluster.peak_cpu_pct.toFixed(1) + '%' : (r.nodes ? Math.max(...r.nodes.map(n => n.peak_cpu_pct || 0)).toFixed(1) + '%' : '-');
+        const peakMem = r.cluster?.total_peak_mem_mb ? r.cluster.total_peak_mem_mb.toFixed(1) + ' MB' : '-';
+        const netRxTx = r.nodes ? (r.nodes.reduce((s, n) => s + (n.net_rx_mb_sec || 0), 0)).toFixed(1) + ' / ' + (r.nodes.reduce((s, n) => s + (n.net_tx_mb_sec || 0), 0)).toFixed(1) + ' MB/s' : '-';
+        const diskWrite = r.nodes ? (r.nodes.reduce((s, n) => s + (n.disk_write_mb_sec || 0), 0)).toFixed(2) + ' MB/s' : '-';
+        const diskGrowth = r.nodes ? (r.nodes.reduce((s, n) => s + (n.disk_growth_bytes || 0), 0) / 1024).toFixed(1) + ' KiB' : '0 B';
+        const cpuEff = r.cluster?.cpu_efficiency_msgs_per_core ? formatNumber(r.cluster.cpu_efficiency_msgs_per_core) : '-';
+
+        tr.innerHTML = `
+          <td class="mono" style="font-weight:600;"><a href="./${r.test_id}/report.html" target="_blank" style="color:var(--accent); text-decoration:none;">${r.test_id}</a></td>
+          <td class="mono">${formatNumber(r.metadata?.target_rate)}</td>
+          <td class="mono" style="font-weight:600;">${formatNumber(r.client?.throughput_msgs_sec)}</td>
+          <td class="mono">${formatLatency(lat.p50)}</td>
+          <td class="mono" style="color:var(--red); font-weight:600;">${formatLatency(lat.p99)}</td>
+          <td class="mono">${formatLatency(lat.max)}</td>
+          <td class="mono">${avgCpu}</td>
+          <td class="mono">${peakCpu}</td>
+          <td class="mono">${peakMem}</td>
+          <td class="mono">${netRxTx}</td>
+          <td class="mono">${diskWrite} (${diskGrowth})</td>
+          <td class="mono">${cpuEff}</td>
+          <td class="mono">${r.client?.delivery_efficiency_pct ? r.client.delivery_efficiency_pct.toFixed(1) + '%' : '100%'}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      drawCurve(runs);
+    }
+
+    // =========================================================================
+    // 4. Child Run Drill-Down Handler
+    // =========================================================================
+    function selectChildRun(idx, runData) {
+      document.querySelectorAll('#suite-rows tr').forEach(r => r.classList.remove('selected-row'));
+      const rows = document.querySelectorAll('#suite-rows tr');
+      if (rows[idx]) rows[idx].classList.add('selected-row');
+
+      const drawer = document.getElementById('drilldown-container');
+      drawer.style.display = 'block';
+      document.getElementById('drilldown-title').textContent = 'Test Run Deep Dive: ' + runData.test_id;
+      document.getElementById('drilldown-link').href = './' + runData.test_id + '/report.html';
+
+      renderDashboard(runData, 'drilldown-content');
+      drawer.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // =========================================================================
+    // 5. SVG Throughput vs Latency S-Curve
+    // =========================================================================
+    function drawCurve(runs) {
+      const container = document.getElementById('chart-box');
+      const empty = document.getElementById('chart-empty');
+      const svg = document.getElementById('svg-chart');
+
+      if (!runs || runs.length < 2) {
+        empty.style.display = 'block';
+        svg.style.display = 'none';
+        return;
+      }
+      empty.style.display = 'none';
+      svg.style.display = 'block';
+
+      const points = runs.map(r => ({
+        rate: r.client?.throughput_msgs_sec || r.metadata?.target_rate || 0,
+        p50: (r.client?.latency_us?.p50 || 0) / 1000,
+        p99: (r.client?.latency_us?.p99 || 0) / 1000
+      })).sort((a, b) => a.rate - b.rate);
+
+      const maxRate = Math.max(...points.map(p => p.rate)) * 1.15 || 10000;
+      const maxLat = Math.max(...points.map(p => p.p99)) * 1.25 || 10;
+
+      const w = container.clientWidth || 800;
+      const h = container.clientHeight || 340;
+      svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+      const padL = 60, padR = 40, padT = 30, padB = 40;
+      const pw = w - padL - padR;
+      const ph = h - padT - padB;
+
+      const getX = r => padL + (r / maxRate) * pw;
+      const getY = l => h - padB - (l / maxLat) * ph;
+
+      let p50Path = '';
+      let p99Path = '';
+      let circles = '';
+
+      points.forEach((p, idx) => {
+        const x = getX(p.rate);
+        const y50 = getY(p.p50);
+        const y99 = getY(p.p99);
+
+        p50Path += (idx === 0 ? `M ${x} ${y50}` : ` L ${x} ${y50}`);
+        p99Path += (idx === 0 ? `M ${x} ${y99}` : ` L ${x} ${y99}`);
+
+        circles += `
+          <circle cx="${x}" cy="${y50}" r="4" class="series-dot series-p50" />
+          <circle cx="${x}" cy="${y99}" r="4" class="series-dot series-p99" />
+          <text x="${x}" y="${h - padB + 16}" class="axis-label" text-anchor="middle">${(p.rate >= 1000 ? (p.rate/1000).toFixed(0)+'k' : p.rate)}</text>
+        `;
+      });
+
+      svg.innerHTML = `
+        <line x1="${padL}" y1="${h - padB}" x2="${w - padR}" y2="${h - padB}" class="axis-line" />
+        <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${h - padB}" class="axis-line" />
+        <path d="${p50Path}" class="series-line series-p50" />
+        <path d="${p99Path}" class="series-line series-p99" />
+        ${circles}
+        <text x="${w - padR}" y="${h - padB - 8}" class="axis-label" text-anchor="end">Throughput (msgs/sec) -&gt;</text>
+        <text x="${padL + 10}" y="${padT + 12}" class="axis-label">Latency (ms)</text>
+      `;
+    }
+
+    // =========================================================================
+    // 6. Visual Configurator & Live Server Runner
+    // =========================================================================
+    function updateGeneratedCommand() {
+      const scenario = document.getElementById('cfg-scenario').value;
+      const rate = document.getElementById('cfg-rate').value;
+      const clients = document.getElementById('cfg-clients').value;
+      const duration = document.getElementById('cfg-duration').value;
+      const size = document.getElementById('cfg-size').value;
+      const subject = document.getElementById('cfg-subject').value;
+
+      const cmd = `SCENARIO="${scenario}" THROUGHPUT=${rate} CLIENTS=${clients} DURATION="${duration}" SIZE="${size}" SUBJECT="${subject}" ./benchmark.sh`;
+      document.getElementById('cmd-preview').textContent = cmd;
+    }
+
+    function copyCommand() {
+      const cmd = document.getElementById('cmd-preview').textContent;
+      navigator.clipboard.writeText(cmd).then(() => {
+        alert('Benchmark command copied to clipboard!');
+      });
+    }
+
+    function downloadConf() {
+      const scenario = document.getElementById('cfg-scenario').value;
+      const rate = document.getElementById('cfg-rate').value;
+      const clients = document.getElementById('cfg-clients').value;
+      const duration = document.getElementById('cfg-duration').value;
+      const size = document.getElementById('cfg-size').value;
+      const subject = document.getElementById('cfg-subject').value;
+
+      const confText = [
+        '# NATS Capacity Benchmark Configuration',
+        `SCENARIO="${scenario}"`,
+        `THROUGHPUT=${rate}`,
+        `CLIENTS=${clients}`,
+        `DURATION="${duration}"`,
+        `SIZE="${size}"`,
+        `SUBJECT="${subject}"`,
+        'NATS_URL="nats://127.0.0.1:4222"',
+        'CONTAINERS="nats-1 nats-2 nats-3"',
+        'METRICS_SAMPLE_INTERVAL=5',
+        'BASELINE_DURATION_SECONDS=15'
+      ].join('\\n');
+
+      const blob = new Blob([confText], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'benchmark.conf';
+      a.click();
+    }
+
+    // =========================================================================
+    // 7. File Ingestion & DOM Initialization
+    // =========================================================================
+
+    // Check if live server is running
+    fetch('/api/status').then(res => res.json()).then(st => {
+      if (st) {
+        const btn = document.getElementById('btn-run-live');
+        btn.style.display = 'inline-flex';
+      }
+    }).catch(() => {});
+
+    function triggerLiveRun() {
+      const payload = {
+        scenario: document.getElementById('cfg-scenario').value,
+        throughput: document.getElementById('cfg-rate').value,
+        clients: document.getElementById('cfg-clients').value,
+        duration: document.getElementById('cfg-duration').value,
+        size: document.getElementById('cfg-size').value,
+        subject: document.getElementById('cfg-subject').value
+      };
+      fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(res => res.json()).then(r => {
+        alert('Benchmark started: ' + (r.test_id || 'running'));
+      }).catch(err => alert('Failed to contact server: ' + err));
+    }
+
+    // Handle File Drop / Select
+    document.getElementById('file-input').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        try {
+          const json = JSON.parse(evt.target.result);
+          if (Array.isArray(json) || json.tests) {
+            switchTab('comparison');
+            renderSuite(json);
+          } else {
+            switchTab('dashboard');
+            renderDashboard(json);
+          }
+        } catch (err) {
+          alert('Invalid JSON file: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // Auto-load embedded data
+    window.addEventListener('DOMContentLoaded', () => {
+      updateGeneratedCommand();
+      if (window.BENCHMARK_DATA) {
+        if (Array.isArray(window.BENCHMARK_DATA) || window.BENCHMARK_DATA.tests) {
+          switchTab('comparison');
+          renderSuite(window.BENCHMARK_DATA);
+        } else {
+          renderDashboard(window.BENCHMARK_DATA);
+        }
+      }
+    });
+  </script>
+</body>
+</html>

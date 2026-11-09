@@ -1,6 +1,6 @@
 .vscode
 
-*.html
+temporal-index.html
 *.DS_Store
 
 AGENTS.md

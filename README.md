@@ -85,119 +85,63 @@ podman compose down
 
 ## 4. Configuration Guide
 
-Workload and environment configurations are strictly decoupled under `config/`:
-
-### A. Environment Configuration (`config/environment.conf`)
-
-Controls connection endpoints, metrics collectors, and output paths:
+Workload, telemetry, and environment parameters are unified in a single configuration file: `nats-capacity-benchmark/benchmark.conf`.
+Parameters directly map to native `nats bench` CLI flags and container telemetry options:
 
 ```bash
-# Endpoint for benchmark traffic (points to HAProxy L4 listener)
+# Test Identification
+TEST_ID="TEST-1K-BASELINE"
+TEST_DESCRIPTION="Core NATS 1 KiB baseline at 1,000 msgs/sec"
+
+# Cluster Connection (--server)
 NATS_URL="nats://127.0.0.1:4222"
 
-# Infrastructure telemetry backend: "podman" or "none"
-METRICS_BACKEND="podman"
+# Engine & Scenario
+# Options: pubsub, publish, subscribe, js-pub-sync, js-pub-async, js-consume
+SCENARIO="pubsub"
 
-# Physical disk metrics backend: "local" (host filesystem scan) or "cgroup" (container engine blkio)
-DISK_METRICS_BACKEND="local"
+# Concurrency & Workload Limits
+CLIENTS=4                       # --clients (default concurrency for pub and sub)
+PUBS=4                          # Publisher concurrency (overrides CLIENTS if set)
+SUBS=4                          # Subscriber concurrency (overrides CLIENTS if set)
+SIZE="1024B"                    # --size
+THROUGHPUT=1000                 # --throughput (aggregate msgs/sec throttle; 0 for unthrottled)
+DURATION="30s"                  # --duration (takes precedence over msgs when throughput > 0)
+MSGS=30000                      # --msgs (used when throughput is 0 or duration unthrottled)
 
-# Host path containing per-node data directories (nats-1, nats-2, nats-3)
+# Core NATS Routing Patterns
+SUBJECT="benchmark.core.test"   # <subject>
+QUEUE=""                        # --queue (blank for broadcast fan-out; set group name for load balancing)
+MULTISUBJECT=false              # --multisubject
+MULTISUBJECT_MAX=100000         # --multisubjectmax
+
+# JetStream Specific Options (active when SCENARIO is js-*)
+STREAM="BENCH_STREAM"           # --stream
+CONSUMER="bench-consumer"       # --consumer
+STORAGE="file"                  # file | memory
+REPLICAS=3                      # Stream replication factor (1 or 3)
+MAX_BYTES="5GB"                 # Stream storage quota
+RETENTION="limits"              # limits | interest | workqueue
+BATCH=500                       # --batch (for js-consume)
+ACKS="explicit"                 # --acks (explicit | none | all)
+PREPOPULATE_COUNT=0             # Prepopulate count for replay consume tests
+
+# Container Telemetry Sampling
+METRICS_BACKEND="podman"        # podman | none
+CONTAINERS="nats-1 nats-2 nats-3"
+METRICS_SAMPLE_INTERVAL=5       # seconds between stats samples
+BASELINE_DURATION_SECONDS=15    # idle baseline sample duration
+DISK_METRICS_BACKEND="local"    # local | cgroup
 NATS_DATA_BASE_DIR="../deploy/data"
-
-# Podman container names to monitor
-NATS_CONTAINERS="nats-1 nats-2 nats-3"
-
-# Telemetry sample interval (seconds) and idle baseline duration (seconds)
-METRICS_SAMPLE_INTERVAL=5
-BASELINE_DURATION_SECONDS=15
-
-# Results directory (relative to nats-capacity-benchmark/ or absolute path)
 RESULTS_DIR="results"
 ```
 
-### B. Core NATS Workload Configuration (`config/core-nats.conf`)
+### Environment Variable Overrides
 
-Controls the messaging profile, scenarios, concurrency, and volume:
-
-```bash
-# 1. Test Scenario:
-#   pubsub          - Concurrent publish and subscribe (default)
-#   publish         - Publishers send without active subscribers
-#   subscribe_setup - Connection and subscription establishment overhead
-SCENARIO="pubsub"
-
-# 2. Subscription Pattern (for pubsub scenario):
-#   pubsub          - Normal Pub/Sub broadcast (fan-out = SUBSCRIBER_CONCURRENCY)
-#   queue           - Queue group load balancing (fan-out = 1x)
-SUBSCRIPTION_PATTERN="pubsub"
-QUEUE_NAME="benchmark-core-group"
-
-# 3. Subject Distribution:
-#   single          - Single subject (SUBJECT)
-#   multi           - Multiple subjects (--multisubject token distribution)
-SUBJECT="benchmark.core.test"
-SUBJECT_DISTRIBUTION="single"
-MULTI_SUBJECT_MAX=10000
-
-# 4. Workload Rate & Concurrency Limits:
-TARGET_MSGS_PER_SEC=1000       # Target publication rate ceiling (msgs/sec)
-MESSAGE_SIZE=1024              # Message payload size in bytes (e.g. 1024 = 1 KiB)
-PUBLISHER_CONCURRENCY=1        # Concurrent publisher client connections
-SUBSCRIBER_CONCURRENCY=1       # Concurrent subscriber client connections
-TEST_DURATION_SECONDS=60       # Nominal test duration in seconds
-```
-
-### C. JetStream Workload Configuration (`config/jetstream.conf`)
-
-Controls stream persistence, Raft replication quorum, consensus publish modes, and pull consumers:
+Any configuration parameter can be overridden at runtime via environment variables without modifying files:
 
 ```bash
-MESSAGING_TYPE="JetStream"
-
-# 1. Test Scenario:
-#   pubsub   - Concurrent JetStream publish and pull consume (default)
-#   publish  - Publishers append messages to stream without active consumers
-#   consume  - Consumers replay from pre-populated stream without active publishers
-SCENARIO="pubsub"
-
-# 2. Stream Persistence & Quorum:
-STREAM_NAME="BENCH_STREAM"
-STREAM_SUBJECT="benchmark.js.test"
-STORAGE_TYPE="file"               # "file" (disk storage) or "memory" (RAM-backed)
-REPLICATION_FACTOR=3              # 1 (single node) or 3 (R=3 Raft quorum)
-MAX_BYTES="5GB"                   # Stream max storage quota
-RETENTION_POLICY="limits"         # "limits", "interest", or "workqueue"
-
-# 3. Publishing & Consumer Settings:
-JS_PUB_MODE="sync"                # "sync" (consensus commit wait) or "async" (pipelined)
-CONSUMER_NAME="bench-consumer"
-CONSUMER_ACK_POLICY="explicit"    # Explicit per-message acknowledgment
-CONSUMER_BATCH_SIZE=500           # Pull batch fetch size
-
-# 4. Workload Limits:
-TARGET_MSGS_PER_SEC=1000
-MESSAGE_SIZE=1024
-PUBLISHER_CONCURRENCY=4
-SUBSCRIBER_CONCURRENCY=2
-TEST_DURATION_SECONDS=60
-```
-
-### D. Test Identification Configuration (`config/test.conf`)
-
-Controls test naming, intent descriptions, and results folder mapping:
-
-```bash
-# Unique Test Identifier corresponding to tests.md (e.g. TEST-1.0, TEST-2.A1)
-# Used as the child folder name under results/ (e.g. results/TEST-1.0/)
-TEST_ID="TEST-1.0"
-
-# Human-readable test intent and scope description
-TEST_DESCRIPTION="Core NATS Baseline (Symmetric 1 Pub, 1 Sub, 1 KiB, 1K msgs/s)"
-
-# Results directory hierarchy:
-# false: store directly in results/${TEST_ID}/ (default)
-# true : store in results/${TEST_ID}/${RUN_TIMESTAMP}/ to preserve historical runs
-TIMESTAMP_SUBFOLDER=false
+PUBS=8 SUBS=8 THROUGHPUT=20000 DURATION="60s" ./benchmark.sh
 ```
 
 ---
@@ -216,24 +160,36 @@ Validates local dependencies, port reachability (`:4222`, `:8404`, monitoring po
 ```
 
 ### 2. Run Default Benchmark
-Executes the workload defined in `config/core-nats.conf` against `config/environment.conf` and `config/test.conf`:
+Executes the workload defined in `benchmark.conf`:
 ```bash
 ./benchmark.sh
 ```
 
-### 3. Run with Custom Configuration Files
-Execute specific workloads and test IDs without modifying base configuration files:
+### 3. Run with Environment Variable Overrides
+Run immediate parameter sweeps without editing configuration files:
 ```bash
-./benchmark.sh path/to/custom-workload.conf path/to/custom-env.conf path/to/custom-test.conf
+THROUGHPUT=5000 DURATION="60s" PUBS=4 SUBS=4 ./benchmark.sh
 ```
 
-### 4. Re-aggregate Past Test Runs
-Regenerate summary CSVs and HTML reports from an existing test directory without re-running the test:
+### 4. Run with a Custom Configuration File
+Execute a standalone workload configuration:
+```bash
+./benchmark.sh path/to/custom-workload.conf
+```
+
+### 5. Launch Interactive Web UI & Configurator
+Starts the local runner server with an interactive web UI at `http://127.0.0.1:8080` featuring visual scenario selection, real-time command building, live execution, and offline report viewing:
+```bash
+./benchmark.sh --serve
+```
+
+### 6. Re-aggregate Past Test Runs
+Regenerate `results.json` and standalone `report.html` from an existing test directory without re-running the test:
 ```bash
 python3 scripts/aggregate.py results/<TEST_ID>
 ```
 
-### 5. Run Unattended Executive Benchmark Suites
+### 7. Run Unattended Executive Benchmark Suites
 Execute an entire test matrix unattended with automated cluster isolation, 10-second quiescence settling between runs, and consolidated executive reporting:
 ```bash
 # Run predefined JetStream Cost of Guarantees suite:
@@ -256,20 +212,20 @@ Available Predefined Suites (`suites/*.conf`):
 ### A. Core NATS
 1. **Publish + Subscribe (`SCENARIO="pubsub"`)**:
    - Publishers and subscribers run simultaneously.
-   - **Broadcast Mode (`SUBSCRIPTION_PATTERN="pubsub"`)**: Each subscriber receives a copy of all published messages ($Fan\text{-}out = \text{Subscriber Concurrency}$).
-   - **Queue Group Mode (`SUBSCRIPTION_PATTERN="queue"`)**: Subscribers join a shared queue group, load-balancing messages across workers ($Fan\text{-}out = 1\times$).
+   - **Broadcast Mode (`QUEUE=""`)**: Every subscriber receives a full copy of every published message (Fan-out = Subscriber Concurrency).
+   - **Queue Group Mode (`QUEUE="<queue_name>"`)**: Subscribers join a shared queue group, load-balancing messages across workers (Fan-out = 1x).
 2. **Publish-Only (`SCENARIO="publish"`)**:
-   - Publishers push messages without active subscribers to measure raw publishing throughput, connection handling, and server ingress routing without delivery costs.
-3. **Subscribe Setup (`SCENARIO="subscribe_setup"`)**:
-   - Measures connection and subscription establishment overhead without message traffic. Reports connection rate (`conns/sec`) and server memory overhead per subscription.
+   - Publishers send messages without active subscribers to measure raw publishing throughput, connection handling, and server ingress routing without delivery costs.
+3. **Subscribe-Only (`SCENARIO="subscribe"`)**:
+   - Measures subscriber ingress consumption, connection handling, and delivery processing overhead.
 
 ### B. JetStream
-1. **Publish + Consume (`SCENARIO="pubsub"`)**:
-   - Concurrent publishing (sync or async) and durable pull consumers.
-2. **Publish-Only (`SCENARIO="publish"`)**:
-   - Measures write throughput, disk I/O write rate, and Raft consensus replication latency without consumer drain.
-3. **Consume-Only (`SCENARIO="consume"`)**:
-   - Pull consumer replay throughput, disk I/O read rate, and batch acknowledgment performance from a pre-populated stream.
+1. **Synchronous Publish (`SCENARIO="js-pub-sync"`)**:
+   - Publishers append messages to the stream and wait for consensus commit acknowledgment before proceeding (`nats bench js pub sync`).
+2. **Asynchronous Publish (`SCENARIO="js-pub-async"`)**:
+   - Pipelined asynchronous publishing without per-message round-trip wait (`nats bench js pub async`).
+3. **Pull Consume (`SCENARIO="js-consume"`)**:
+   - Durable pull consumers replay and acknowledge messages in batches from a pre-populated stream (`nats bench js consume`).
 
 ---
 
@@ -279,13 +235,13 @@ Every benchmark run creates an organized output directory under `results/<TEST_I
 
 | File | Description | Primary Purpose |
 | :--- | :--- | :--- |
-| **`report.html`** | Standalone, self-contained offline HTML report organized into Setup Details, Test Details, and Test Results (responsive KPI cards, latency percentiles, node infrastructure table, cluster totals, console logs, and print/PDF export styling). | Visual review, architecture reports, executive dashboards |
-| **`summary.csv`** | Benchmark execution summary with test parameters, achieved publication/delivery rates, fan-out multiplier, cluster average/peak CPU and RAM, and exit codes. | Automated data collection, CI/CD, spreadsheet analysis |
-| **`node-summary.csv`** | Per-container resource consumption breakdown: average and peak CPU %, RAM usage, Network RX/TX (MB/s), and Block Read/Write (MB/s). | Node balance analysis, identifying cluster bottlenecks |
-| **`metrics.csv`** | Raw time-series telemetry sampled every `METRICS_SAMPLE_INTERVAL` seconds across all monitored cluster nodes. | Time-series charting, deep-dive resource analysis |
-| **`workload.log`** | Execution console output from publisher clients and NATS CLI. | Latency percentiles (min, avg, P50, P90, P99, P99.9, max) |
-| **`subscriber.log`** | Execution console output from subscriber clients. | Delivery verification, bandwidth confirmation, connection setup stats |
+| **`results.json`** | Canonical machine-readable benchmark results containing test metadata, client latency percentiles, achieved throughput, cluster rollups, and per-node resource metrics. | Automated data collection, CI/CD, trend analysis |
+| **`report.html`** | Standalone, self-contained offline HTML report with responsive KPI cards, latency percentiles, node infrastructure table, cluster totals, console logs, and visual configurator. | Visual review, architecture reports, executive dashboards |
+| **`metrics.json`** | Time-series container resource telemetry (CPU, memory, net RX/TX, block read/write, disk growth) sampled across baseline and workload phases. | Deep-dive telemetry, capacity analysis |
+| **`pub.csv`** | Native CSV benchmark output from publisher client (MsgCount, MsgBytes, MsgsPerSec, BytesPerSec, and full latency percentiles). | Statistical analysis, audit trail |
+| **`sub.csv`** | Native CSV benchmark output from subscriber client. | Delivery verification, bandwidth confirmation |
 | **`test-config.txt`** | Complete snapshot of runtime parameters and configurations used during the test. | Test auditability, repeatability |
+| **`workload_outcome.txt`** | Workload completion state (`COMPLETED`, `TIMEOUT`, `INTERRUPTED`). | Automation pipelines, status validation |
 
 ### Executive Suite Deliverables
 
@@ -293,8 +249,8 @@ When executing benchmark suites via `./suite.sh <suite-name>`, a consolidated su
 
 | File | Description | Primary Purpose |
 | :--- | :--- | :--- |
-| **`executive-report.html`** | Offline executive dashboard featuring: (1) Sizing & Capacity Recommendation cards, (2) Pure SVG Throughput vs Latency Saturation Curve ("hockey stick" curve) with P50/P99 latency knee callouts, and (3) Comparative "Cost of Guarantees" Matrix with direct links to per-test diagnostic reports. Includes professional print/PDF styling. | Architecture reviews, leadership presentations, capacity sign-off |
-| **`executive-summary.md`** | Portable GitHub Flavored Markdown summary of the suite recommendations and comparative matrix table. | Confluence documentation, PR descriptions, issue tracking |
+| **`suite-results.json`** | Canonical JSON rollup aggregating all child test runs, containing executive sizing boundaries (sustained capacity, saturation knee, peak throughput, cluster peak headroom). | Tooling, long-term capacity tracking |
+| **`executive-report.html`** / **`suite-report.html`** | Offline executive dashboard featuring: (1) Sizing & Capacity Recommendation cards, (2) Pure SVG Throughput vs Latency Saturation Curve ("hockey stick" curve) with P50/P99 latency knee callouts, (3) Comparative "Cost of Guarantees" Matrix with direct links to per-test diagnostic reports, and (4) Interactive child-run drill-down drawer. Includes professional print/PDF styling. | Architecture reviews, leadership presentations, capacity sign-off |
 
 ---
 
@@ -308,6 +264,6 @@ When executing benchmark suites via `./suite.sh <suite-name>`, a consolidated su
 
 ## 9. Next Steps & Cross-References
 
-- For the Core NATS test case inventory and run cards, see `tests.md`.
-- For the JetStream test case inventory and parameter sweep matrices, see `tests-jetstream.md`.
-- For the architectural design, evaluation methodology, and capacity planning standards, see `benchmarking.md`.
+- For the Core NATS test case inventory and run cards, see [docs/tests.md](docs/tests.md).
+- For the JetStream test case inventory and parameter sweep matrices, see [docs/tests-jetstream.md](docs/tests-jetstream.md).
+- For the architectural design, evaluation methodology, and capacity planning standards, see [docs/benchmarking.md](docs/benchmarking.md).
