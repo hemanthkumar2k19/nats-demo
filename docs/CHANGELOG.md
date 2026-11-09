@@ -6,6 +6,15 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ## [Unreleased] - 2026-11-09
 
+### Fixed
+- **Suite Executive Report Generation**: Resolved bug preventing `suite.sh` from producing or rendering `executive-report.html` and `suite-report.html` on external systems:
+  - Exported caller `NATS_URL` into child test subshells so remote endpoints are not clobbered by defaults in `benchmark.conf`.
+  - Preserved `TIMESTAMP_SUBFOLDER` across `benchmark.sh` configuration sourcing, preventing unexpected nested test output directories.
+  - Replaced literal sentinel string matching with multi-line regex substitution in `aggregate_suite.py` and `aggregate.py`, eliminating sensitivity to whitespace or CRLF line endings across different environments.
+  - Hardened `compute_recommendations()` and rate parsing in `aggregate_suite.py` with `safe_float` and `safe_int` coercions, preventing unhandled exceptions on unthrottled (zero rate), missing, or malformed metrics.
+  - Implemented recursive child result discovery (`child.rglob("results.json")`) and synthetic fallback run records from `test-config.txt` so `executive-report.html`, `suite-report.html`, and `suite-results.json` are always generated even during partial or failed runs.
+  - Updated `static/report.html` suite rendering: dynamically sets `#status-badge` (`COMPLETED`, `PARTIAL`, `FAILED`, or `NO DATA`) and `#sub-header`, adds responsive SVG `viewBox="0 0 800 340"`, and activates the comparison tab prior to SVG curve calculation.
+
 ### Added
 - **Developer Ergonomics and Inline Architectural Documentation**: Added comprehensive argument contract headers (e.g. 17-parameter positional table in `workload.sh`, invocation signature in `metrics.sh`, subshell isolation documentation in `suite.sh`), inline rationale for the environment-save/restore pattern in `benchmark.sh`, explanation of the Podman cumulative `cpu_time` delta calculation, JetStream consumer setup rationale, and delivery efficiency calculation formulas for broadcast fan-out vs queue groups.
 - **Template Injection Safeguards**: Added explicit warning comments and programmatic verification in `aggregate.py` and `aggregate_suite.py` to check for the `<script id="benchmark-data">` sentinel tag before attempting HTML report generation, preventing silent failures.

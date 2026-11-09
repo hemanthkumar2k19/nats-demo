@@ -8,6 +8,7 @@ producing canonical results.json and a standalone, portable report.html.
 import csv
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -228,14 +229,17 @@ def main():
     template_path = ROOT_DIR / "static" / "report.html"
     if template_path.exists():
         template_content = template_path.read_text(encoding="utf-8")
-        sentinel_tag = '<script id="benchmark-data">\n    window.BENCHMARK_DATA = null;\n  </script>'
+        sentinel_pattern = re.compile(
+            r'<script\s+id=["\']benchmark-data["\']\s*>\s*window\.BENCHMARK_DATA\s*=\s*null;\s*</script>',
+            re.MULTILINE
+        )
         embed_script = f'<script id="benchmark-data">\n    window.BENCHMARK_DATA = {json.dumps(results_data)};\n  </script>'
 
-        if sentinel_tag in template_content:
-            report_content = template_content.replace(sentinel_tag, embed_script, 1)
+        if sentinel_pattern.search(template_content):
+            report_content = sentinel_pattern.sub(embed_script, template_content, count=1)
             (result_dir / "report.html").write_text(report_content, encoding="utf-8")
         else:
-            print(f"WARNING: Sentinel tag was not found in {template_path}. Offline report.html was not created.", file=sys.stderr)
+            print(f"WARNING: Sentinel pattern was not found in {template_path}. Offline report.html was not created.", file=sys.stderr)
 
     print(f"Results aggregated successfully:")
     print(f"  JSON Data   : {results_json_path}")

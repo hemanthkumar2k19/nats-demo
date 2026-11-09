@@ -45,6 +45,7 @@ _ENV_REPLICAS="${REPLICAS:-}"
 _ENV_CONTAINERS="${CONTAINERS:-}"
 _ENV_BASELINE_DURATION_SECONDS="${BASELINE_DURATION_SECONDS:-}"
 _ENV_RESULTS_DIR="${RESULTS_DIR:-}"
+_ENV_TIMESTAMP_SUBFOLDER="${TIMESTAMP_SUBFOLDER:-}"
 
 # Source config if found
 if [[ -f "$CONFIG_FILE" ]]; then
@@ -73,6 +74,7 @@ fi
 [[ -n "$_ENV_CONTAINERS" ]] && CONTAINERS="$_ENV_CONTAINERS"
 [[ -n "$_ENV_BASELINE_DURATION_SECONDS" ]] && BASELINE_DURATION_SECONDS="$_ENV_BASELINE_DURATION_SECONDS"
 [[ -n "$_ENV_RESULTS_DIR" ]] && RESULTS_DIR="$_ENV_RESULTS_DIR"
+[[ -n "$_ENV_TIMESTAMP_SUBFOLDER" ]] && TIMESTAMP_SUBFOLDER="$_ENV_TIMESTAMP_SUBFOLDER"
 
 # -----------------------------------------------------------------------------
 # Configuration Defaults (grouped by subsystem)

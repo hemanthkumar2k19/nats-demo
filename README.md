@@ -53,7 +53,7 @@ podman machine info
 
 # If resizing is needed:
 podman machine stop
-podman machine set --cpus 5 --memory 6144 --disk-size 50
+podman machine set --cpus 6 --memory 8192 --disk-size 100
 podman machine start
 ```
 

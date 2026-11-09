@@ -29,9 +29,20 @@ else
   exit 1
 fi
 
+# Preserve environment overrides prior to sourcing base configuration
+_ENV_NATS_URL="${NATS_URL:-}"
+_ENV_RESULTS_DIR="${RESULTS_DIR:-}"
+_ENV_SETTLE_SECONDS="${SETTLE_SECONDS:-}"
+
 if [[ -f "$ENVIRONMENT_CONFIG" ]]; then
   source "$ENVIRONMENT_CONFIG"
 fi
+
+# Reapply caller overrides so benchmark.conf does not clobber them
+[[ -n "$_ENV_NATS_URL" ]] && NATS_URL="$_ENV_NATS_URL"
+[[ -n "$_ENV_RESULTS_DIR" ]] && RESULTS_DIR="$_ENV_RESULTS_DIR"
+[[ -n "$_ENV_SETTLE_SECONDS" ]] && SETTLE_SECONDS="$_ENV_SETTLE_SECONDS"
+
 source "$SUITE_FILE"
 
 : "${SUITE_ID:=custom-suite}"
@@ -40,7 +51,11 @@ source "$SUITE_FILE"
 : "${SETTLE_SECONDS:=10}"
 
 SUITE_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-SUITE_OUT_DIR="${ROOT_DIR}/${RESULTS_DIR:-results}/suites/${SUITE_ID}/${SUITE_TIMESTAMP}"
+if [[ "$RESULTS_DIR" == /* ]]; then
+  SUITE_OUT_DIR="${RESULTS_DIR}/suites/${SUITE_ID}/${SUITE_TIMESTAMP}"
+else
+  SUITE_OUT_DIR="${ROOT_DIR}/${RESULTS_DIR:-results}/suites/${SUITE_ID}/${SUITE_TIMESTAMP}"
+fi
 mkdir -p "$SUITE_OUT_DIR"
 
 TOTAL_STEPS="${#TEST_CASES[@]}"
@@ -97,6 +112,7 @@ for ENTRY in "${TEST_CASES[@]}"; do
     export TEST_DESCRIPTION="${CASE_DESC}"
     export RESULTS_DIR="${SUITE_OUT_DIR}"
     export TIMESTAMP_SUBFOLDER=false
+    export NATS_URL="${NATS_URL}"
 
     # Parse and export key=value pairs
     for PAIR in $CASE_OVERRIDES; do

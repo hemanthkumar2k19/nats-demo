@@ -14,29 +14,51 @@ Output Schema (suite-results.json):
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
+def safe_float(v, default=0.0):
+    try:
+        if v is None:
+            return default
+        return float(str(v).strip().rstrip("%"))
+    except (ValueError, TypeError):
+        return default
+
+def safe_int(v, default=0):
+    try:
+        if v is None:
+            return default
+        return int(float(str(v).strip()))
+    except (ValueError, TypeError):
+        return default
+
 def compute_recommendations(runs):
     if not runs:
         return {}
 
-    peak_rate = max((r.get("client", {}).get("throughput_msgs_sec", 0.0) for r in runs), default=0.0)
-    cluster_peak_cpu = max((r.get("cluster", {}).get("peak_cpu_pct", 0.0) for r in runs), default=0.0)
-    cluster_peak_mem = max((r.get("cluster", {}).get("total_peak_mem_mb", 0.0) for r in runs), default=0.0)
-    total_disk_growth = sum((sum(n.get("disk_growth_bytes", 0) for n in r.get("nodes", [])) for r in runs), 0)
+    peak_rate = max((safe_float((r.get("client") or {}).get("throughput_msgs_sec", 0.0)) for r in runs), default=0.0)
+    cluster_peak_cpu = max((safe_float((r.get("cluster") or {}).get("peak_cpu_pct", 0.0)) for r in runs), default=0.0)
+    cluster_peak_mem = max((safe_float((r.get("cluster") or {}).get("total_peak_mem_mb", 0.0)) for r in runs), default=0.0)
+
+    total_disk_growth = 0
+    for r in runs:
+        for n in (r.get("nodes") or []):
+            total_disk_growth += safe_int(n.get("disk_growth_bytes", 0))
 
     # Sustained boundary: highest achieved rate where delivery >= 99%, P99 < 15ms (15000us), CPU < 80%
     sustained = 0.0
     for r in runs:
-        client = r.get("client", {})
-        cluster = r.get("cluster", {})
-        p99 = client.get("latency_us", {}).get("p99", 0.0)
-        eff = client.get("delivery_efficiency_pct", 100.0)
-        cpu = cluster.get("peak_cpu_pct", 0.0)
-        rate = client.get("throughput_msgs_sec", 0.0)
+        client = r.get("client") or {}
+        cluster = r.get("cluster") or {}
+        lat = client.get("latency_us") or {}
+        p99 = safe_float(lat.get("p99", 0.0))
+        eff = safe_float(client.get("delivery_efficiency_pct", 100.0), 100.0)
+        cpu = safe_float(cluster.get("peak_cpu_pct", 0.0))
+        rate = safe_float(client.get("throughput_msgs_sec", 0.0))
         if eff >= 99.0 and p99 < 15000.0 and cpu < 80.0:
             if rate > sustained:
                 sustained = rate
@@ -44,11 +66,12 @@ def compute_recommendations(runs):
     # Saturation knee: first step where p99 > 15ms or delivery < 99% or throughput drops below offered
     saturation_knee = peak_rate
     for r in runs:
-        client = r.get("client", {})
-        p99 = client.get("latency_us", {}).get("p99", 0.0)
-        eff = client.get("delivery_efficiency_pct", 100.0)
-        target = r.get("metadata", {}).get("target_rate", 0)
-        achieved = client.get("throughput_msgs_sec", 0.0)
+        client = r.get("client") or {}
+        lat = client.get("latency_us") or {}
+        p99 = safe_float(lat.get("p99", 0.0))
+        eff = safe_float(client.get("delivery_efficiency_pct", 100.0), 100.0)
+        target = safe_int((r.get("metadata") or {}).get("target_rate", 0))
+        achieved = safe_float(client.get("throughput_msgs_sec", 0.0))
         if eff < 99.0 or p99 >= 15000.0 or (target > 0 and achieved < target * 0.95):
             saturation_knee = achieved
             break
@@ -77,21 +100,70 @@ def main():
 
     runs = []
     for child in sorted(suite_dir.iterdir()):
-        if child.is_dir():
-            res_file = child / "results.json"
-            if res_file.exists():
-                try:
-                    data = json.loads(res_file.read_text())
-                    runs.append(data)
-                except Exception:
-                    pass
+        if not child.is_dir():
+            continue
 
-    if not runs:
-        print(f"No results.json runs found in {suite_dir}", file=sys.stderr)
-        return
+        res_file = child / "results.json"
+        if not res_file.exists():
+            nested_res = next(child.rglob("results.json"), None)
+            if nested_res and nested_res.exists():
+                res_file = nested_res
+
+        if res_file.exists():
+            try:
+                data = json.loads(res_file.read_text(encoding="utf-8"))
+                runs.append(data)
+                continue
+            except Exception:
+                pass
+
+        # Fallback: synthesize failed run record if test-config.txt exists
+        cfg_file = child / "test-config.txt"
+        if not cfg_file.exists():
+            cfg_file = next(child.rglob("test-config.txt"), None)
+        if cfg_file and cfg_file.exists():
+            meta = {}
+            try:
+                for line in cfg_file.read_text(encoding="utf-8").splitlines():
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        meta[k.strip()] = v.strip()
+            except Exception:
+                pass
+
+            runs.append({
+                "test_id": child.name,
+                "status": "FAILED",
+                "metadata": {
+                    "test_description": meta.get("test_description", child.name),
+                    "scenario": meta.get("scenario", "unknown"),
+                    "target_rate": safe_int(meta.get("target_publish_msgs_per_sec", 0)),
+                    "payload_size": meta.get("message_size_bytes", "1024B"),
+                    "publisher_concurrency": safe_int(meta.get("publisher_concurrency", 1), 1),
+                    "subscriber_concurrency": safe_int(meta.get("subscriber_concurrency", 1), 1),
+                    "duration": meta.get("nominal_duration_seconds", "0s"),
+                    "messaging_type": meta.get("messaging_type", "Core NATS")
+                },
+                "client": {
+                    "published_msgs": 0,
+                    "received_msgs": 0,
+                    "throughput_msgs_sec": 0.0,
+                    "throughput_mb_sec": 0.0,
+                    "delivery_efficiency_pct": 0.0,
+                    "latency_us": {"min": 0.0, "avg": 0.0, "p50": 0.0, "p90": 0.0, "p99": 0.0, "max": 0.0}
+                },
+                "cluster": {
+                    "avg_cpu_pct": 0.0,
+                    "peak_cpu_pct": 0.0,
+                    "total_peak_mem_mb": 0.0,
+                    "total_mem_growth_mb": 0.0,
+                    "cpu_efficiency_msgs_per_core": 0.0
+                },
+                "nodes": []
+            })
 
     # Sort runs ascending by target rate for proper sequential ladders
-    runs.sort(key=lambda r: int(r.get("metadata", {}).get("target_rate", 0)))
+    runs.sort(key=lambda r: safe_int((r.get("metadata") or {}).get("target_rate", 0)))
 
     recs = compute_recommendations(runs)
 
@@ -105,23 +177,28 @@ def main():
 
     # Write suite-results.json
     suite_json_path = suite_dir / "suite-results.json"
-    suite_json_path.write_text(json.dumps(suite_data, indent=2))
+    suite_json_path.write_text(json.dumps(suite_data, indent=2), encoding="utf-8")
 
     # Inject into static/report.html to create self-contained offline reports
     template_path = ROOT_DIR / "static" / "report.html"
     if template_path.exists():
         template_content = template_path.read_text(encoding="utf-8")
-        sentinel_tag = '<script id="benchmark-data">\n    window.BENCHMARK_DATA = null;\n  </script>'
+        sentinel_pattern = re.compile(
+            r'<script\s+id=["\']benchmark-data["\']\s*>\s*window\.BENCHMARK_DATA\s*=\s*null;\s*</script>',
+            re.MULTILINE
+        )
         embed_script = f'<script id="benchmark-data">\n    window.BENCHMARK_DATA = {json.dumps(suite_data)};\n  </script>'
 
-        if sentinel_tag in template_content:
-            report_content = template_content.replace(sentinel_tag, embed_script, 1)
+        if sentinel_pattern.search(template_content):
+            report_content = sentinel_pattern.sub(embed_script, template_content, count=1)
             exec_report = suite_dir / "executive-report.html"
             suite_report = suite_dir / "suite-report.html"
             exec_report.write_text(report_content, encoding="utf-8")
             suite_report.write_text(report_content, encoding="utf-8")
         else:
-            print(f"WARNING: Sentinel tag was not found in {template_path}. Suite reports were not created.", file=sys.stderr)
+            print(f"WARNING: Sentinel pattern was not found in {template_path}. Suite reports were not created.", file=sys.stderr)
+    else:
+        print(f"WARNING: Template {template_path} not found.", file=sys.stderr)
 
     print(f"Executive suite aggregated successfully ({len(runs)} runs):")
     print(f"  Suite JSON       : {suite_json_path}")
