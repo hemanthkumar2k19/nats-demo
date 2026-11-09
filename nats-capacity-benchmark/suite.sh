@@ -3,8 +3,17 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Usage:
+#   ./suite.sh [SUITE_NAME_OR_FILE] [BASE_CONFIG_FILE]
+#
+# Arguments:
+#   $1 - Suite file or ID (e.g. core-ladder, jetstream-guarantees, or path to .conf).
+#        Defaults to suites/jetstream-guarantees.conf.
+#   $2 - Base environment configuration file (defaults to benchmark.conf).
+#        Sourced here to establish suite-level defaults (e.g. RESULTS_DIR, NATS_URL).
+
 SUITE_INPUT="${1:-${ROOT_DIR}/suites/jetstream-guarantees.conf}"
-ENVIRONMENT_CONFIG="${2:-${ROOT_DIR}/config/environment.conf}"
+ENVIRONMENT_CONFIG="${2:-${ROOT_DIR}/benchmark.conf}"
 
 # Resolve suite config file
 if [[ -f "$SUITE_INPUT" ]]; then
@@ -20,7 +29,9 @@ else
   exit 1
 fi
 
-source "$ENVIRONMENT_CONFIG"
+if [[ -f "$ENVIRONMENT_CONFIG" ]]; then
+  source "$ENVIRONMENT_CONFIG"
+fi
 source "$SUITE_FILE"
 
 : "${SUITE_ID:=custom-suite}"
@@ -64,6 +75,9 @@ for ENTRY in "${TEST_CASES[@]}"; do
   if [[ "$CASE_WORKLOAD" != /* ]]; then
     CASE_WORKLOAD="${ROOT_DIR}/${CASE_WORKLOAD}"
   fi
+  if [[ ! -f "$CASE_WORKLOAD" ]]; then
+    CASE_WORKLOAD="${ROOT_DIR}/benchmark.conf"
+  fi
 
   echo "--------------------------------------------------------------------------------"
   echo "[${STEP_NUM}/${TOTAL_STEPS}] Starting Test Case: ${CASE_ID}"
@@ -72,7 +86,10 @@ for ENTRY in "${TEST_CASES[@]}"; do
   echo "Overrides   : ${CASE_OVERRIDES}"
   echo "--------------------------------------------------------------------------------"
 
-  # Execute benchmark with isolated environment overrides
+  # Execute benchmark in an isolated subshell.
+  # Running in a subshell ensures environment overrides exported specifically
+  # for this test case (e.g. PUBS, THROUGHPUT, QUEUE) do not bleed into subsequent
+  # test cases in the loop.
   set +e
   (
     # Export overrides
@@ -89,8 +106,7 @@ for ENTRY in "${TEST_CASES[@]}"; do
     done
 
     bash "${ROOT_DIR}/benchmark.sh" \
-      "$CASE_WORKLOAD" \
-      "$ENVIRONMENT_CONFIG"
+      "$CASE_WORKLOAD"
   )
   STEP_EXIT=$?
   set -e
@@ -121,12 +137,15 @@ python3 "${ROOT_DIR}/scripts/aggregate_suite.py" \
   "$SUITE_TITLE" \
   "$SUITE_DESCRIPTION"
 
+# Post-suite stream cleanup to leave the cluster in a pristine state
+bash "${ROOT_DIR}/scripts/js_stream.sh" cleanup "$NATS_URL" "BENCH_STREAM" >/dev/null 2>&1 || true
+
 echo ""
 echo "================================================================================"
 echo "Executive Suite Summary Complete"
 echo "================================================================================"
-echo "Suite Results  : ${SUITE_OUT_DIR}"
-echo "Executive HTML : ${SUITE_OUT_DIR}/executive-report.html"
-echo "Executive MD   : ${SUITE_OUT_DIR}/executive-summary.md"
+echo "Suite Results    : ${SUITE_OUT_DIR}"
+echo "Executive Report : ${SUITE_OUT_DIR}/executive-report.html"
+echo "Suite Report     : ${SUITE_OUT_DIR}/suite-report.html"
 echo "================================================================================"
 

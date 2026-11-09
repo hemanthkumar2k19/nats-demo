@@ -2,63 +2,69 @@
 set -Eeuo pipefail
 set -m
 
-[[ $# -ge 8 ]] || {
-  echo "Usage: workload.sh NATS_URL SUBJECT PUBS SUBS TOTAL_MESSAGES MESSAGE_SIZE TARGET_RATE SUBSCRIBER_LOG [SCENARIO PATTERN QUEUE_NAME SUBJECT_DIST MULTI_MAX DURATION RESULT_DIR]" >&2
-  exit 2
-}
+# NATS Capacity Benchmark - Streamlined Workload Runner
+# Invokes 'nats bench' subcommands directly with native --csv and --duration flags.
+#
+# Calling Convention (Positional Arguments):
+#   $1  : NATS_URL      - NATS server URL (e.g. nats://127.0.0.1:4222)
+#   $2  : SUBJECT       - NATS subject name (e.g. benchmark.core.test)
+#   $3  : PUBS          - Number of concurrent publisher clients
+#   $4  : SUBS          - Number of concurrent subscriber clients
+#   $5  : TOTAL         - Total messages to publish or consume
+#   $6  : SIZE          - Message payload size with unit (e.g. 1024B, 8KB)
+#   $7  : RATE          - Target publish rate in msgs/sec (0 for unthrottled)
+#   $8  : DURATION      - Nominal test duration (e.g. 30s)
+#   $9  : RESULT_DIR    - Directory where pub.csv, sub.csv, and outcome are saved
+#   $10 : SCENARIO      - Workload scenario: pubsub | publish | subscribe |
+#                         js-pub-sync | js-pub-async | js-consume
+#   $11 : QUEUE         - Queue group name (if non-empty, subscribers form a queue group)
+#   $12 : MULTISUBJECT  - Whether to randomize target subject (true/false)
+#   $13 : MULTI_MAX     - Maximum subject suffix when MULTISUBJECT=true
+#   $14 : STREAM        - JetStream stream name
+#   $15 : CONSUMER      - JetStream consumer name
+#   $16 : BATCH         - JetStream consumer batch size
+#   $17 : ACKS          - JetStream ack policy (explicit, none, all)
 
-NATS_URL="$1"
-SUBJECT="$2"
-PUBS="$3"
-SUBS="$4"
-TOTAL="$5"
-SIZE="$6"
-RATE="$7"
-SUB_LOG="$8"
-SCENARIO="${9:-pubsub}"
-PATTERN="${10:-pubsub}"
-QUEUE_NAME="${11:-benchmark-core-group}"
-SUBJECT_DIST="${12:-single}"
-MULTI_MAX="${13:-10000}"
-DURATION="${14:-60}"
-RESULT_DIR="${15:-.}"
+NATS_URL="${1:-nats://127.0.0.1:4222}"
+SUBJECT="${2:-benchmark.core.test}"
+PUBS="${3:-1}"
+SUBS="${4:-1}"
+TOTAL="${5:-100000}"
+SIZE="${6:-1024B}"
+RATE="${7:-1000}"
+DURATION="${8:-30s}"
+RESULT_DIR="${9:-.}"
+SCENARIO="${10:-pubsub}"
+QUEUE="${11:-}"
+MULTISUBJECT="${12:-false}"
+MULTI_MAX="${13:-100000}"
+STREAM="${14:-BENCH_STREAM}"
+CONSUMER="${15:-bench-consumer}"
+BATCH="${16:-500}"
+ACKS="${17:-explicit}"
 
+PUB_CSV="${RESULT_DIR}/pub.csv"
+SUB_CSV="${RESULT_DIR}/sub.csv"
 OUTCOME_FILE="${RESULT_DIR}/workload_outcome.txt"
-PUB_LOG="${RESULT_DIR}/workload.log"
 
-PUB_EXTRA_FLAGS=()
-if [[ "$SUBJECT_DIST" == "multi" ]]; then
-  PUB_EXTRA_FLAGS+=(--multisubject --multisubjectmax="$MULTI_MAX")
+PUB_FLAGS=(--no-progress --csv="$PUB_CSV")
+SUB_FLAGS=(--no-progress --csv="$SUB_CSV")
+
+if [[ "$MULTISUBJECT" == "true" ]]; then
+  PUB_FLAGS+=(--multisubject --multisubjectmax="$MULTI_MAX")
+  SUB_FLAGS+=(--multisubject)
 fi
 
-SUB_EXTRA_FLAGS=()
-if [[ "$SUBJECT_DIST" == "multi" ]]; then
-  SUB_EXTRA_FLAGS+=(--multisubject)
-fi
-
-PUB_PID=""
-WATCHDOG_PID=""
 SUB_PIDS=()
-WORKLOAD_OUTCOME="COMPLETED"
-
 cleanup() {
-  if [[ -n "$WATCHDOG_PID" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
-    kill -TERM "$WATCHDOG_PID" 2>/dev/null || true
-    wait "$WATCHDOG_PID" 2>/dev/null || true
-  fi
-  if [[ -n "$PUB_PID" ]] && kill -0 "$PUB_PID" 2>/dev/null; then
-    kill -TERM "$PUB_PID" 2>/dev/null || true
-    wait "$PUB_PID" 2>/dev/null || true
-  fi
-  if [[ ${#SUB_PIDS[@]} -gt 0 ]]; then
-    for pid in ${SUB_PIDS[@]+"${SUB_PIDS[@]}"}; do
-      if kill -0 "$pid" 2>/dev/null; then
-        kill -TERM "$pid" 2>/dev/null || true
-        wait "$pid" 2>/dev/null || true
-      fi
-    done
-  fi
+  for pid in ${SUB_PIDS[@]+"${SUB_PIDS[@]}"}; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+  done
 }
+trap cleanup EXIT
 
 interrupted() {
   echo "INTERRUPTED" > "$OUTCOME_FILE"
@@ -66,182 +72,156 @@ interrupted() {
   exit 130
 }
 trap interrupted INT TERM
-trap cleanup EXIT
 
-: "${MESSAGING_TYPE:=Core NATS}"
-: "${STREAM_NAME:=BENCH_STREAM}"
-: "${JS_PUB_MODE:=sync}"
-: "${CONSUMER_NAME:=bench-consumer}"
-: "${CONSUMER_ACK_POLICY:=explicit}"
-: "${CONSUMER_BATCH_SIZE:=500}"
-: "${PUBLISHER_GRACE_SECONDS:=20}"
-: "${SUBSCRIBER_DRAIN_SECONDS:=25}"
+echo "Starting workload: scenario=$SCENARIO, pubs=$PUBS, subs=$SUBS, rate=$RATE, duration=$DURATION, size=$SIZE"
 
-# Helper to launch and supervise time-bound publisher
-run_time_bound_publisher() {
-  local cmd=("$@")
+WORKLOAD_OUTCOME="COMPLETED"
+PUB_EXIT=0
 
-  "${cmd[@]}" &
-  PUB_PID=$!
-
-  # Asynchronous Time-Bound Watchdog (fires only if workload exceeds duration + grace window)
-  local watchdog_timeout=$(( DURATION + PUBLISHER_GRACE_SECONDS ))
-  (
-    sleep "$watchdog_timeout"
-    if [[ -n "$PUB_PID" ]] && kill -0 "$PUB_PID" 2>/dev/null; then
-      echo "TIMEOUT" > "$OUTCOME_FILE"
-      echo "Publisher watchdog timeout reached (${watchdog_timeout}s); terminating publisher PID $PUB_PID" >> "$PUB_LOG"
-      kill -TERM "$PUB_PID" 2>/dev/null || true
-      sleep 2
-      kill -KILL "$PUB_PID" 2>/dev/null || true
-    fi
-  ) &
-  WATCHDOG_PID=$!
-
-  set +e
-  wait "$PUB_PID"
-  PUB_EXIT=$?
-  set -e
-
-  # Clean up watchdog
-  if [[ -n "$WATCHDOG_PID" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
-    kill -TERM "$WATCHDOG_PID" 2>/dev/null || true
-    wait "$WATCHDOG_PID" 2>/dev/null || true
-  fi
-  WATCHDOG_PID=""
-  PUB_PID=""
-
-  # Exit code 0 indicates clean completion; TIMEOUT outcome is preserved
-  if [[ "$PUB_EXIT" -eq 0 ]]; then
-    PUB_EXIT=0
-  elif [[ -f "$OUTCOME_FILE" && "$(cat "$OUTCOME_FILE" | tr -d '[:space:]')" == "TIMEOUT" ]]; then
-    PUB_EXIT=0
-  elif [[ "$PUB_EXIT" -eq 130 ]]; then
-    WORKLOAD_OUTCOME="INTERRUPTED"
-  else
-    WORKLOAD_OUTCOME="FAILED"
-  fi
-}
-
-if [[ "$MESSAGING_TYPE" == "JetStream" ]]; then
-  # ----------------------------------------------------
-  # JetStream Execution Path
-  # ----------------------------------------------------
-  if [[ "$SCENARIO" == "pubsub" || "$SCENARIO" == "consume" ]]; then
-    echo "Starting JetStream durable pull consumers [stream=$STREAM_NAME, consumer=$CONSUMER_NAME, clients=$SUBS, batch=$CONSUMER_BATCH_SIZE, acks=$CONSUMER_ACK_POLICY]" > "$SUB_LOG"
-    nats --server "$NATS_URL" bench js consume \
-      --stream "$STREAM_NAME" \
-      --consumer "$CONSUMER_NAME" \
-      --clients "$SUBS" \
-      --msgs "$TOTAL" \
-      --batch "$CONSUMER_BATCH_SIZE" \
-      --acks "$CONSUMER_ACK_POLICY" \
-      --no-progress \
-      >> "$SUB_LOG" 2>&1 &
-    SUB_PIDS+=($!)
-    sleep 2
-  else
-    echo "Publish-only scenario: no subscriber/consumer clients active." > "$SUB_LOG"
-  fi
-
-  if [[ "$SCENARIO" == "consume" ]]; then
-    echo "Consume-only scenario: replaying from pre-populated stream."
-    PUB_EXIT=0
-  else
-    run_time_bound_publisher \
-      nats --server "$NATS_URL" bench js pub "$JS_PUB_MODE" "$SUBJECT" \
-        --stream="$STREAM_NAME" \
-        --msgs="$TOTAL" \
-        --clients="$PUBS" \
-        --size="$SIZE" \
-        --throughput="$RATE" \
-        ${PUB_EXTRA_FLAGS[@]+"${PUB_EXTRA_FLAGS[@]}"} \
-        --no-progress
-  fi
-else
-  # ----------------------------------------------------
-  # Core NATS Execution Path
-  # ----------------------------------------------------
-  if [[ "$SCENARIO" == "pubsub" ]]; then
-    if [[ "$PATTERN" == "queue" ]]; then
-      # Queue Group: Subscribers load-balance messages
-      echo "Starting Queue Group subscribers [group=$QUEUE_NAME, clients=$SUBS, total_msgs=$TOTAL, subject=$SUBJECT]" > "$SUB_LOG"
-      SUB_START=$(date +%s)
+case "$SCENARIO" in
+  pubsub)
+    # Start subscribers first to ensure no published messages are missed.
+    if [[ -n "$QUEUE" ]]; then
+      # Queue group load-balancing pattern:
+      # In a queue group, messages are distributed across workers rather than copied
+      # to all of them. Each subscriber process requests its proportional share:
+      # SHARE = TOTAL / SUBS. The aggregate message count received across all workers
+      # will equal TOTAL (1-to-1 delivery semantics).
       SHARE=$((TOTAL / SUBS))
       (( SHARE > 0 )) || SHARE=1
       for ((i=1; i<=SUBS; i++)); do
-        nats --server "$NATS_URL" sub --queue="$QUEUE_NAME" --count="$SHARE" --raw "$SUBJECT" > /dev/null 2>&1 &
+        nats --server "$NATS_URL" sub --queue="$QUEUE" --count="$SHARE" --raw "$SUBJECT" > /dev/null 2>&1 &
         SUB_PIDS+=($!)
       done
     else
-      # Normal Pub/Sub: Each subscriber receives every message (Fan-out = SUBS)
+      # Broadcast fan-out pattern:
+      # Without a queue group, every subscriber receives a full copy of every message.
+      # The aggregate messages received across all subscribers will equal TOTAL * SUBS.
       nats --server "$NATS_URL" bench sub "$SUBJECT" \
-        --msgs "$TOTAL" \
         --clients "$SUBS" \
-        --size "${SIZE}B" \
-        ${SUB_EXTRA_FLAGS[@]+"${SUB_EXTRA_FLAGS[@]}"} \
-        --no-progress \
-        > "$SUB_LOG" 2>&1 &
+        --msgs "$TOTAL" \
+        --size "$SIZE" \
+        ${SUB_FLAGS[@]+"${SUB_FLAGS[@]}"} > /dev/null 2>&1 &
       SUB_PIDS+=($!)
     fi
+    sleep 1
 
-    # Allow subscriber clients to establish subscriptions
-    sleep 2
-  else
-    # Publish-only scenario
-    echo "Publish-only scenario: no subscriber clients active." > "$SUB_LOG"
-  fi
+    # Run publisher with native duration and csv
+    PUB_ARGS=(
+      nats --server "$NATS_URL" bench pub "$SUBJECT"
+      --clients "$PUBS"
+      --size "$SIZE"
+      ${PUB_FLAGS[@]+"${PUB_FLAGS[@]}"}
+    )
+    if [[ "$RATE" -gt 0 ]]; then
+      PUB_ARGS+=(--throughput "$RATE" --duration "$DURATION")
+    else
+      PUB_ARGS+=(--msgs "$TOTAL")
+    fi
 
-  # Start time-bound publisher
-  run_time_bound_publisher \
-    nats --server "$NATS_URL" bench pub "$SUBJECT" \
+    set +e
+    "${PUB_ARGS[@]}"
+    PUB_EXIT=$?
+    set -e
+    ;;
+
+  publish)
+    PUB_ARGS=(
+      nats --server "$NATS_URL" bench pub "$SUBJECT"
+      --clients "$PUBS"
+      --size "$SIZE"
+      ${PUB_FLAGS[@]+"${PUB_FLAGS[@]}"}
+    )
+    if [[ "$RATE" -gt 0 ]]; then
+      PUB_ARGS+=(--throughput "$RATE" --duration "$DURATION")
+    else
+      PUB_ARGS+=(--msgs "$TOTAL")
+    fi
+
+    set +e
+    "${PUB_ARGS[@]}"
+    PUB_EXIT=$?
+    set -e
+    ;;
+
+  subscribe)
+    nats --server "$NATS_URL" bench sub "$SUBJECT" \
+      --clients "$SUBS" \
       --msgs "$TOTAL" \
-      --clients "$PUBS" \
       --size "$SIZE" \
-      --throughput "$RATE" \
-      ${PUB_EXTRA_FLAGS[@]+"${PUB_EXTRA_FLAGS[@]}"} \
-      --no-progress
-fi
+      ${SUB_FLAGS[@]+"${SUB_FLAGS[@]}"}
+    PUB_EXIT=$?
+    ;;
 
-# Drain subscribers gracefully: wait for subscribers to finish receiving and output stats
+  js-pub-sync|js-pub-async)
+    MODE="sync"
+    [[ "$SCENARIO" == "js-pub-async" ]] && MODE="async"
+
+    PUB_ARGS=(
+      nats --server "$NATS_URL" bench js pub "$MODE" "$SUBJECT"
+      --stream "$STREAM"
+      --clients "$PUBS"
+      --size "$SIZE"
+      ${PUB_FLAGS[@]+"${PUB_FLAGS[@]}"}
+    )
+    if [[ "$RATE" -gt 0 ]]; then
+      PUB_ARGS+=(--throughput "$RATE" --duration "$DURATION")
+    else
+      PUB_ARGS+=(--msgs "$TOTAL")
+    fi
+
+    set +e
+    "${PUB_ARGS[@]}"
+    PUB_EXIT=$?
+    set -e
+    ;;
+
+  js-consume)
+    # Consumer drain benchmark:
+    # Measures how quickly JetStream consumers can pull and acknowledge messages.
+    # Note: This scenario does not launch a publisher. Messages must already exist
+    # in the target stream (e.g. pre-populated via js_stream.sh prepopulate or by
+    # a preceding js-pub benchmark).
+    set +e
+    nats --server "$NATS_URL" bench js consume \
+      --stream "$STREAM" \
+      --consumer "$CONSUMER" \
+      --clients "$SUBS" \
+      --batch "$BATCH" \
+      --acks "$ACKS" \
+      --msgs "$TOTAL" \
+      ${SUB_FLAGS[@]+"${SUB_FLAGS[@]}"}
+    PUB_EXIT=$?
+    set -e
+    ;;
+
+  *)
+    echo "ERROR: Unknown scenario: $SCENARIO" >&2
+    exit 1
+    ;;
+esac
+
+# Gracefully wait for subscribers to finish receiving
 if [[ ${#SUB_PIDS[@]} -gt 0 ]]; then
-  DRAIN_START=$(date +%s)
-  TERM_THRESHOLD=$(( SUBSCRIBER_DRAIN_SECONDS * 3 / 4 ))
-  (( TERM_THRESHOLD > 3 )) || TERM_THRESHOLD=3
-
+  DRAIN_DEADLINE=$(( $(date +%s) + 5 ))
   for pid in ${SUB_PIDS[@]+"${SUB_PIDS[@]}"}; do
-    while kill -0 "$pid" 2>/dev/null; do
-      NOW=$(date +%s)
-      ELAPSED=$(( NOW - DRAIN_START ))
-      if (( ELAPSED >= SUBSCRIBER_DRAIN_SECONDS )); then
-        echo "Subscriber drain timeout reached (${SUBSCRIBER_DRAIN_SECONDS}s); terminating subscriber PID $pid" >> "$SUB_LOG"
-        if [[ "$WORKLOAD_OUTCOME" == "COMPLETED" ]]; then
-          WORKLOAD_OUTCOME="TIMEOUT"
-        fi
-        kill -KILL "$pid" 2>/dev/null || true
-        break
-      elif (( ELAPSED >= TERM_THRESHOLD )); then
-        kill -TERM "$pid" 2>/dev/null || true
-      fi
-      sleep 0.5
+    while kill -0 "$pid" 2>/dev/null && (( $(date +%s) < DRAIN_DEADLINE )); do
+      sleep 0.2
     done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
     wait "$pid" 2>/dev/null || true
   done
-
-  if [[ "$MESSAGING_TYPE" != "JetStream" && "$PATTERN" == "queue" ]]; then
-    SUB_END=$(date +%s)
-    SUB_DUR=$((SUB_END - SUB_START))
-    (( SUB_DUR > 0 )) || SUB_DUR=1
-    ACTUAL_SUB_RATE=$((TOTAL / SUB_DUR))
-    BW_KIB=$(( (TOTAL * SIZE) / SUB_DUR / 1024 ))
-    echo "NATS Core NATS subscriber stats: $ACTUAL_SUB_RATE msgs/sec ~ $BW_KIB KiB/sec (queue group: $QUEUE_NAME)" >> "$SUB_LOG"
-  fi
 fi
 
-# Write final outcome if not already set (e.g. by watchdog TIMEOUT or trap INTERRUPTED)
-if [[ ! -f "$OUTCOME_FILE" ]]; then
-  echo "$WORKLOAD_OUTCOME" > "$OUTCOME_FILE"
+if [[ "$PUB_EXIT" -eq 0 ]]; then
+  WORKLOAD_OUTCOME="COMPLETED"
+elif [[ "$PUB_EXIT" -eq 130 ]]; then
+  WORKLOAD_OUTCOME="INTERRUPTED"
+else
+  WORKLOAD_OUTCOME="FAILED"
 fi
 
-trap - EXIT INT TERM
+echo "$WORKLOAD_OUTCOME" > "$OUTCOME_FILE"
 exit "$PUB_EXIT"

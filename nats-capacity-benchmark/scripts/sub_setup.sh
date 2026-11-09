@@ -17,7 +17,6 @@ SUB_PIDS=()
 
 cleanup() {
   if [[ ${#SUB_PIDS[@]} -gt 0 ]]; then
-    echo "Cleaning up established subscriptions..."
     for pid in ${SUB_PIDS[@]+"${SUB_PIDS[@]}"}; do
       if kill -0 "$pid" 2>/dev/null; then
         kill -TERM "$pid" 2>/dev/null || true
@@ -39,12 +38,13 @@ trap cleanup EXIT
 echo "Starting Core NATS Subscribe Setup Benchmark"
 echo "Target Connections : $CONCURRENCY"
 echo "Target Subject     : $SUBJECT"
-echo "Hold Duration      : ${DURATION}s"
-echo ""
+echo "Hold Duration      : ${DURATION}"
+
+# Clean duration if it has 's' suffix
+CLEAN_DUR="${DURATION%s}"
 
 START_TIME=$(date +%s)
 
-# Spawn subscriber clients to establish subscriptions
 for ((i=1; i<=CONCURRENCY; i++)); do
   nats --server "$NATS_URL" sub "$SUBJECT" --raw > /dev/null 2>&1 &
   SUB_PIDS+=($!)
@@ -56,25 +56,17 @@ SETUP_DURATION=$((END_CONNECT - START_TIME))
 
 CONNS_PER_SEC=$((CONCURRENCY / SETUP_DURATION))
 
-echo "Subscribe Setup Completed:"
-echo "  Established Connections: $CONCURRENCY"
-echo "  Setup Elapsed Time     : ${SETUP_DURATION}s"
-echo "  Connection Rate        : ${CONNS_PER_SEC} conns/sec"
+echo "Subscribe Setup Completed: ${CONCURRENCY} connections in ${SETUP_DURATION}s (~${CONNS_PER_SEC} conns/sec)"
 
-# Write to subscriber.log for aggregator parsing
-cat > "$RESULT_DIR/subscriber.log" <<EOF
-[setup] Established $CONCURRENCY connections in ${SETUP_DURATION}s (~${CONNS_PER_SEC} conns/sec)
-subscriber stats: 0 msgs/sec ~ 0 KiB/sec
-setup stats: established=$CONCURRENCY, duration=${SETUP_DURATION}s, rate=${CONNS_PER_SEC} conns/sec
+# Write structured sub.csv
+cat > "${RESULT_DIR}/sub.csv" <<EOF
+#RunID,ClientID,MsgCount,MsgBytes,MsgsPerSec,BytesPerSec,DurationSecs
+SETUP,S0,${CONCURRENCY},0,${CONNS_PER_SEC},0,${SETUP_DURATION}
 EOF
 
-# Hold active subscriptions for the measurement duration
-echo "Holding subscriptions open for ${DURATION}s to sample server resource overhead..."
-sleep "$DURATION"
+sleep "$CLEAN_DUR"
 
-echo "Subscribe Setup benchmark complete."
 echo "COMPLETED" > "$OUTCOME_FILE"
-
 trap - EXIT INT TERM
 cleanup
 exit 0

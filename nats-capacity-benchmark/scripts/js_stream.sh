@@ -81,6 +81,10 @@ case "$ACTION" in
       --defaults
 
     if [[ -n "$CONSUMER" ]]; then
+      # Create a durable pull consumer for consumer benchmark scenarios (js-consume).
+      # Pre-creating the durable consumer binds it to the stream with the specified
+      # ack policy and delivery policy ('deliver all'), allowing 'nats bench js consume'
+      # to immediately pull batches without requiring runtime consumer negotiation.
       echo "Creating durable pull consumer $CONSUMER on stream $STREAM_NAME..."
       run_with_timeout "$JS_SETUP_TIMEOUT_SECONDS" nats --server "$NATS_URL" consumer add "$STREAM_NAME" "$CONSUMER" \
         --pull \

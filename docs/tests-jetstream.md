@@ -1,4 +1,4 @@
-# JetStream Capacity Benchmark – Test Inventory
+# JetStream Capacity Benchmark - Test Inventory
 
 ## 1. Objective and Methodology
 
@@ -34,7 +34,7 @@ JetStream introduces key architectural dimensions beyond Core NATS:
 4. Capture per-node CPU, memory, network I/O, and disk block I/O.
 5. In JetStream benchmarks, disk block I/O (Read/Write MB/s) is a primary bottleneck indicator.
 6. Manage stream and consumer lifecycles automatically: create, purge between runs, and cleanup.
-7. Preserve raw metrics in `metrics.csv` and consolidate test analysis in `report.html`.
+7. Preserve raw telemetry in `metrics.json`, benchmark metrics in `pub.csv`/`sub.csv`, and consolidate test analysis in `results.json` and `report.html`.
 
 ---
 
@@ -42,10 +42,10 @@ JetStream introduces key architectural dimensions beyond Core NATS:
 
 ### Option A: Configuration File
 
-Configure the test ID and workload parameters in the JetStream configuration file.
+Configure the test ID and workload parameters in `benchmark.conf`.
 
 ```bash
-./benchmark.sh config/jetstream.conf
+./benchmark.sh
 ```
 
 ### Option B: Environment Variable Overrides
@@ -53,15 +53,16 @@ Configure the test ID and workload parameters in the JetStream configuration fil
 Override individual workload parameters during execution.
 
 ```bash
-TARGET_MSGS_PER_SEC=2000 \
-PUBLISHER_CONCURRENCY=4 \
-SUBSCRIBER_CONCURRENCY=2 \
-./benchmark.sh config/jetstream.conf
+SCENARIO=js-pub-sync \
+THROUGHPUT=2000 \
+PUBS=4 \
+SUBS=2 \
+./benchmark.sh
 ```
 
 ### Option C: Automated Executive Suite Execution
 
-Execute entire test matrices or throughput saturation ladders unattended with automated cluster isolation, 10-second quiescence settling between runs, and consolidated executive reporting (`executive-report.html` and `executive-summary.md`):
+Execute entire test matrices or throughput saturation ladders unattended with automated cluster isolation, 10-second quiescence settling between runs, and consolidated executive reporting (`executive-report.html` and `suite-report.html`):
 
 ```bash
 # Run JetStream Cost of Guarantees suite:
@@ -75,14 +76,13 @@ Each execution produces:
 
 ```text
 results/
-└── <TEST_ID>/
-    ├── metrics.csv
-    ├── node-summary.csv
-    ├── summary.csv
-    ├── workload.log
-    ├── subscriber.log
-    ├── test-config.txt
-    └── report.html
+  <TEST_ID>/
+    metrics.json
+    pub.csv
+    sub.csv
+    test-config.txt
+    results.json
+    report.html
 ```
 
 ---

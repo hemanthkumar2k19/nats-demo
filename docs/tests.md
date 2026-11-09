@@ -1,4 +1,4 @@
-# Core NATS Capacity Benchmark – Test Inventory
+# Core NATS Capacity Benchmark - Test Inventory
 
 ## 1. Objective and Methodology
 
@@ -35,7 +35,7 @@ The benchmark focuses on:
 4. Capture per-node CPU, memory, network I/O and block I/O.
 5. Record achieved publishing and subscription delivery throughput.
 6. Repeat important benchmark configurations three times to assess consistency.
-7. Preserve raw metrics in `metrics.csv` and consolidate other test information in `report.html`.
+7. Preserve raw telemetry in `metrics.json`, benchmark metrics in `pub.csv`/`sub.csv`, and consolidate other test information in `results.json` and `report.html`.
 
 ---
 
@@ -43,7 +43,7 @@ The benchmark focuses on:
 
 ### Option A: Configuration File
 
-Configure the test ID and workload parameters in the configuration files.
+Configure the test ID and workload parameters in `benchmark.conf`.
 
 ```bash
 ./benchmark.sh
@@ -54,14 +54,14 @@ Configure the test ID and workload parameters in the configuration files.
 Override individual workload parameters during execution.
 
 ```bash
-PUBLISHER_CONCURRENCY=4 \
-TARGET_MSGS_PER_SEC=5000 \
+PUBS=4 \
+THROUGHPUT=5000 \
 ./benchmark.sh
 ```
 
 ### Option C: Automated Executive Suite Execution
 
-Execute entire test ladders or comparative matrices unattended with automated cluster isolation, 10-second quiescence settling between runs, and consolidated executive reporting (`executive-report.html` and `executive-summary.md`):
+Execute entire test ladders or comparative matrices unattended with automated cluster isolation, 10-second quiescence settling between runs, and consolidated executive reporting (`executive-report.html` and `suite-report.html`):
 
 ```bash
 # Run Core NATS saturation ladder suite:
@@ -75,9 +75,13 @@ Each execution should produce:
 
 ```text
 results/
-└── <TEST_ID>/
-    ├── metrics.csv
-    └── report.html
+  <TEST_ID>/
+    metrics.json
+    pub.csv
+    sub.csv
+    test-config.txt
+    results.json
+    report.html
 ```
 
 ---

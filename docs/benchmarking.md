@@ -148,12 +148,11 @@ Every benchmark execution generates a structured, immutable artifact bundle with
 
 | Artifact | Purpose | Primary Consumer |
 | :--- | :--- | :--- |
-| **`report.html`** | Self-contained, zero-dependency offline HTML dashboard with test outcome badge, KPI cards, latency percentiles, infrastructure summary, and print styles. | Humans, Architects, Stakeholders |
-| **`summary.csv`** | Machine-readable execution summary with `test_outcome`, cluster aggregates, achieved rates, fan-out, physical storage growth, and exit status. | Automated tooling, CI/CD, Trend Analysis |
-| **`node-summary.csv`** | Per-node resource consumption breakdown (avg/peak CPU, RAM, Net RX/TX MB/s, Block Read/Write MB/s, start/final bytes, storage growth). | Capacity Engineers, Bottleneck Identification |
-| **`metrics.csv`** | Raw time-series telemetry sampled at regular intervals across all cluster containers. | Deep-dive telemetry, Time-series graphing |
-| **`workload.log`** | Standard output and error logs from publisher workload generation. | Debugging, Latency percentiles |
-| **`subscriber.log`** | Standard output and error logs from subscriber delivery clients. | Delivery verification, Bandwidth confirmation |
+| **`results.json`** | Canonical machine-readable benchmark results containing test metadata, client latency percentiles, achieved throughput, cluster rollups, and per-node resource metrics. | Automated tooling, CI/CD, Trend Analysis |
+| **`report.html`** | Self-contained, zero-dependency offline HTML dashboard with test outcome badge, KPI cards, latency percentiles, per-node hardware telemetry, and configurator. | Humans, Architects, Stakeholders |
+| **`metrics.json`** | Time-series container resource telemetry (CPU, memory, net RX/TX, block read/write, disk growth) sampled across baseline and workload phases. | Deep-dive telemetry, Capacity Engineers |
+| **`pub.csv`** | Native CSV benchmark output from publisher client (MsgCount, MsgBytes, MsgsPerSec, BytesPerSec, and full latency percentiles). | Statistical Analysis, Audit trail |
+| **`sub.csv`** | Native CSV benchmark output from subscriber client. | Delivery verification, Bandwidth confirmation |
 | **`test-config.txt`** | Full configuration snapshot used for the benchmark run. | Repeatability, Audit trail |
 
 ### 6.1 Executive Suite Comparative Deliverables
@@ -162,8 +161,8 @@ When running benchmark suites (`./suite.sh <suite-name>`), individual test runs 
 
 | Artifact | Purpose | Primary Consumer |
 | :--- | :--- | :--- |
-| **`executive-report.html`** | Offline dashboard featuring: (1) Sizing recommendations and sustained operating boundary, (2) Inline SVG Throughput vs Latency saturation curve ("hockey stick" curve) with P50/P99 latency knee callouts, and (3) Comparative "Cost of Guarantees" Matrix table with links to individual test runs. | Enterprise Architects, Engineering Leadership |
-| **`executive-summary.md`** | Portable Markdown summary suitable for Confluence, PR descriptions, and architectural records. | Technical Leads, Project Managers |
+| **`suite-results.json`** | Canonical JSON rollup aggregating all child test runs, containing executive sizing boundaries (sustained capacity, saturation knee, cluster peak headroom). | Tooling, Long-term capacity tracking |
+| **`executive-report.html`** / **`suite-report.html`** | Offline dashboard featuring: (1) Executive sizing recommendations cards, (2) Inline SVG Throughput vs Latency saturation curve ("hockey stick" curve) with P50/P99 latency knee callouts, (3) Comparative Matrix table, and (4) Interactive child-run drill-down drawer. | Enterprise Architects, Engineering Leadership |
 
 ---
 
@@ -177,8 +176,5 @@ When running benchmark suites (`./suite.sh <suite-name>`), individual test runs 
 
 ---
 
-## 8. Related Documentation
-
-- For the Core NATS test case inventory and run cards, refer to `tests.md`.
-- For the JetStream test case inventory and parameter sweep matrices, refer to `tests-jetstream.md`.
-- For instructions on running the benchmark utility and configuring runtime parameters, refer to `README.md`.
+## 8. References
+https://www.synadia.com/downloads/nats-kafka-tco-report.pdf

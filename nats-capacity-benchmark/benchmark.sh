@@ -1,291 +1,160 @@
-#!/bin/bash
-
+#!/usr/bin/env bash
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-CHECK_ONLY=false
+# Usage:
+#   ./benchmark.sh [--check] [--serve] [CONFIG_FILE]
 
+if [[ "${1:-}" == "--serve" ]]; then
+  exec python3 "${ROOT_DIR}/scripts/server.py"
+fi
+
+CHECK_ONLY=false
 if [[ "${1:-}" == "--check" ]]; then
   CHECK_ONLY=true
   shift
 fi
 
-# Usage:
-#   ./benchmark.sh [--check] [WORKLOAD_CONFIG] [ENVIRONMENT_CONFIG] [TEST_CONFIG]
-# Defaults preserve the original one-argument invocation.
-WORKLOAD_CONFIG="${1:-${ROOT_DIR}/config/core-nats.conf}"
-ENVIRONMENT_CONFIG="${2:-${ROOT_DIR}/config/environment.conf}"
-TEST_CONFIG="${3:-${ROOT_DIR}/config/test.conf}"
+# Locate configuration file
+CONFIG_FILE="${1:-${ROOT_DIR}/benchmark.conf}"
 
-[[ -f "$WORKLOAD_CONFIG" ]] || {
-  echo "Workload config not found: $WORKLOAD_CONFIG" >&2
-  exit 1
-}
-
-[[ -f "$ENVIRONMENT_CONFIG" ]] || {
-  echo "Environment config not found: $ENVIRONMENT_CONFIG" >&2
-  exit 1
-}
-
-# Capture caller-provided environment overrides before sourcing config files
-_ENV_MESSAGING_TYPE="${MESSAGING_TYPE:-}"
-_ENV_SCENARIO="${SCENARIO:-}"
-_ENV_PUBLISHER_CONCURRENCY="${PUBLISHER_CONCURRENCY:-}"
-_ENV_SUBSCRIBER_CONCURRENCY="${SUBSCRIBER_CONCURRENCY:-}"
-_ENV_TARGET_MSGS_PER_SEC="${TARGET_MSGS_PER_SEC:-}"
-_ENV_MESSAGE_SIZE="${MESSAGE_SIZE:-}"
-_ENV_TEST_DURATION_SECONDS="${TEST_DURATION_SECONDS:-}"
-_ENV_CONFIGURED_MESSAGE_COUNT="${CONFIGURED_MESSAGE_COUNT:-}"
-_ENV_SUBSCRIPTION_PATTERN="${SUBSCRIPTION_PATTERN:-}"
-_ENV_QUEUE_NAME="${QUEUE_NAME:-}"
-_ENV_SUBJECT="${SUBJECT:-}"
-_ENV_SUBJECT_DISTRIBUTION="${SUBJECT_DISTRIBUTION:-}"
-_ENV_MULTI_SUBJECT_MAX="${MULTI_SUBJECT_MAX:-}"
+# Save environment overrides prior to sourcing config.
+# When benchmark.sh is invoked as part of a suite (via suite.sh), test-specific
+# overrides (such as THROUGHPUT, PUBS, SUBS) are exported into the environment.
+# Sourcing benchmark.conf would overwrite those exported variables with static defaults.
+# By capturing them first in _ENV_* and reapplying them after sourcing, environment
+# overrides reliably take precedence over configuration file defaults.
 _ENV_TEST_ID="${TEST_ID:-}"
-_ENV_TEST_DESCRIPTION="${TEST_DESCRIPTION:-}"
-_ENV_TIMESTAMP_SUBFOLDER="${TIMESTAMP_SUBFOLDER:-}"
+_ENV_TEST_DESC="${TEST_DESCRIPTION:-}"
 _ENV_NATS_URL="${NATS_URL:-}"
-_ENV_METRICS_BACKEND="${METRICS_BACKEND:-}"
-_ENV_DISK_METRICS_BACKEND="${DISK_METRICS_BACKEND:-}"
-_ENV_NATS_DATA_BASE_DIR="${NATS_DATA_BASE_DIR:-}"
+_ENV_SCENARIO="${SCENARIO:-}"
+_ENV_CLIENTS="${CLIENTS:-}"
+_ENV_PUBS="${PUBS:-}"
+_ENV_SUBS="${SUBS:-}"
+_ENV_THROUGHPUT="${THROUGHPUT:-}"
+_ENV_DURATION="${DURATION:-}"
+_ENV_MSGS="${MSGS:-}"
+_ENV_SIZE="${SIZE:-}"
+_ENV_SUBJECT="${SUBJECT:-}"
+_ENV_QUEUE="${QUEUE:-}"
+_ENV_STREAM="${STREAM:-}"
+_ENV_CONSUMER="${CONSUMER:-}"
+_ENV_STORAGE="${STORAGE:-}"
+_ENV_REPLICAS="${REPLICAS:-}"
+_ENV_CONTAINERS="${CONTAINERS:-}"
 _ENV_BASELINE_DURATION_SECONDS="${BASELINE_DURATION_SECONDS:-}"
-_ENV_METRICS_SAMPLE_INTERVAL="${METRICS_SAMPLE_INTERVAL:-}"
-_ENV_NATS_CONTAINERS="${NATS_CONTAINERS:-}"
 _ENV_RESULTS_DIR="${RESULTS_DIR:-}"
-_ENV_STREAM_NAME="${STREAM_NAME:-}"
-_ENV_STREAM_SUBJECT="${STREAM_SUBJECT:-}"
-_ENV_STORAGE_TYPE="${STORAGE_TYPE:-}"
-_ENV_REPLICATION_FACTOR="${REPLICATION_FACTOR:-}"
-_ENV_MAX_BYTES="${MAX_BYTES:-}"
-_ENV_RETENTION_POLICY="${RETENTION_POLICY:-}"
-_ENV_JS_PUB_MODE="${JS_PUB_MODE:-}"
-_ENV_CONSUMER_NAME="${CONSUMER_NAME:-}"
-_ENV_CONSUMER_ACK_POLICY="${CONSUMER_ACK_POLICY:-}"
-_ENV_CONSUMER_BATCH_SIZE="${CONSUMER_BATCH_SIZE:-}"
-_ENV_PREPOPULATE_COUNT="${PREPOPULATE_COUNT:-}"
-_ENV_PUBLISHER_GRACE_SECONDS="${PUBLISHER_GRACE_SECONDS:-}"
-_ENV_SUBSCRIBER_DRAIN_SECONDS="${SUBSCRIBER_DRAIN_SECONDS:-}"
-_ENV_JS_SETUP_TIMEOUT_SECONDS="${JS_SETUP_TIMEOUT_SECONDS:-}"
 
-# Load environment first, then workload-specific settings, then test identification.
-source "$ENVIRONMENT_CONFIG"
-source "$WORKLOAD_CONFIG"
-
-if [[ -f "$TEST_CONFIG" ]]; then
-  source "$TEST_CONFIG"
+# Source config if found
+if [[ -f "$CONFIG_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "$CONFIG_FILE"
 fi
 
-# Re-apply explicit environment overrides
-[[ -n "$_ENV_MESSAGING_TYPE" ]] && MESSAGING_TYPE="$_ENV_MESSAGING_TYPE"
-[[ -n "$_ENV_SCENARIO" ]] && SCENARIO="$_ENV_SCENARIO"
-[[ -n "$_ENV_PUBLISHER_CONCURRENCY" ]] && PUBLISHER_CONCURRENCY="$_ENV_PUBLISHER_CONCURRENCY"
-[[ -n "$_ENV_SUBSCRIBER_CONCURRENCY" ]] && SUBSCRIBER_CONCURRENCY="$_ENV_SUBSCRIBER_CONCURRENCY"
-[[ -n "$_ENV_TARGET_MSGS_PER_SEC" ]] && TARGET_MSGS_PER_SEC="$_ENV_TARGET_MSGS_PER_SEC"
-[[ -n "$_ENV_MESSAGE_SIZE" ]] && MESSAGE_SIZE="$_ENV_MESSAGE_SIZE"
-[[ -n "$_ENV_TEST_DURATION_SECONDS" ]] && TEST_DURATION_SECONDS="$_ENV_TEST_DURATION_SECONDS"
-[[ -n "$_ENV_CONFIGURED_MESSAGE_COUNT" ]] && CONFIGURED_MESSAGE_COUNT="$_ENV_CONFIGURED_MESSAGE_COUNT"
-[[ -n "$_ENV_SUBSCRIPTION_PATTERN" ]] && SUBSCRIPTION_PATTERN="$_ENV_SUBSCRIPTION_PATTERN"
-[[ -n "$_ENV_QUEUE_NAME" ]] && QUEUE_NAME="$_ENV_QUEUE_NAME"
-[[ -n "$_ENV_SUBJECT" ]] && SUBJECT="$_ENV_SUBJECT"
-[[ -n "$_ENV_SUBJECT_DISTRIBUTION" ]] && SUBJECT_DISTRIBUTION="$_ENV_SUBJECT_DISTRIBUTION"
-[[ -n "$_ENV_MULTI_SUBJECT_MAX" ]] && MULTI_SUBJECT_MAX="$_ENV_MULTI_SUBJECT_MAX"
+# Reapply environment overrides
 [[ -n "$_ENV_TEST_ID" ]] && TEST_ID="$_ENV_TEST_ID"
-[[ -n "$_ENV_TEST_DESCRIPTION" ]] && TEST_DESCRIPTION="$_ENV_TEST_DESCRIPTION"
-[[ -n "$_ENV_TIMESTAMP_SUBFOLDER" ]] && TIMESTAMP_SUBFOLDER="$_ENV_TIMESTAMP_SUBFOLDER"
+[[ -n "$_ENV_TEST_DESC" ]] && TEST_DESCRIPTION="$_ENV_TEST_DESC"
 [[ -n "$_ENV_NATS_URL" ]] && NATS_URL="$_ENV_NATS_URL"
-[[ -n "$_ENV_METRICS_BACKEND" ]] && METRICS_BACKEND="$_ENV_METRICS_BACKEND"
-[[ -n "$_ENV_DISK_METRICS_BACKEND" ]] && DISK_METRICS_BACKEND="$_ENV_DISK_METRICS_BACKEND"
-[[ -n "$_ENV_NATS_DATA_BASE_DIR" ]] && NATS_DATA_BASE_DIR="$_ENV_NATS_DATA_BASE_DIR"
+[[ -n "$_ENV_SCENARIO" ]] && SCENARIO="$_ENV_SCENARIO"
+[[ -n "$_ENV_CLIENTS" ]] && CLIENTS="$_ENV_CLIENTS"
+[[ -n "$_ENV_PUBS" ]] && PUBS="$_ENV_PUBS"
+[[ -n "$_ENV_SUBS" ]] && SUBS="$_ENV_SUBS"
+[[ -n "$_ENV_THROUGHPUT" ]] && THROUGHPUT="$_ENV_THROUGHPUT"
+[[ -n "$_ENV_DURATION" ]] && DURATION="$_ENV_DURATION"
+[[ -n "$_ENV_MSGS" ]] && MSGS="$_ENV_MSGS"
+[[ -n "$_ENV_SIZE" ]] && SIZE="$_ENV_SIZE"
+[[ -n "$_ENV_SUBJECT" ]] && SUBJECT="$_ENV_SUBJECT"
+[[ -n "$_ENV_QUEUE" ]] && QUEUE="$_ENV_QUEUE"
+[[ -n "$_ENV_STREAM" ]] && STREAM="$_ENV_STREAM"
+[[ -n "$_ENV_CONSUMER" ]] && CONSUMER="$_ENV_CONSUMER"
+[[ -n "$_ENV_STORAGE" ]] && STORAGE="$_ENV_STORAGE"
+[[ -n "$_ENV_REPLICAS" ]] && REPLICAS="$_ENV_REPLICAS"
+[[ -n "$_ENV_CONTAINERS" ]] && CONTAINERS="$_ENV_CONTAINERS"
 [[ -n "$_ENV_BASELINE_DURATION_SECONDS" ]] && BASELINE_DURATION_SECONDS="$_ENV_BASELINE_DURATION_SECONDS"
-[[ -n "$_ENV_METRICS_SAMPLE_INTERVAL" ]] && METRICS_SAMPLE_INTERVAL="$_ENV_METRICS_SAMPLE_INTERVAL"
-[[ -n "$_ENV_NATS_CONTAINERS" ]] && NATS_CONTAINERS="$_ENV_NATS_CONTAINERS"
 [[ -n "$_ENV_RESULTS_DIR" ]] && RESULTS_DIR="$_ENV_RESULTS_DIR"
-[[ -n "$_ENV_STREAM_NAME" ]] && STREAM_NAME="$_ENV_STREAM_NAME"
-[[ -n "$_ENV_STREAM_SUBJECT" ]] && STREAM_SUBJECT="$_ENV_STREAM_SUBJECT"
-[[ -n "$_ENV_STORAGE_TYPE" ]] && STORAGE_TYPE="$_ENV_STORAGE_TYPE"
-[[ -n "$_ENV_REPLICATION_FACTOR" ]] && REPLICATION_FACTOR="$_ENV_REPLICATION_FACTOR"
-[[ -n "$_ENV_MAX_BYTES" ]] && MAX_BYTES="$_ENV_MAX_BYTES"
-[[ -n "$_ENV_RETENTION_POLICY" ]] && RETENTION_POLICY="$_ENV_RETENTION_POLICY"
-[[ -n "$_ENV_JS_PUB_MODE" ]] && JS_PUB_MODE="$_ENV_JS_PUB_MODE"
-[[ -n "$_ENV_CONSUMER_NAME" ]] && CONSUMER_NAME="$_ENV_CONSUMER_NAME"
-[[ -n "$_ENV_CONSUMER_ACK_POLICY" ]] && CONSUMER_ACK_POLICY="$_ENV_CONSUMER_ACK_POLICY"
-[[ -n "$_ENV_CONSUMER_BATCH_SIZE" ]] && CONSUMER_BATCH_SIZE="$_ENV_CONSUMER_BATCH_SIZE"
-[[ -n "$_ENV_PREPOPULATE_COUNT" ]] && PREPOPULATE_COUNT="$_ENV_PREPOPULATE_COUNT"
-[[ -n "$_ENV_PUBLISHER_GRACE_SECONDS" ]] && PUBLISHER_GRACE_SECONDS="$_ENV_PUBLISHER_GRACE_SECONDS"
-[[ -n "$_ENV_SUBSCRIBER_DRAIN_SECONDS" ]] && SUBSCRIBER_DRAIN_SECONDS="$_ENV_SUBSCRIBER_DRAIN_SECONDS"
-[[ -n "$_ENV_JS_SETUP_TIMEOUT_SECONDS" ]] && JS_SETUP_TIMEOUT_SECONDS="$_ENV_JS_SETUP_TIMEOUT_SECONDS"
 
+# -----------------------------------------------------------------------------
+# Configuration Defaults (grouped by subsystem)
+# -----------------------------------------------------------------------------
+
+# 1. Run Identification & Cluster Endpoint
 RUN_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 : "${TEST_ID:=${RUN_TIMESTAMP}}"
-: "${TEST_DESCRIPTION:=}"
+: "${TEST_DESCRIPTION:=NATS Capacity Benchmark Run}"
+: "${NATS_URL:=nats://127.0.0.1:4222}"
+: "${RESULTS_DIR:=results}"
 : "${TIMESTAMP_SUBFOLDER:=false}"
 
-source "${ROOT_DIR}/scripts/preflight.sh"
-
-: "${MESSAGING_TYPE:=Core NATS}"
-: "${NATS_URL:=nats://127.0.0.1:4222}"
+# 2. Workload & Rate Parameters
 : "${SCENARIO:=pubsub}"
-: "${SUBSCRIPTION_PATTERN:=pubsub}"
-: "${QUEUE_NAME:=benchmark-core-group}"
-: "${SUBJECT_DISTRIBUTION:=single}"
-: "${MULTI_SUBJECT_MAX:=10000}"
+: "${CLIENTS:=4}"
+: "${PUBS:=${CLIENTS}}"
+: "${SUBS:=${CLIENTS}}"
+: "${THROUGHPUT:=1000}"
+: "${DURATION:=30s}"
+: "${MSGS:=30000}"
+: "${SIZE:=1024B}"
+
+# Ensure duration and size have standard units
+[[ "$DURATION" =~ ^[0-9]+$ ]] && DURATION="${DURATION}s"
+[[ "$SIZE" =~ ^[0-9]+$ ]] && SIZE="${SIZE}B"
+
+# Automatically derive expected message count from throughput and duration when throughput is set.
+# Note: 'nats bench pub' operates in either count mode (--msgs) or rate/duration mode
+# (--throughput + --duration). In rate/duration mode, deriving MSGS = THROUGHPUT * DURATION
+# enables downstream aggregation scripts and report dashboards to compute target vs achieved
+# delivery volumes and verify whether all messages were successfully delivered.
+CLEAN_DUR="${DURATION%s}"
+if [[ "$THROUGHPUT" -gt 0 && "$CLEAN_DUR" =~ ^[0-9]+$ ]]; then
+  if [[ -z "$_ENV_MSGS" ]]; then
+    MSGS=$(( THROUGHPUT * CLEAN_DUR ))
+  fi
+fi
+
+# 3. Subject & Queue Grouping
 : "${SUBJECT:=benchmark.core.test}"
-: "${TARGET_MSGS_PER_SEC:=1000}"
-: "${CONFIGURED_MESSAGE_COUNT:=}"
-: "${MESSAGE_SIZE:=1024}"
-: "${PUBLISHER_CONCURRENCY:=1}"
-: "${SUBSCRIBER_CONCURRENCY:=1}"
-: "${TEST_DURATION_SECONDS:=60}"
+: "${QUEUE:=}"
+: "${MULTISUBJECT:=false}"
+: "${MULTISUBJECT_MAX:=100000}"
+
+# 4. JetStream Semantics
+: "${STREAM:=BENCH_STREAM}"
+: "${CONSUMER:=bench-consumer}"
+: "${STORAGE:=file}"
+: "${REPLICAS:=3}"
+: "${MAX_BYTES:=5GB}"
+: "${RETENTION:=limits}"
+: "${BATCH:=500}"
+: "${ACKS:=explicit}"
+: "${PREPOPULATE_COUNT:=0}"
+
+# 5. Telemetry & Hardware Monitoring
+: "${METRICS_BACKEND:=podman}"
+: "${CONTAINERS:=nats-1 nats-2 nats-3}"
 : "${METRICS_SAMPLE_INTERVAL:=5}"
 : "${BASELINE_DURATION_SECONDS:=15}"
-: "${NATS_CONTAINERS:=nats-1 nats-2 nats-3}"
-: "${RESULTS_DIR:=results}"
-: "${METRICS_BACKEND:=podman}"
 : "${DISK_METRICS_BACKEND:=local}"
 : "${NATS_DATA_BASE_DIR:=${ROOT_DIR}/../deploy/data}"
 
-if [[ "$NATS_DATA_BASE_DIR" != /* ]]; then
-  NATS_DATA_BASE_DIR="$(cd "${ROOT_DIR}/${NATS_DATA_BASE_DIR}" 2>/dev/null && pwd || echo "${ROOT_DIR}/${NATS_DATA_BASE_DIR}")"
-fi
-
-export DISK_METRICS_BACKEND
-export NATS_DATA_BASE_DIR
+# Derived parameters for preflight
+export NATS_URL METRICS_BACKEND DISK_METRICS_BACKEND NATS_DATA_BASE_DIR
 : "${EXPECTED_NATS_NODES:=3}"
 : "${NATS_MONITOR_URLS:=http://127.0.0.1:8222 http://127.0.0.1:8223 http://127.0.0.1:8224}"
 : "${EXPECTED_REPLICAS:=3}"
-: "${STREAM_NAME:=BENCH_STREAM}"
-: "${STREAM_SUBJECT:=$SUBJECT}"
-: "${STORAGE_TYPE:=file}"
-: "${REPLICATION_FACTOR:=3}"
-: "${MAX_BYTES:=5GB}"
-: "${RETENTION_POLICY:=limits}"
-: "${JS_PUB_MODE:=sync}"
-: "${CONSUMER_NAME:=bench-consumer}"
-: "${CONSUMER_ACK_POLICY:=explicit}"
-: "${CONSUMER_BATCH_SIZE:=500}"
-: "${PREPOPULATE_COUNT:=0}"
 
-if [[ "$MESSAGING_TYPE" == "JetStream" ]]; then
-  : "${PUBLISHER_GRACE_SECONDS:=20}"
-  : "${SUBSCRIBER_DRAIN_SECONDS:=25}"
-  : "${JS_SETUP_TIMEOUT_SECONDS:=15}"
-else
-  : "${PUBLISHER_GRACE_SECONDS:=5}"
-  : "${SUBSCRIBER_DRAIN_SECONDS:=5}"
-  : "${JS_SETUP_TIMEOUT_SECONDS:=15}"
-fi
+MESSAGING_TYPE="Core NATS"
+[[ "$SCENARIO" == js-* ]] && MESSAGING_TYPE="JetStream"
+export MESSAGING_TYPE
 
-export PUBLISHER_GRACE_SECONDS
-export SUBSCRIBER_DRAIN_SECONDS
-export JS_SETUP_TIMEOUT_SECONDS
+source "${ROOT_DIR}/scripts/preflight.sh"
 
 if [[ "$CHECK_ONLY" == true ]]; then
   preflight_checks
   exit $?
 fi
 
-die() {
-  echo "ERROR: $*" >&2
-  exit 1
-}
-
-case "$SCENARIO" in
-  pubsub|publish|subscribe_setup|consume) ;;
-  *) die "Invalid SCENARIO: $SCENARIO. Must be pubsub, publish, subscribe_setup, or consume" ;;
-esac
-
-case "$SUBSCRIPTION_PATTERN" in
-  pubsub|queue) ;;
-  *) die "Invalid SUBSCRIPTION_PATTERN: $SUBSCRIPTION_PATTERN. Must be pubsub or queue" ;;
-esac
-
-case "$SUBJECT_DISTRIBUTION" in
-  single|multi) ;;
-  *) die "Invalid SUBJECT_DISTRIBUTION: $SUBJECT_DISTRIBUTION. Must be single or multi" ;;
-esac
-
-positive() {
-  [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "$1 must be a positive integer (>= 1)"
-}
-
-non_negative() {
-  [[ "$2" =~ ^[0-9]+$ ]] || die "$1 must be a non-negative integer (>= 0)"
-}
-
-for x in \
-  "MESSAGE_SIZE:$MESSAGE_SIZE" \
-  "TEST_DURATION_SECONDS:$TEST_DURATION_SECONDS" \
-  "METRICS_SAMPLE_INTERVAL:$METRICS_SAMPLE_INTERVAL" \
-  "BASELINE_DURATION_SECONDS:$BASELINE_DURATION_SECONDS"; do
-  positive "${x%%:*}" "${x#*:}"
-done
-
-non_negative "TARGET_MSGS_PER_SEC" "$TARGET_MSGS_PER_SEC"
-non_negative "PUBLISHER_CONCURRENCY" "$PUBLISHER_CONCURRENCY"
-non_negative "SUBSCRIBER_CONCURRENCY" "$SUBSCRIBER_CONCURRENCY"
-
-if [[ "$PUBLISHER_CONCURRENCY" -eq 0 && "$SUBSCRIBER_CONCURRENCY" -eq 0 ]]; then
-  die "PUBLISHER_CONCURRENCY and SUBSCRIBER_CONCURRENCY cannot both be 0"
-fi
-
-# Auto-align SCENARIO when concurrency defines the workload pattern
-if [[ "$PUBLISHER_CONCURRENCY" -gt 0 && "$SUBSCRIBER_CONCURRENCY" -eq 0 ]]; then
-  if [[ "$SCENARIO" == "pubsub" ]]; then
-    SCENARIO="publish"
-  fi
-elif [[ "$PUBLISHER_CONCURRENCY" -eq 0 && "$SUBSCRIBER_CONCURRENCY" -gt 0 ]]; then
-  if [[ "$SCENARIO" == "pubsub" ]]; then
-    if [[ "$MESSAGING_TYPE" == "JetStream" ]]; then
-      SCENARIO="consume"
-    else
-      SCENARIO="subscribe_setup"
-    fi
-  fi
-fi
-
-case "$SCENARIO" in
-  publish)
-    if [[ "$PUBLISHER_CONCURRENCY" -eq 0 ]]; then
-      die "SCENARIO 'publish' requires PUBLISHER_CONCURRENCY >= 1"
-    fi
-    SUBSCRIBER_CONCURRENCY=0
-    ;;
-  consume)
-    if [[ "$SUBSCRIBER_CONCURRENCY" -eq 0 ]]; then
-      die "SCENARIO 'consume' requires SUBSCRIBER_CONCURRENCY >= 1"
-    fi
-    PUBLISHER_CONCURRENCY=0
-    ;;
-  subscribe_setup)
-    if [[ "$SUBSCRIBER_CONCURRENCY" -eq 0 ]]; then
-      die "SCENARIO 'subscribe_setup' requires SUBSCRIBER_CONCURRENCY >= 1"
-    fi
-    PUBLISHER_CONCURRENCY=0
-    ;;
-  pubsub)
-    positive "PUBLISHER_CONCURRENCY" "$PUBLISHER_CONCURRENCY"
-    positive "SUBSCRIBER_CONCURRENCY" "$SUBSCRIBER_CONCURRENCY"
-    ;;
-esac
-
-if [[ "$TARGET_MSGS_PER_SEC" -eq 0 ]]; then
-  TOTAL_MESSAGES="${CONFIGURED_MESSAGE_COUNT:-100000}"
-else
-  TOTAL_MESSAGES="${CONFIGURED_MESSAGE_COUNT:-$((TARGET_MSGS_PER_SEC * TEST_DURATION_SECONDS))}"
-fi
-positive "TOTAL_MESSAGES" "$TOTAL_MESSAGES"
-
-command -v nats >/dev/null || die "nats CLI not found"
-command -v python3 >/dev/null || die "python3 not found"
-
-if [[ "$METRICS_BACKEND" == "podman" ]]; then
-  command -v podman >/dev/null || die "podman not found"
-  command -v jq >/dev/null || die "jq not found"
-elif [[ "$METRICS_BACKEND" != "none" ]]; then
-  die "METRICS_BACKEND must be podman or none"
-fi
-
+# Prepare output directory
 if [[ "$RESULTS_DIR" == /* ]]; then
   BASE_RESULTS_DIR="${RESULTS_DIR}"
 else
@@ -297,161 +166,84 @@ if [[ "$TIMESTAMP_SUBFOLDER" == true ]]; then
 else
   RESULT_DIR="${BASE_RESULTS_DIR}/${TEST_ID}"
 fi
-
 mkdir -p "$RESULT_DIR"
 
+# Write test-config.txt
 cat > "$RESULT_DIR/test-config.txt" <<EOF
 test_id=${TEST_ID}
 test_description=${TEST_DESCRIPTION}
 run_timestamp=${RUN_TIMESTAMP}
 messaging_type=${MESSAGING_TYPE}
 scenario=${SCENARIO}
-subscription_pattern=${SUBSCRIPTION_PATTERN}
-queue_name=${QUEUE_NAME}
-subject_distribution=${SUBJECT_DISTRIBUTION}
-multi_subject_max=${MULTI_SUBJECT_MAX}
 nats_url=${NATS_URL}
 subject=${SUBJECT}
-target_publish_msgs_per_sec=${TARGET_MSGS_PER_SEC}
-message_size_bytes=${MESSAGE_SIZE}
-publisher_concurrency=${PUBLISHER_CONCURRENCY}
-subscriber_concurrency=${SUBSCRIBER_CONCURRENCY}
-nominal_duration_seconds=${TEST_DURATION_SECONDS}
-configured_message_count=${TOTAL_MESSAGES}
-metrics_backend=${METRICS_BACKEND}
-disk_metrics_backend=${DISK_METRICS_BACKEND}
-nats_data_base_dir=${NATS_DATA_BASE_DIR}
-metrics_sample_interval_seconds=${METRICS_SAMPLE_INTERVAL}
-nats_containers=${NATS_CONTAINERS}
-baseline_duration_seconds=${BASELINE_DURATION_SECONDS}
-stream_name=${STREAM_NAME}
-storage_type=${STORAGE_TYPE}
-replication_factor=${REPLICATION_FACTOR}
+queue_name=${QUEUE}
+target_publish_msgs_per_sec=${THROUGHPUT}
+message_size_bytes=${SIZE}
+publisher_concurrency=${PUBS}
+subscriber_concurrency=${SUBS}
+nominal_duration_seconds=${DURATION}
+configured_message_count=${MSGS}
+stream_name=${STREAM}
+storage_type=${STORAGE}
+replication_factor=${REPLICAS}
 max_bytes=${MAX_BYTES}
-retention_policy=${RETENTION_POLICY}
-js_pub_mode=${JS_PUB_MODE}
-consumer_name=${CONSUMER_NAME}
-consumer_ack_policy=${CONSUMER_ACK_POLICY}
-consumer_batch_size=${CONSUMER_BATCH_SIZE}
-prepopulate_count=${PREPOPULATE_COUNT}
-publisher_grace_seconds=${PUBLISHER_GRACE_SECONDS}
-subscriber_drain_seconds=${SUBSCRIBER_DRAIN_SECONDS}
-js_setup_timeout_seconds=${JS_SETUP_TIMEOUT_SECONDS}
+retention_policy=${RETENTION}
+consumer_name=${CONSUMER}
+consumer_ack_policy=${ACKS}
+consumer_batch_size=${BATCH}
 EOF
 
-# JetStream Lifecycle Setup before baseline/workload
+# JetStream setup if required
 if [[ "$MESSAGING_TYPE" == "JetStream" ]]; then
-  echo "Setting up JetStream stream $STREAM_NAME (storage=$STORAGE_TYPE, R=$REPLICATION_FACTOR)..."
+  echo "Preparing JetStream stream: $STREAM (storage=$STORAGE, R=$REPLICAS)..."
   bash "${ROOT_DIR}/scripts/js_stream.sh" setup \
-    "$NATS_URL" \
-    "$STREAM_NAME" \
-    "$SUBJECT" \
-    "$STORAGE_TYPE" \
-    "$REPLICATION_FACTOR" \
-    "$MAX_BYTES" \
-    "$RETENTION_POLICY" \
-    "$CONSUMER_NAME" \
-    "$CONSUMER_ACK_POLICY"
+    "$NATS_URL" "$STREAM" "$SUBJECT" "$STORAGE" "$REPLICAS" "$MAX_BYTES" "$RETENTION" "$CONSUMER" "$ACKS"
 
-  if [[ "$SCENARIO" == "consume" && "$PREPOPULATE_COUNT" -gt 0 ]]; then
+  if [[ "$SCENARIO" == "js-consume" && "$PREPOPULATE_COUNT" -gt 0 ]]; then
     bash "${ROOT_DIR}/scripts/js_stream.sh" prepopulate \
-      "$NATS_URL" \
-      "$STREAM_NAME" \
-      "$SUBJECT" \
-      "$PREPOPULATE_COUNT" \
-      "$MESSAGE_SIZE"
+      "$NATS_URL" "$STREAM" "$SUBJECT" "$PREPOPULATE_COUNT" "$SIZE"
   fi
 fi
 
-export MESSAGING_TYPE STREAM_NAME JS_PUB_MODE CONSUMER_NAME CONSUMER_ACK_POLICY CONSUMER_BATCH_SIZE
-
 METRICS_PID=""
-
 cleanup() {
   if [[ -n "$METRICS_PID" ]] && kill -0 "$METRICS_PID" 2>/dev/null; then
     kill -TERM "$METRICS_PID" 2>/dev/null || true
     wait "$METRICS_PID" 2>/dev/null || true
   fi
 }
-
-interrupted() {
-  echo
-  echo "Benchmark interrupted by user."
-  if [[ -n "${RESULT_DIR:-}" && -d "$RESULT_DIR" ]]; then
-    echo "INTERRUPTED" > "$RESULT_DIR/workload_outcome.txt"
-  fi
-  cleanup
-  exit 130
-}
-
-trap interrupted INT TERM
 trap cleanup EXIT
 
-# Baseline collection
-if [[ "$METRICS_BACKEND" == "podman" ]]; then
-  "${ROOT_DIR}/scripts/metrics.sh" \
-    "$RESULT_DIR/metrics.csv" \
-    "$METRICS_SAMPLE_INTERVAL" \
-    baseline $NATS_CONTAINERS &
-
+# Baseline telemetry sampling
+if [[ "$METRICS_BACKEND" == "podman" && "$BASELINE_DURATION_SECONDS" -gt 0 ]]; then
+  echo "Sampling idle baseline for ${BASELINE_DURATION_SECONDS}s..."
+  "${ROOT_DIR}/scripts/metrics.sh" "$RESULT_DIR/metrics.json" "$METRICS_SAMPLE_INTERVAL" baseline $CONTAINERS &
   METRICS_PID=$!
   sleep "$BASELINE_DURATION_SECONDS"
-
   kill -TERM "$METRICS_PID" 2>/dev/null || true
   wait "$METRICS_PID" 2>/dev/null || true
   METRICS_PID=""
+fi
 
-  # Workload metric collection
-  "${ROOT_DIR}/scripts/metrics.sh" \
-    "$RESULT_DIR/metrics.csv" \
-    "$METRICS_SAMPLE_INTERVAL" \
-    workload $NATS_CONTAINERS &
-
+# Active workload telemetry sampling
+if [[ "$METRICS_BACKEND" == "podman" ]]; then
+  "${ROOT_DIR}/scripts/metrics.sh" "$RESULT_DIR/metrics.json" "$METRICS_SAMPLE_INTERVAL" workload $CONTAINERS &
   METRICS_PID=$!
-  sleep 2
+  sleep 1
 fi
 
 # Execute workload
-START="$(date +%s)"
-
+echo "Executing workload..."
 set +e
-if [[ "$SCENARIO" == "subscribe_setup" ]]; then
-  bash "${ROOT_DIR}/scripts/sub_setup.sh" \
-    "$NATS_URL" \
-    "$SUBJECT" \
-    "$SUBSCRIBER_CONCURRENCY" \
-    "$TEST_DURATION_SECONDS" \
-    "$RESULT_DIR" \
-    2>&1 | tee "$RESULT_DIR/workload.log"
-  WORKLOAD_EXIT=${PIPESTATUS[0]}
-else
-  bash "${ROOT_DIR}/scripts/workload.sh" \
-    "$NATS_URL" \
-    "$SUBJECT" \
-    "$PUBLISHER_CONCURRENCY" \
-    "$SUBSCRIBER_CONCURRENCY" \
-    "$TOTAL_MESSAGES" \
-    "$MESSAGE_SIZE" \
-    "$TARGET_MSGS_PER_SEC" \
-    "$RESULT_DIR/subscriber.log" \
-    "$SCENARIO" \
-    "$SUBSCRIPTION_PATTERN" \
-    "$QUEUE_NAME" \
-    "$SUBJECT_DISTRIBUTION" \
-    "$MULTI_SUBJECT_MAX" \
-    "$TEST_DURATION_SECONDS" \
-    "$RESULT_DIR" \
-    2>&1 | tee "$RESULT_DIR/workload.log"
-  WORKLOAD_EXIT=${PIPESTATUS[0]}
-fi
+bash "${ROOT_DIR}/scripts/workload.sh" \
+  "$NATS_URL" "$SUBJECT" "$PUBS" "$SUBS" "$MSGS" "$SIZE" "$THROUGHPUT" "$DURATION" \
+  "$RESULT_DIR" "$SCENARIO" "$QUEUE" "$MULTISUBJECT" "$MULTISUBJECT_MAX" \
+  "$STREAM" "$CONSUMER" "$BATCH" "$ACKS"
+WORKLOAD_EXIT=$?
 set -e
 
-END="$(date +%s)"
-ACTUAL_DURATION=$((END - START))
-
-(( ACTUAL_DURATION > 0 )) || ACTUAL_DURATION=1
-
-# Stop metric collection
+# Stop telemetry
 if [[ -n "$METRICS_PID" ]]; then
   sleep 1
   kill -TERM "$METRICS_PID" 2>/dev/null || true
@@ -459,42 +251,16 @@ if [[ -n "$METRICS_PID" ]]; then
   METRICS_PID=""
 fi
 
-# Determine formal test outcome: COMPLETED, TIMEOUT, FAILED, or INTERRUPTED
-if [[ -f "$RESULT_DIR/workload_outcome.txt" ]]; then
-  TEST_OUTCOME="$(cat "$RESULT_DIR/workload_outcome.txt" | tr -d '[:space:]')"
-elif [[ "$WORKLOAD_EXIT" -eq 0 ]]; then
-  TEST_OUTCOME="COMPLETED"
-elif [[ "$WORKLOAD_EXIT" -eq 130 ]]; then
-  TEST_OUTCOME="INTERRUPTED"
-else
-  TEST_OUTCOME="FAILED"
-fi
-
-# Aggregate results
-python3 "${ROOT_DIR}/scripts/aggregate.py" \
-  "$RESULT_DIR" \
-  "$TEST_ID" \
-  "$SUBJECT" \
-  "$TARGET_MSGS_PER_SEC" \
-  "$MESSAGE_SIZE" \
-  "$PUBLISHER_CONCURRENCY" \
-  "$SUBSCRIBER_CONCURRENCY" \
-  "$TEST_DURATION_SECONDS" \
-  "$ACTUAL_DURATION" \
-  "$WORKLOAD_EXIT" \
-  "$METRICS_BACKEND" \
-  "$TEST_OUTCOME"
+# Aggregate results into canonical results.json and self-contained report.html
+python3 "${ROOT_DIR}/scripts/aggregate.py" "$RESULT_DIR" "$TEST_ID"
 
 echo ""
 echo "===================================="
-echo "Benchmark Summary"
-echo "===================================="
+echo "Benchmark Finished"
 echo "Test ID     : $TEST_ID"
-echo "Outcome     : $TEST_OUTCOME"
-echo "Duration    : ${ACTUAL_DURATION}s (nominal: ${TEST_DURATION_SECONDS}s)"
 echo "Exit Code   : $WORKLOAD_EXIT"
-echo "Results     : $RESULT_DIR"
 echo "Report HTML : $RESULT_DIR/report.html"
+echo "Results     : $RESULT_DIR"
 echo "===================================="
 
 exit "$WORKLOAD_EXIT"
