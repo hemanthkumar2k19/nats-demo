@@ -200,17 +200,28 @@
     }
     .chart-container {
       width: 100%;
-      height: 340px;
+      height: 360px;
       position: relative;
     }
     svg.chart { width: 100%; height: 100%; }
-    .axis-line { stroke: var(--border); stroke-width: 1; }
-    .grid-line { stroke: rgba(48, 54, 61, 0.5); stroke-dasharray: 3 3; }
+    .axis-line { stroke: var(--border); stroke-width: 1.5; }
+    .grid-line { stroke: rgba(48, 54, 61, 0.45); stroke-dasharray: 3 3; }
     .axis-label { fill: var(--text-dim); font-size: 11px; }
-    .series-line { fill: none; stroke-width: 2.5; stroke-linecap: round; }
+    .series-line { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
     .series-dot { fill: var(--card-bg); stroke-width: 2; }
     .series-p50 { stroke: var(--accent); }
     .series-p99 { stroke: var(--red); }
+    .chart-legend { display: flex; gap: 18px; align-items: center; font-size: 12px; }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
+    .legend-swatch { width: 14px; height: 3px; display: inline-block; border-radius: 2px; }
+    .legend-swatch-p50 { background-color: var(--accent); }
+    .legend-swatch-p99 { background-color: var(--red); }
+    .legend-swatch-knee { border-top: 2px dashed var(--amber); height: 0; }
+    .point-callout { font-size: 11px; font-weight: 600; font-family: ui-monospace, monospace; text-anchor: middle; }
+    .point-callout-p99 { fill: var(--red); }
+    .point-callout-p50 { fill: var(--accent); }
+    .knee-line { stroke: var(--amber); stroke-width: 1.5; stroke-dasharray: 4 4; }
+    .tick-label { fill: var(--text-dim); font-size: 11px; font-family: ui-monospace, monospace; }
   </style>
 </head>
 <body>
@@ -344,12 +355,19 @@
       </div>
 
       <div class="card">
-        <h2>Throughput vs Latency Saturation Curve</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+          <h2 style="margin:0;">Throughput vs Latency Saturation Curve</h2>
+          <div id="chart-legend" class="chart-legend" style="display:none;">
+            <span class="legend-item"><span class="legend-swatch legend-swatch-p50"></span> P50 Median Latency</span>
+            <span class="legend-item"><span class="legend-swatch legend-swatch-p99"></span> P99 Tail Latency</span>
+            <span class="legend-item" id="legend-knee-item" style="display:none;"><span class="legend-swatch legend-swatch-knee"></span> Saturation Knee</span>
+          </div>
+        </div>
         <div class="chart-container" id="chart-box">
-          <p id="chart-empty" style="text-align:center; padding-top:120px; color:var(--text-dim);">
+          <p id="chart-empty" style="text-align:center; padding-top:140px; color:var(--text-dim);">
             Load a suite-results.json or multiple results.json files to render the curve.
           </p>
-          <svg class="chart" id="svg-chart" viewBox="0 0 800 340" preserveAspectRatio="xMidYMid meet" style="display:none;"></svg>
+          <svg class="chart" id="svg-chart" viewBox="0 0 800 360" preserveAspectRatio="xMidYMid meet" style="display:none;"></svg>
         </div>
       </div>
 
@@ -682,7 +700,7 @@
         tbody.appendChild(tr);
       });
 
-      drawCurve(runs);
+      drawCurve(runs, recs);
     }
 
     // =========================================================================
@@ -705,65 +723,161 @@
     // =========================================================================
     // 5. SVG Throughput vs Latency S-Curve
     // =========================================================================
-    function drawCurve(runs) {
+    function drawCurve(runs, recs = {}) {
       const container = document.getElementById('chart-box');
       const empty = document.getElementById('chart-empty');
       const svg = document.getElementById('svg-chart');
+      const legend = document.getElementById('chart-legend');
+      const kneeLegendItem = document.getElementById('legend-knee-item');
 
       if (!runs || runs.length < 2) {
         empty.style.display = 'block';
         svg.style.display = 'none';
+        if (legend) legend.style.display = 'none';
         return;
       }
       empty.style.display = 'none';
       svg.style.display = 'block';
+      if (legend) legend.style.display = 'flex';
 
-      const points = runs.map(r => ({
-        rate: r.client?.throughput_msgs_sec || r.metadata?.target_rate || 0,
-        p50: (r.client?.latency_us?.p50 || 0) / 1000,
-        p99: (r.client?.latency_us?.p99 || 0) / 1000
-      })).sort((a, b) => a.rate - b.rate);
+      const kneeRate = recs && recs.saturation_knee_msgs_sec ? Number(recs.saturation_knee_msgs_sec) : 0;
+      if (kneeLegendItem) {
+        kneeLegendItem.style.display = kneeRate > 0 ? 'inline-flex' : 'none';
+      }
 
-      const maxRate = Math.max(...points.map(p => p.rate)) * 1.15 || 10000;
-      const maxLat = Math.max(...points.map(p => p.p99)) * 1.25 || 10;
+      const points = runs.map(r => {
+        const rate = r.client?.throughput_msgs_sec || r.metadata?.target_rate || 0;
+        const p50_us = (r.client?.latency_us?.p50 !== undefined && r.client?.latency_us?.p50 !== null) ? Number(r.client.latency_us.p50) : 0;
+        const p99_us = (r.client?.latency_us?.p99 !== undefined && r.client?.latency_us?.p99 !== null) ? Number(r.client.latency_us.p99) : 0;
+        const testId = r.test_id || '';
+        const payloadSize = r.metadata?.payload_size || '';
+        const targetRate = r.metadata?.target_rate;
+        return {
+          id: testId,
+          rate: rate,
+          targetRate: targetRate,
+          payloadSize: payloadSize,
+          p50_us: p50_us,
+          p99_us: p99_us,
+          raw: r
+        };
+      });
+
+      const rawMaxLat = Math.max(...points.map(p => Math.max(p.p99_us, p.p50_us, 0.1)));
+      const maxLat_us = rawMaxLat * 1.30;
+      const useMs = maxLat_us >= 1000;
+      const unit = useMs ? 'ms' : 'us';
+      const scale = useMs ? 1000 : 1;
 
       const w = container.clientWidth || 800;
-      const h = container.clientHeight || 340;
+      const h = 360;
       svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-      const padL = 60, padR = 40, padT = 30, padB = 40;
+      const padL = 75, padR = 40, padT = 45, padB = 60;
       const pw = w - padL - padR;
       const ph = h - padT - padB;
 
-      const getX = r => padL + (r / maxRate) * pw;
-      const getY = l => h - padB - (l / maxLat) * ph;
+      // Generate 5 Y-Axis ticks and horizontal gridlines
+      let yTicksHtml = '';
+      const numYTicks = 4;
+      for (let i = 0; i <= numYTicks; i++) {
+        const frac = i / numYTicks;
+        const yVal_us = maxLat_us * frac;
+        const y = (h - padB) - frac * ph;
+        const labelText = (yVal_us / scale).toFixed(scale === 1000 ? 2 : 1) + ' ' + unit;
+        yTicksHtml += `
+          <line x1="${padL}" y1="${y.toFixed(1)}" x2="${(w - padR).toFixed(1)}" y2="${y.toFixed(1)}" class="grid-line" />
+          <text x="${(padL - 10).toFixed(1)}" y="${(y + 4).toFixed(1)}" class="tick-label" text-anchor="end">${labelText}</text>
+        `;
+      }
 
-      let p50Path = '';
-      let p99Path = '';
-      let circles = '';
-
+      // Generate X positions, vertical gridlines, and tick labels
+      const n = points.length;
+      let xGridHtml = '';
       points.forEach((p, idx) => {
-        const x = getX(p.rate);
-        const y50 = getY(p.p50);
-        const y99 = getY(p.p99);
+        p.x = n === 1 ? padL + pw / 2 : padL + (idx / (n - 1)) * pw;
+        p.y50 = (h - padB) - (p.p50_us / maxLat_us) * ph;
+        p.y99 = (h - padB) - (p.p99_us / maxLat_us) * ph;
 
-        p50Path += (idx === 0 ? `M ${x} ${y50}` : ` L ${x} ${y50}`);
-        p99Path += (idx === 0 ? `M ${x} ${y99}` : ` L ${x} ${y99}`);
+        let stepLabel = '';
+        if (p.payloadSize && points.some(o => o.payloadSize !== p.payloadSize)) {
+          stepLabel = p.payloadSize;
+        } else if (p.targetRate) {
+          stepLabel = p.targetRate >= 1000 ? (p.targetRate / 1000).toFixed(0) + 'k' : String(p.targetRate);
+        } else {
+          stepLabel = p.id;
+        }
 
-        circles += `
-          <circle cx="${x}" cy="${y50}" r="4" class="series-dot series-p50" />
-          <circle cx="${x}" cy="${y99}" r="4" class="series-dot series-p99" />
-          <text x="${x}" y="${h - padB + 16}" class="axis-label" text-anchor="middle">${(p.rate >= 1000 ? (p.rate/1000).toFixed(0)+'k' : p.rate)}</text>
+        const achievedRateLabel = (p.rate >= 1000 ? (p.rate / 1000).toFixed(1) + 'k' : p.rate.toFixed(0)) + ' /s';
+
+        xGridHtml += `
+          <line x1="${p.x.toFixed(1)}" y1="${padT}" x2="${p.x.toFixed(1)}" y2="${h - padB}" class="grid-line" />
+          <line x1="${p.x.toFixed(1)}" y1="${h - padB}" x2="${p.x.toFixed(1)}" y2="${h - padB + 5}" class="axis-line" />
+          <text x="${p.x.toFixed(1)}" y="${(h - padB + 18).toFixed(1)}" class="tick-label" font-weight="600" text-anchor="middle">${stepLabel}</text>
+          <text x="${p.x.toFixed(1)}" y="${(h - padB + 32).toFixed(1)}" class="axis-label" text-anchor="middle">${achievedRateLabel}</text>
         `;
       });
 
+      // Series Paths
+      const p50Path = points.map((p, idx) => (idx === 0 ? 'M' : 'L') + ` ${p.x.toFixed(1)} ${p.y50.toFixed(1)}`).join(' ');
+      const p99Path = points.map((p, idx) => (idx === 0 ? 'M' : 'L') + ` ${p.x.toFixed(1)} ${p.y99.toFixed(1)}`).join(' ');
+
+      // Points and Callouts
+      let dotsHtml = '';
+      points.forEach(p => {
+        const p99Label = formatLatency(p.p99_us);
+        const p50Label = formatLatency(p.p50_us);
+        let calloutY = p.y99 - 10;
+        if (calloutY < padT + 10) calloutY = p.y99 + 18;
+
+        dotsHtml += `
+          <!-- P50 Dot -->
+          <circle cx="${p.x.toFixed(1)}" cy="${p.y50.toFixed(1)}" r="4.5" class="series-dot series-p50" style="cursor:pointer;">
+            <title>Test: ${p.id}&#10;Delivered: ${formatNumber(p.rate)} msgs/sec&#10;P50 Median: ${p50Label}&#10;P99 Tail: ${p99Label}</title>
+          </circle>
+
+          <!-- P99 Dot -->
+          <circle cx="${p.x.toFixed(1)}" cy="${p.y99.toFixed(1)}" r="4.5" class="series-dot series-p99" style="cursor:pointer;">
+            <title>Test: ${p.id}&#10;Delivered: ${formatNumber(p.rate)} msgs/sec&#10;P99 Tail: ${p99Label}&#10;P50 Median: ${p50Label}</title>
+          </circle>
+
+          <!-- P99 Value Callout -->
+          <text x="${p.x.toFixed(1)}" y="${calloutY.toFixed(1)}" class="point-callout point-callout-p99">${p99Label}</text>
+        `;
+      });
+
+      // Saturation Knee Marker
+      let kneeHtml = '';
+      if (kneeRate > 0) {
+        let bestIdx = -1;
+        let minDiff = Infinity;
+        points.forEach((p, idx) => {
+          const diff = Math.abs(p.rate - kneeRate);
+          if (diff < minDiff) {
+            minDiff = diff;
+            bestIdx = idx;
+          }
+        });
+        if (bestIdx >= 0) {
+          const kx = points[bestIdx].x;
+          kneeHtml = `
+            <line x1="${kx.toFixed(1)}" y1="${padT}" x2="${kx.toFixed(1)}" y2="${h - padB}" class="knee-line" />
+            <rect x="${(kx - 42).toFixed(1)}" y="${(padT - 22).toFixed(1)}" width="84" height="18" fill="var(--amber)" rx="3" opacity="0.9" />
+            <text x="${kx.toFixed(1)}" y="${(padT - 9).toFixed(1)}" fill="#0d1117" font-size="10" font-weight="700" text-anchor="middle">KNEE: ${formatNumber(kneeRate)}/s</text>
+          `;
+        }
+      }
+
       svg.innerHTML = `
-        <line x1="${padL}" y1="${h - padB}" x2="${w - padR}" y2="${h - padB}" class="axis-line" />
+        ${yTicksHtml}
+        ${xGridHtml}
         <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${h - padB}" class="axis-line" />
+        <line x1="${padL}" y1="${h - padB}" x2="${(w - padR).toFixed(1)}" y2="${h - padB}" class="axis-line" />
+        ${kneeHtml}
         <path d="${p50Path}" class="series-line series-p50" />
         <path d="${p99Path}" class="series-line series-p99" />
-        ${circles}
-        <text x="${w - padR}" y="${h - padB - 8}" class="axis-label" text-anchor="end">Throughput (msgs/sec) -&gt;</text>
-        <text x="${padL + 10}" y="${padT + 12}" class="axis-label">Latency (ms)</text>
+        ${dotsHtml}
+        <text x="${padL}" y="${(padT - 12).toFixed(1)}" class="axis-label" font-weight="600" text-anchor="start">Latency (${unit})</text>
+        <text x="${(w - padR).toFixed(1)}" y="${(h - 8).toFixed(1)}" class="axis-label" font-weight="600" text-anchor="end">Offered Load / Delivered Throughput -&gt;</text>
       `;
     }
 

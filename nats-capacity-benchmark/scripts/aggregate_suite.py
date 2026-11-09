@@ -36,6 +36,24 @@ def safe_int(v, default=0):
     except (ValueError, TypeError):
         return default
 
+def parse_payload_bytes(size_str):
+    if not size_str:
+        return 0
+    s = str(size_str).strip().upper()
+    mult = 1
+    if s.endswith("KB") or s.endswith("KIB"):
+        mult = 1024
+        s = s.replace("KIB", "").replace("KB", "").strip()
+    elif s.endswith("MB") or s.endswith("MIB"):
+        mult = 1024 * 1024
+        s = s.replace("MIB", "").replace("MB", "").strip()
+    elif s.endswith("B"):
+        s = s[:-1].strip()
+    try:
+        return int(float(s) * mult)
+    except (ValueError, TypeError):
+        return 0
+
 def compute_recommendations(runs):
     if not runs:
         return {}
@@ -162,8 +180,11 @@ def main():
                 "nodes": []
             })
 
-    # Sort runs ascending by target rate for proper sequential ladders
-    runs.sort(key=lambda r: safe_int((r.get("metadata") or {}).get("target_rate", 0)))
+    # Sort runs ascending by target rate and payload size for proper sequential ladders
+    runs.sort(key=lambda r: (
+        safe_int((r.get("metadata") or {}).get("target_rate", 0)),
+        parse_payload_bytes((r.get("metadata") or {}).get("payload_size", "0B"))
+    ))
 
     recs = compute_recommendations(runs)
 

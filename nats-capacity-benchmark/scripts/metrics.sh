@@ -80,7 +80,8 @@ def parse_bytes(s):
 
 def parse_duration_seconds(s):
     if not s: return 0.0
-    parts = re.findall(r"([0-9.]+)\s*(h|m|s|ms|us|ns)", str(s))
+    # Multi-character units must precede single-character units to prevent 'ms' from matching 'm' (minutes)
+    parts = re.findall(r"([0-9.]+)\s*(ms|us|ns|h|m|s)", str(s))
     if parts:
         tot = 0.0
         for v, u in parts:

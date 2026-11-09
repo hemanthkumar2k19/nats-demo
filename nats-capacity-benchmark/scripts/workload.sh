@@ -201,17 +201,29 @@ case "$SCENARIO" in
     ;;
 esac
 
-# Gracefully wait for subscribers to finish receiving
-if [[ ${#SUB_PIDS[@]} -gt 0 ]]; then
-  DRAIN_DEADLINE=$(( $(date +%s) + 5 ))
-  for pid in ${SUB_PIDS[@]+"${SUB_PIDS[@]}"}; do
-    while kill -0 "$pid" 2>/dev/null && (( $(date +%s) < DRAIN_DEADLINE )); do
-      sleep 0.2
+# Gracefully wait for background subscribers to finish processing in-flight messages (up to 15s)
+if [[ "${#SUB_PIDS[@]}" -gt 0 ]]; then
+  echo "Waiting for subscribers to drain in-flight messages..."
+  DRAIN_WAIT=0
+  while [[ "$DRAIN_WAIT" -lt 15 ]]; do
+    ALL_DONE=true
+    for spid in "${SUB_PIDS[@]}"; do
+      if kill -0 "$spid" 2>/dev/null; then
+        ALL_DONE=false
+        break
+      fi
     done
-    if kill -0 "$pid" 2>/dev/null; then
-      kill -TERM "$pid" 2>/dev/null || true
+    [[ "$ALL_DONE" == true ]] && break
+    sleep 1
+    (( DRAIN_WAIT++ ))
+  done
+
+  # Terminate any subscribers still hanging after drain deadline
+  for spid in "${SUB_PIDS[@]}"; do
+    if kill -0 "$spid" 2>/dev/null; then
+      kill -TERM "$spid" 2>/dev/null || true
+      wait "$spid" 2>/dev/null || true
     fi
-    wait "$pid" 2>/dev/null || true
   done
 fi
 

@@ -17,3 +17,5 @@ task.md
 *.zip
 
 __pycache__
+
+reports
