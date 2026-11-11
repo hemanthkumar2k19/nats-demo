@@ -280,14 +280,19 @@
 
         <div class="card">
           <h2>Latency Distribution</h2>
+          <div id="latency-summary-bar" style="display:flex; gap:16px; margin-bottom:12px; font-size:12px; color:var(--text-dim); flex-wrap:wrap;">
+            <span>Total Samples: <strong class="mono" id="lat-total-samples" style="color:var(--text-bright);">-</strong></span>
+            <span>Mean Latency: <strong class="mono" id="lat-mean" style="color:var(--text-bright);">-</strong></span>
+            <span>Std Dev (&sigma;): <strong class="mono" id="lat-std-dev" style="color:var(--text-bright);">-</strong></span>
+          </div>
           <div class="table-container">
             <table>
               <thead>
                 <tr>
                   <th>Percentile</th>
                   <th>Operation Latency</th>
-                  <th>Deliveries</th>
-                  <th>Standard Deviation</th>
+                  <th>Cumulative Deliveries</th>
+                  <th>Volume Slice</th>
                 </tr>
               </thead>
               <tbody id="latency-rows"></tbody>
@@ -330,6 +335,22 @@
 
     <!-- TAB 2: SUITE & COMPARISON -->
     <section id="tab-comparison" class="tab-pane">
+      <!-- Suite Identification Banner Card -->
+      <div class="card" id="suite-meta-card" style="margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+          <div>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <h2 id="suite-display-title" style="margin:0; font-size:18px; color:var(--text-bright);">Benchmark Suite</h2>
+              <span id="suite-display-id" class="badge badge-completed mono" style="font-size:11px;">suite</span>
+            </div>
+            <p id="suite-display-desc" style="margin:6px 0 0; font-size:13px; color:var(--text-dim);">-</p>
+          </div>
+          <div style="text-align:right; font-size:12px; color:var(--text-dim);">
+            <div>Run ID: <span id="suite-display-run" class="mono" style="color:var(--text-bright);">-</span></div>
+          </div>
+        </div>
+      </div>
+
       <!-- Executive Sizing Cards -->
       <div class="grid-kpi" id="suite-sizing-cards">
         <div class="kpi-card">
@@ -498,6 +519,26 @@
       return Number(us).toFixed(2) + ' us';
     }
 
+    function formatBytes(bytes) {
+      if (bytes === null || bytes === undefined || isNaN(bytes)) return '-';
+      const b = Number(bytes);
+      if (b === 0) return '0 B';
+      const abs = Math.abs(b);
+      if (abs >= 1024 * 1024 * 1024) return (b / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+      if (abs >= 1024 * 1024) return (b / (1024 * 1024)).toFixed(1) + ' MB';
+      if (abs >= 1024) return (b / 1024).toFixed(1) + ' KiB';
+      return b.toFixed(0) + ' B';
+    }
+
+    function parseDurationSeconds(dur) {
+      if (!dur) return 30.0;
+      const s = String(dur).trim();
+      if (s.endsWith('m')) return (parseFloat(s) || 0) * 60.0 || 30.0;
+      if (s.endsWith('s')) return parseFloat(s) || 30.0;
+      const val = parseFloat(s);
+      return isNaN(val) || val <= 0 ? 30.0 : val;
+    }
+
     // =========================================================================
     // 2. Single-Run Dashboard & KPI Rendering
     // =========================================================================
@@ -518,6 +559,8 @@
 
       const client = data.client || {};
       const lat = client.latency_us || {};
+      const totalMsgs = client.published_msgs || 0;
+      const durSec = parseDurationSeconds(data.metadata?.duration);
 
       const htmlContent = `
         <div class="grid-kpi" style="margin-bottom:16px;">
@@ -543,19 +586,24 @@
           </div>
         </div>
 
-        <h3 style="font-size:14px; margin-bottom:8px; color:var(--text-bright);">Latency Percentiles</h3>
+        <h3 style="font-size:14px; margin-bottom:8px; color:var(--text-bright);">Latency Distribution</h3>
+        <div style="display:flex; gap:16px; margin-bottom:10px; font-size:12px; color:var(--text-dim); flex-wrap:wrap;">
+          <span>Total Samples: <strong class="mono" style="color:var(--text-bright);">${formatNumber(totalMsgs)} msgs</strong></span>
+          <span>Mean Latency: <strong class="mono" style="color:var(--text-bright);">${formatLatency(lat.avg)}</strong></span>
+          <span>Std Dev (&sigma;): <strong class="mono" style="color:var(--text-bright);">${formatLatency(lat.std_dev)}</strong></span>
+        </div>
         <div class="table-container" style="margin-bottom:16px;">
           <table>
             <thead>
-              <tr><th>Percentile</th><th>Operation Latency</th><th>Deliveries</th><th>Std Dev</th></tr>
+              <tr><th>Percentile</th><th>Operation Latency</th><th>Cumulative Deliveries</th><th>Volume Slice</th></tr>
             </thead>
             <tbody>
-              <tr><td>Min Latency</td><td class="mono">${formatLatency(lat.min)}</td><td class="mono">${formatNumber(client.published_msgs)} msgs</td><td class="mono">-</td></tr>
-              <tr><td>Median (P50)</td><td class="mono">${formatLatency(lat.p50)}</td><td class="mono">-</td><td class="mono">-</td></tr>
-              <tr><td>P90 Latency</td><td class="mono">${formatLatency(lat.p90)}</td><td class="mono">-</td><td class="mono">-</td></tr>
-              <tr><td>P99 Latency</td><td class="mono" style="color:var(--red); font-weight:600;">${formatLatency(lat.p99)}</td><td class="mono">-</td><td class="mono">-</td></tr>
-              <tr><td>P99.9 Latency</td><td class="mono">${formatLatency(lat.p999)}</td><td class="mono">-</td><td class="mono">-</td></tr>
-              <tr><td>Max Latency</td><td class="mono">${formatLatency(lat.max)}</td><td class="mono">-</td><td class="mono">${formatLatency(lat.std_dev)}</td></tr>
+              <tr><td>Min Latency</td><td class="mono">${formatLatency(lat.min)}</td><td class="mono">${totalMsgs > 0 ? '1 msg' : '0 msgs'}</td><td class="mono">&lt; 0.01%</td></tr>
+              <tr><td>Median (P50)</td><td class="mono">${formatLatency(lat.p50)}</td><td class="mono">${formatNumber(Math.round(totalMsgs * 0.50))} msgs</td><td class="mono">50.0%</td></tr>
+              <tr><td>P90 Latency</td><td class="mono">${formatLatency(lat.p90)}</td><td class="mono">${formatNumber(Math.round(totalMsgs * 0.90))} msgs</td><td class="mono">90.0%</td></tr>
+              <tr><td>P99 Latency</td><td class="mono" style="color:var(--red); font-weight:600;">${formatLatency(lat.p99)}</td><td class="mono">${formatNumber(Math.round(totalMsgs * 0.99))} msgs</td><td class="mono">99.0%</td></tr>
+              <tr><td>P99.9 Latency</td><td class="mono">${formatLatency(lat.p999)}</td><td class="mono">${formatNumber(Math.round(totalMsgs * 0.999))} msgs</td><td class="mono">99.9%</td></tr>
+              <tr><td>Max Latency</td><td class="mono">${formatLatency(lat.max)}</td><td class="mono">${formatNumber(totalMsgs)} msgs</td><td class="mono">100.0%</td></tr>
             </tbody>
           </table>
         </div>
@@ -569,7 +617,12 @@
               </tr>
             </thead>
             <tbody>
-              ${(data.nodes || []).map(n => `
+              ${(data.nodes || []).map(n => {
+                const nWrite = (n.disk_write_mb_sec && n.disk_write_mb_sec > 0)
+                  ? n.disk_write_mb_sec
+                  : ((n.disk_growth_bytes || 0) / (1024 * 1024 * durSec));
+                const nGrowth = n.disk_growth_bytes ? ((n.disk_growth_bytes > 0 ? '+' : '') + formatBytes(n.disk_growth_bytes)) : '0 B';
+                return `
                 <tr>
                   <td class="mono" style="font-weight:600;">${n.name}</td>
                   <td class="mono">${n.avg_cpu_pct?.toFixed(2) || '0'}%</td>
@@ -578,10 +631,11 @@
                   <td class="mono">${n.peak_mem_mb?.toFixed(1) || '0'} MB</td>
                   <td class="mono">${n.mem_growth_mb ? '+' + n.mem_growth_mb.toFixed(1) + ' MB' : '0 MB'}</td>
                   <td class="mono">${n.net_rx_mb_sec?.toFixed(2) || '0'} / ${n.net_tx_mb_sec?.toFixed(2) || '0'} MB/s</td>
-                  <td class="mono">${n.disk_read_mb_sec?.toFixed(2) || '0'} / ${n.disk_write_mb_sec?.toFixed(2) || '0'} MB/s</td>
-                  <td class="mono">${n.disk_growth_bytes ? (n.disk_growth_bytes / 1024).toFixed(1) + ' KiB' : '0 B'}</td>
+                  <td class="mono">${(n.disk_read_mb_sec || 0).toFixed(2)} / ${nWrite.toFixed(2)} MB/s</td>
+                  <td class="mono">${nGrowth}</td>
                 </tr>
-              `).join('')}
+                `;
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -597,18 +651,30 @@
         document.getElementById('kpi-bw').textContent = (client.bandwidth_mb_sec || 0).toFixed(2) + ' MB/s';
         document.getElementById('kpi-bw-sub').textContent = 'Payload: ' + (data.metadata?.payload_size || '-');
 
+        const totalSamplesEl = document.getElementById('lat-total-samples');
+        if (totalSamplesEl) totalSamplesEl.textContent = formatNumber(totalMsgs) + ' msgs';
+        const meanEl = document.getElementById('lat-mean');
+        if (meanEl) meanEl.textContent = formatLatency(lat.avg);
+        const stdDevEl = document.getElementById('lat-std-dev');
+        if (stdDevEl) stdDevEl.textContent = formatLatency(lat.std_dev);
+
         const tbodyLat = document.getElementById('latency-rows');
         tbodyLat.innerHTML = `
-          <tr><td>Min Latency</td><td class="mono">${formatLatency(lat.min)}</td><td class="mono">${formatNumber(client.published_msgs)} msgs</td><td class="mono">-</td></tr>
-          <tr><td>Median (P50)</td><td class="mono">${formatLatency(lat.p50)}</td><td class="mono">-</td><td class="mono">-</td></tr>
-          <tr><td>P90 Latency</td><td class="mono">${formatLatency(lat.p90)}</td><td class="mono">-</td><td class="mono">-</td></tr>
-          <tr><td>P99 Latency</td><td class="mono" style="color:var(--red); font-weight:600;">${formatLatency(lat.p99)}</td><td class="mono">-</td><td class="mono">-</td></tr>
-          <tr><td>P99.9 Latency</td><td class="mono">${formatLatency(lat.p999)}</td><td class="mono">-</td><td class="mono">-</td></tr>
-          <tr><td>Max Latency</td><td class="mono">${formatLatency(lat.max)}</td><td class="mono">-</td><td class="mono">${formatLatency(lat.std_dev)}</td></tr>
+          <tr><td>Min Latency</td><td class="mono">${formatLatency(lat.min)}</td><td class="mono">${totalMsgs > 0 ? '1 msg' : '0 msgs'}</td><td class="mono">&lt; 0.01%</td></tr>
+          <tr><td>Median (P50)</td><td class="mono">${formatLatency(lat.p50)}</td><td class="mono">${formatNumber(Math.round(totalMsgs * 0.50))} msgs</td><td class="mono">50.0%</td></tr>
+          <tr><td>P90 Latency</td><td class="mono">${formatLatency(lat.p90)}</td><td class="mono">${formatNumber(Math.round(totalMsgs * 0.90))} msgs</td><td class="mono">90.0%</td></tr>
+          <tr><td>P99 Latency</td><td class="mono" style="color:var(--red); font-weight:600;">${formatLatency(lat.p99)}</td><td class="mono">${formatNumber(Math.round(totalMsgs * 0.99))} msgs</td><td class="mono">99.0%</td></tr>
+          <tr><td>P99.9 Latency</td><td class="mono">${formatLatency(lat.p999)}</td><td class="mono">${formatNumber(Math.round(totalMsgs * 0.999))} msgs</td><td class="mono">99.9%</td></tr>
+          <tr><td>Max Latency</td><td class="mono">${formatLatency(lat.max)}</td><td class="mono">${formatNumber(totalMsgs)} msgs</td><td class="mono">100.0%</td></tr>
         `;
 
         const tbodyNode = document.getElementById('node-rows');
-        tbodyNode.innerHTML = (data.nodes || []).map(n => `
+        tbodyNode.innerHTML = (data.nodes || []).map(n => {
+          const nWrite = (n.disk_write_mb_sec && n.disk_write_mb_sec > 0)
+            ? n.disk_write_mb_sec
+            : ((n.disk_growth_bytes || 0) / (1024 * 1024 * durSec));
+          const nGrowth = n.disk_growth_bytes ? ((n.disk_growth_bytes > 0 ? '+' : '') + formatBytes(n.disk_growth_bytes)) : '0 B';
+          return `
           <tr>
             <td class="mono" style="font-weight:600;">${n.name}</td>
             <td class="mono">${n.avg_cpu_pct?.toFixed(2) || '0'}%</td>
@@ -617,10 +683,11 @@
             <td class="mono">${n.peak_mem_mb?.toFixed(1) || '0'} MB</td>
             <td class="mono">${n.mem_growth_mb ? '+' + n.mem_growth_mb.toFixed(1) + ' MB' : '0 MB'}</td>
             <td class="mono">${n.net_rx_mb_sec?.toFixed(2) || '0'} / ${n.net_tx_mb_sec?.toFixed(2) || '0'} MB/s</td>
-            <td class="mono">${n.disk_read_mb_sec?.toFixed(2) || '0'} / ${n.disk_write_mb_sec?.toFixed(2) || '0'} MB/s</td>
-            <td class="mono">${n.disk_growth_bytes ? (n.disk_growth_bytes / 1024).toFixed(1) + ' KiB' : '0 B'}</td>
+            <td class="mono">${(n.disk_read_mb_sec || 0).toFixed(2)} / ${nWrite.toFixed(2)} MB/s</td>
+            <td class="mono">${nGrowth}</td>
           </tr>
-        `).join('');
+          `;
+        }).join('');
 
         const tbodyCfg = document.getElementById('config-rows');
         tbodyCfg.innerHTML = Object.entries(data.metadata || {}).map(([k, v]) => `
@@ -647,9 +714,24 @@
         badge.textContent = suiteStatus;
         badge.className = 'badge ' + (suiteStatus === 'COMPLETED' ? 'badge-completed' : (suiteStatus === 'FAILED' ? 'badge-failed' : 'badge-idle'));
       }
+      const title = suitePayload.suite_title || suitePayload.suite_id || 'Benchmark Suite';
+      const suiteId = suitePayload.suite_id || 'custom-suite';
+      const suiteDesc = suitePayload.suite_description || '';
+      const suiteRun = suitePayload.suite_timestamp || suitePayload.suite_id || '-';
+
+      document.title = title + ' | NATS Capacity Benchmark';
+
+      const dispTitle = document.getElementById('suite-display-title');
+      if (dispTitle) dispTitle.textContent = title;
+      const dispId = document.getElementById('suite-display-id');
+      if (dispId) dispId.textContent = suiteId;
+      const dispDesc = document.getElementById('suite-display-desc');
+      if (dispDesc) dispDesc.textContent = suiteDesc || 'Empirical throughput, latency saturation & node resource telemetry ladder.';
+      const dispRun = document.getElementById('suite-display-run');
+      if (dispRun) dispRun.textContent = suiteRun;
+
       const subHeader = document.getElementById('sub-header');
       if (subHeader) {
-        const title = suitePayload.suite_title || suitePayload.suite_id || 'Benchmark Suite';
         subHeader.textContent = title + ' - ' + runs.length + ' test run' + (runs.length === 1 ? '' : 's');
       }
 
@@ -678,8 +760,17 @@
         const peakCpu = r.cluster?.peak_cpu_pct ? r.cluster.peak_cpu_pct.toFixed(1) + '%' : (r.nodes ? Math.max(...r.nodes.map(n => n.peak_cpu_pct || 0)).toFixed(1) + '%' : '-');
         const peakMem = r.cluster?.total_peak_mem_mb ? r.cluster.total_peak_mem_mb.toFixed(1) + ' MB' : '-';
         const netRxTx = r.nodes ? (r.nodes.reduce((s, n) => s + (n.net_rx_mb_sec || 0), 0)).toFixed(1) + ' / ' + (r.nodes.reduce((s, n) => s + (n.net_tx_mb_sec || 0), 0)).toFixed(1) + ' MB/s' : '-';
-        const diskWrite = r.nodes ? (r.nodes.reduce((s, n) => s + (n.disk_write_mb_sec || 0), 0)).toFixed(2) + ' MB/s' : '-';
-        const diskGrowth = r.nodes ? (r.nodes.reduce((s, n) => s + (n.disk_growth_bytes || 0), 0) / 1024).toFixed(1) + ' KiB' : '0 B';
+
+        const durSec = parseDurationSeconds(r.metadata?.duration);
+        const rawBlkWrite = r.nodes ? r.nodes.reduce((s, n) => s + (n.disk_write_mb_sec || 0), 0) : 0;
+        const totalGrowthBytes = r.nodes ? r.nodes.reduce((s, n) => s + (n.disk_growth_bytes || 0), 0) : 0;
+
+        let effectiveWriteRate = rawBlkWrite;
+        if (effectiveWriteRate <= 0.0 && totalGrowthBytes > 0 && durSec > 0) {
+          effectiveWriteRate = totalGrowthBytes / (1024 * 1024 * durSec);
+        }
+        const diskGrowthStr = totalGrowthBytes > 0 ? ('+' + formatBytes(totalGrowthBytes)) : '0 B';
+        const diskCell = `${effectiveWriteRate.toFixed(2)} MB/s (${diskGrowthStr})`;
         const cpuEff = r.cluster?.cpu_efficiency_msgs_per_core ? formatNumber(r.cluster.cpu_efficiency_msgs_per_core) : '-';
 
         tr.innerHTML = `
@@ -693,7 +784,7 @@
           <td class="mono">${peakCpu}</td>
           <td class="mono">${peakMem}</td>
           <td class="mono">${netRxTx}</td>
-          <td class="mono">${diskWrite} (${diskGrowth})</td>
+          <td class="mono">${diskCell}</td>
           <td class="mono">${cpuEff}</td>
           <td class="mono">${r.client?.delivery_efficiency_pct ? r.client.delivery_efficiency_pct.toFixed(1) + '%' : '100%'}</td>
         `;

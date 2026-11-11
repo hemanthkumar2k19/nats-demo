@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [Unreleased] - 2026-11-11
+
+### Added
+- **Suite Identification Banner & Intelligent Metadata Discovery**: Added a dedicated Suite Identification Banner card in Tab 2 (Executive Suite & Comparison) of `static/report.html` displaying human-readable Suite Title, Suite ID badge, description, and execution Run ID. Upgraded `scripts/aggregate_suite.py` to auto-discover suite ID from directory hierarchy and parse canonical `SUITE_TITLE` and `SUITE_DESCRIPTION` from `suites/<id>.conf` when invoked without explicit CLI arguments.
+- **Auto-Scaled Storage Units & Empirical Disk Write Rate Fallback**: Overhauled disk telemetry display across `static/report.html` (Comparative Ladder Matrix and Node Resource breakdowns):
+  - Added dynamic `formatBytes()` helper to auto-scale disk growth across `B`, `KiB`, `MB`, and `GB`, resolving misleading displays of large writes in raw KiB (e.g. `950649.3 KiB` -> `+928.4 MB`).
+  - Added empirical disk write rate fallback `disk_growth_bytes / (1024 * 1024 * duration_seconds)` when container cgroup `blkio` counters report `0.00 MB/s` due to host bind-mounted directories (`./data/nats-X:/data`) bypassing virtual block device accounting.
+
 ## [Unreleased] - 2026-11-09
 
 ### Fixed
@@ -22,6 +30,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
   - Updated `static/report.html` suite rendering: dynamically sets `#status-badge` (`COMPLETED`, `PARTIAL`, `FAILED`, or `NO DATA`) and `#sub-header`, adds responsive SVG `viewBox="0 0 800 360"`, and activates the comparison tab prior to SVG curve calculation.
 
 ### Added
+- **Telemetry Dictionary & Infrastructure Capacity Planning Guide**: Added `docs/METRICS_AND_SIZING_GUIDE.md` providing comprehensive reference documentation on metric definitions, calculation formulas, and infrastructure capacity sizing rules. Answers core architectural questions regarding Target vs Achieved Rate throttling, Delivery Efficiency % mechanics, CPU Efficiency formulas, Peak RAM vs Average RAM for Kubernetes/OpenShift OOM prevention, Network Egress (TX) broadcast fan-out amplification, JetStream inverted latency batching curves, and storage sizing standards.
 - **Interactive SVG Saturation Curve Dashboard Overhaul**: Comprehensive upgrade to the Throughput vs Latency Saturation Curve in `static/report.html`:
   - Visual Legend: Added a responsive top legend displaying Median Latency (P50 Accent Blue), Tail Latency (P99 Red), and Saturation Knee (Amber dashed marker).
   - Explicit Point Callouts & Tooltips: Rendered direct visible numerical callouts above each P99 point for instant comprehension without requiring user interaction, accompanied by native SVG `<title>` tooltips providing Test ID, Offered Load, Delivered Throughput, P50 Median, and P99 Tail latencies on hover.
@@ -33,6 +42,9 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - **Structured Dashboard Code Sections**: Added numbered ASCII section dividers in `static/report.html` organizing the client-side logic into discrete modules (State & Utilities, Single-Run KPI/Latency/Node Rendering, Suite Comparison Table, Child Run Drill-Down, SVG S-Curve, Configurator, and File Drop/DOM Initialization).
 
 ### Changed
+- **Latency Distribution Table & Global Telemetry Redesign**: Overhauled the Latency Distribution table in `nats-capacity-benchmark/static/report.html` across both single-run dashboard and suite test accordion views:
+  - Extracted global distribution metrics (`Total Samples`, `Mean Latency`, and `Std Dev (sigma)`) into a responsive summary header bar above the table, eliminating sparse, empty dashes (`-`) in rows 1 through 5.
+  - Replaced the sparse table columns with a fully populated quantile breakdown (`Percentile`, `Operation Latency`, `Cumulative Deliveries`, `Volume Slice`), dynamically computing cumulative message volumes (Min: 1 msg, P50: 50%, P90: 90%, P99: 99%, P99.9: 99.9%, Max: 100%) for complete statistical transparency.
 - **README.md architecture and execution modernization**: Updated root `README.md` to align with the unified configuration and reporting architecture:
   - Replaced the outdated 4-file decoupled configuration guide (`config/*.conf`) with the canonical `benchmark.conf` parameters and environment variable override semantics.
   - Modernized the Execution Guide to include single-configuration invocations, runtime environment overrides, and the interactive Web UI runner (`./benchmark.sh --serve`).

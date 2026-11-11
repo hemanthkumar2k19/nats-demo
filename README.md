@@ -264,6 +264,7 @@ When executing benchmark suites via `./suite.sh <suite-name>`, a consolidated su
 
 ## 9. Next Steps & Cross-References
 
+- For the detailed metric definitions, calculation formulas, and enterprise sizing rules of thumb, see [docs/METRICS_AND_SIZING_GUIDE.md](docs/METRICS_AND_SIZING_GUIDE.md).
 - For the Core NATS test case inventory and run cards, see [docs/tests.md](docs/tests.md).
 - For the JetStream test case inventory and parameter sweep matrices, see [docs/tests-jetstream.md](docs/tests-jetstream.md).
 - For the architectural design, evaluation methodology, and capacity planning standards, see [docs/benchmarking.md](docs/benchmarking.md).

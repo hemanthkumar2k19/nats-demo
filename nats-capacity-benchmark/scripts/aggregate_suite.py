@@ -112,9 +112,29 @@ def main():
         sys.exit(1)
 
     suite_dir = Path(sys.argv[1]).resolve()
-    suite_id = sys.argv[2] if len(sys.argv) > 2 else suite_dir.name
-    suite_title = sys.argv[3] if len(sys.argv) > 3 else f"Benchmark Suite: {suite_id}"
+    suite_timestamp = suite_dir.name
+
+    # Intelligent suite metadata inference when invoked without explicit titles
+    inferred_id = ""
+    if suite_dir.parent.name and suite_dir.parent.parent.name == "suites":
+        inferred_id = suite_dir.parent.name
+
+    suite_id = sys.argv[2] if len(sys.argv) > 2 else (inferred_id or suite_dir.name)
+    suite_title = sys.argv[3] if len(sys.argv) > 3 else ""
     suite_desc = sys.argv[4] if len(sys.argv) > 4 else ""
+
+    # Attempt to load canonical title and description from suite configuration file
+    conf_candidate = ROOT_DIR / "suites" / f"{suite_id}.conf"
+    if conf_candidate.exists():
+        for line in conf_candidate.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not suite_title and line.startswith("SUITE_TITLE="):
+                suite_title = line.split("=", 1)[1].strip("\"'")
+            elif not suite_desc and line.startswith("SUITE_DESCRIPTION="):
+                suite_desc = line.split("=", 1)[1].strip("\"'")
+
+    if not suite_title:
+        suite_title = f"{suite_id.replace('-', ' ').title()} Suite" if suite_id != suite_timestamp else f"Benchmark Suite: {suite_id}"
 
     runs = []
     for child in sorted(suite_dir.iterdir()):
@@ -192,6 +212,7 @@ def main():
         "suite_id": suite_id,
         "suite_title": suite_title,
         "suite_description": suite_desc,
+        "suite_timestamp": suite_timestamp,
         "recommendations": recs,
         "tests": runs
     }
