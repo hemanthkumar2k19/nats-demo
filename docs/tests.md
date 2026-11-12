@@ -1,274 +1,198 @@
-# Core NATS Capacity Benchmark - Test Inventory
+# NATS Capacity Benchmark: Consolidated Test Inventory & Matrix Specification
 
-## 1. Objective and Methodology
+## 1. Overview & Execution Workflow
 
-The objective is to establish an empirical performance baseline for Core NATS and understand how workload characteristics influence throughput and infrastructure resource consumption.
+### 1.1 Objective and Scope
+This document is the authoritative test inventory for the NATS Capacity Benchmark suite. It consolidates all test specifications across both **Core NATS** (in-memory pub/sub, queue groups, subject taxonomy) and **JetStream** (File/Memory storage, Raft consensus replication, stream density, and durable consumer fan-out).
 
-The methodology adheres to the **OpenMessaging Benchmark (OMB)** framework and **Synadia's enterprise NATS benchmarking standards**, evaluating time-bound workloads across standardized 1 KiB payloads, publisher/subscriber concurrency, broadcast fan-out, queue groups, and dynamic subject routing.
+The benchmark adheres to the **OpenMessaging Benchmark (OMB)** framework, measuring sustainable throughput, tail latency percentiles, and per-node resource consumption under fixed infrastructure limits.
 
-The benchmark focuses on:
+### 1.2 Fixed Infrastructure Environment
 
-- Publisher concurrency.
-- Subscriber concurrency.
-- Message payload size.
-- Subscription delivery patterns.
-- Subject cardinality.
-- Sustainable throughput and resource utilization.
+All test suites execute against the fixed 3-node NATS cluster topology with HAProxy L4 load balancing and container resource limits defined in `docs/benchmarking.md`.
 
-### Benchmark Environment
+### 1.3 Execution Modes
 
-| Parameter | Configuration |
-|---|---|
-| NATS Cluster | 3 nodes |
-| CPU per NATS node | 1 vCPU |
-| Memory per NATS node | 1 GiB |
-| HAProxy | 0.5 vCPU / 512 MiB |
-| Load Balancing | Round Robin |
-| Client Location | Outside Podman containers |
-| Messaging Type | Core NATS |
-
-### Benchmark Rules
-
-1. Keep infrastructure configuration constant throughout the benchmark series.
-2. Change one workload dimension at a time.
-3. Capture a 60-second idle resource baseline before benchmark execution.
-4. Capture per-node CPU, memory, network I/O and block I/O.
-5. Record achieved publishing and subscription delivery throughput.
-6. Repeat important benchmark configurations three times to assess consistency.
-7. Preserve raw telemetry in `metrics.json`, benchmark metrics in `pub.csv`/`sub.csv`, and consolidate other test information in `results.json` and `report.html`.
-
----
-
-## 2. Test Execution Workflow
-
-### Option A: Configuration File
-
-Configure the test ID and workload parameters in `benchmark.conf`.
-
-```bash
-./benchmark.sh
-```
-
-### Option B: Environment Variable Overrides
-
-Override individual workload parameters during execution.
-
-```bash
-PUBS=4 \
-THROUGHPUT=5000 \
-./benchmark.sh
-```
-
-### Option C: Automated Executive Suite Execution
-
+#### Mode A: Automated Suite Execution (Recommended)
 Execute entire test ladders or comparative matrices unattended with automated cluster isolation, 10-second quiescence settling between runs, and consolidated executive reporting (`executive-report.html` and `suite-report.html`):
 
 ```bash
-# Run Core NATS saturation ladder suite:
+# Execute any of the 7 canonical suites:
 ./suite.sh core-ladder
-
-# Run payload dimension scaling suite:
 ./suite.sh payload-scaling
+./suite.sh subject-cardinality
+./suite.sh jetstream-ladder
+./suite.sh jetstream-guarantees
+./suite.sh stream-scaling
+./suite.sh consumer-fanout
 ```
 
-Each execution should produce:
+#### Mode B: Single Test Execution via Environment Overrides
+Execute an isolated test case with custom parameter overrides:
 
-```text
-results/
-  <TEST_ID>/
-    metrics.json
-    pub.csv
-    sub.csv
-    test-config.txt
-    results.json
-    report.html
+```bash
+SCENARIO=js-pub-sync \
+THROUGHPUT=2000 \
+PUBS=4 \
+SUBS=2 \
+STORAGE=file \
+REPLICAS=3 \
+./benchmark.sh
 ```
 
 ---
 
-## 3. Test Case Inventory
+## 2. The 7 Canonical Executable Suites Inventory
 
-### Suite 0: Infrastructure and Preflight Validation
+The parameter space is structured into 7 distinct suites. Each suite evaluates a single physical dimension while keeping all other parameters constant.
 
-Validates cluster health, connectivity and idle resource consumption.
-
-| Test ID | Test Name | Objective | Expected Result |
-|---|---|---|---|
-| TEST-0.1 | Preflight Health Check | Verify NATS connectivity, cluster routes and HAProxy backend health. | All expected nodes healthy and client connectivity successful. |
-| TEST-0.2 | Idle Baseline | Capture idle CPU, memory, network and block I/O. | Establish per-node idle resource baseline. |
-
-### Suite 1: Baseline Reference Tests
-
-Establishes reference measurements for fundamental Core NATS workloads.
-
-| Test ID | Scenario | Publishers | Subscribers | Payload | Objective |
-|---|---|---:|---:|---|---|
-| TEST-1.0 | Pub/Sub Smoke Test | 1 | 1 | 1 KiB | Verify workload execution, message delivery and report generation. |
-| TEST-1.1 | Pub/Sub Baseline | 8 | 1 | 1 KiB | Establish baseline publishing and subscription delivery performance. |
-| TEST-1.2 | Publish-only Baseline | 8 | 0 | 1 KiB | Measure publishing throughput without subscribers. |
-| TEST-1.3 | Subscription Setup | 0 | 50 | N/A | Evaluate connection and subscription setup overhead. |
-
-### Suite 2: Dimensional Scaling Tests
-
-These tests isolate individual workload dimensions while keeping the remaining parameters constant.
-
-#### Matrix A: Publisher Concurrency Scaling
-
-**Objective:** Understand how publisher concurrency affects publishing throughput, CPU utilization and connection distribution.
-
-Fixed settings:
-- Scenario: Publish-only.
-- Subscribers: 0.
-- Payload: 1 KiB.
-- Publish rate: Unthrottled.
-- Total payload volume: At least 1 GiB per run.
-
-| Test ID | Publishers | Target Rate | Objective |
-|---|---:|---|---|
-| TEST-2.A1 | 1 | Unthrottled | Establish single-publisher performance. |
-| TEST-2.A2 | 2 | Unthrottled | Evaluate throughput scaling with two publishers. |
-| TEST-2.A3 | 4 | Unthrottled | Evaluate multi-publisher scaling. |
-| TEST-2.A4 | 8 | Unthrottled | Evaluate higher publisher concurrency and resource consumption. |
-
-#### Matrix B: Message Payload Scaling
-
-**Objective:** Understand the impact of message size on throughput, network bandwidth and resource consumption.
-
-Fixed settings:
-- Scenario: Publish-only.
-- Publishers: 8.
-- Subscribers: 0.
-- Publish rate: Unthrottled.
-- Total payload volume: At least 1 GiB per run.
-
-| Test ID | Payload Size | Objective |
-|---|---:|---|
-| TEST-2.B1 | 1 KiB | Establish small-message baseline. |
-| TEST-2.B2 | 5 KiB | Evaluate medium-message performance. |
-| TEST-2.B3 | 10 KiB | Evaluate larger-message performance. |
-
-100 KiB can be included as an optional extended workload.
-
-#### Matrix C: Normal Pub/Sub Fan-out
-
-**Objective:** Understand the additional delivery and network overhead when one publication is delivered to multiple subscribers.
-
-Fixed settings:
-- Scenario: Normal Pub/Sub.
-- Publishers: 1.
-- Payload: 1 KiB.
-- Aggregate publish rate: 2,000 messages/sec.
-
-| Test ID | Subscribers | Expected Aggregate Delivery | Objective |
-|---|---:|---:|---|
-| TEST-2.C1 | 1 | 2,000 msg/sec | Establish 1:1 delivery baseline. |
-| TEST-2.C2 | 2 | 4,000 msg/sec | Evaluate 2x delivery fan-out. |
-| TEST-2.C3 | 4 | 8,000 msg/sec | Evaluate 4x delivery fan-out. |
-| TEST-2.C4 | 8 | 16,000 msg/sec | Evaluate higher fan-out overhead. |
-
-#### Matrix D: Queue Group Distribution
-
-**Objective:** Understand how Core NATS distributes messages across queue group subscribers.
-
-Fixed settings:
-- Scenario: Queue Group.
-- Publishers: 1.
-- Payload: 1 KiB.
-- Aggregate publish rate: 2,000 messages/sec.
-- Queue group name: `benchmark-core-group`.
-
-| Test ID | Queue Workers | Expected Aggregate Delivery | Objective |
-|---|---:|---:|---|
-| TEST-2.D1 | 2 | 2,000 msg/sec | Evaluate two-worker distribution. |
-| TEST-2.D2 | 4 | 2,000 msg/sec | Evaluate four-worker distribution. |
-| TEST-2.D3 | 8 | 2,000 msg/sec | Evaluate eight-worker distribution. |
-
-Individual worker distribution is observed, not required to be exactly equal.
-
-#### Matrix E: Subject Cardinality (Optional)
-
-**Objective:** Understand the impact of subject cardinality on routing and resource consumption.
-
-Fixed settings:
-- Scenario: Pub/Sub.
-- Publishers: 2.
-- Subscribers: 2.
-- Payload: 1 KiB.
-- Aggregate publish rate: 2,000 messages/sec.
-
-| Test ID | Subject Cardinality | Objective |
-|---|---:|---|
-| TEST-2.E1 | 1 | Establish single-subject baseline. |
-| TEST-2.E2 | 1,000 | Evaluate multiple-subject routing. |
-| TEST-2.E3 | 10,000 | Evaluate higher subject cardinality. |
+```
++---------------------------------------------------------------------------------------+
+|                               7 CANONICAL BENCHMARK SUITES                            |
++--------------------+---------------------+--------------------------------------------+
+| Core NATS Suites   | core-ladder         | Throughput ladder: 1k to 100k msgs/s       |
+|                    | payload-scaling     | Message size ladder: 128 B to 32 KiB       |
+|                    | subject-cardinality | Taxonomy scaling: 1 to 10k subjs, wildcard |
++--------------------+---------------------+--------------------------------------------+
+| JetStream Suites   | jetstream-ladder    | Sync File R=3 ladder: 250 to 10k msgs/s    |
+|                    | jetstream-guarantees| Guarantees: Core vs Mem R=3 vs File R=1/R=3|
+|                    | stream-scaling      | Multi-Raft density: 1 to 50 streams        |
+|                    | consumer-fanout     | ACK write amplification: 1 to 20 consumers |
++--------------------+---------------------+--------------------------------------------+
+```
 
 ---
 
-## 4. Capacity Boundary Identification
+### Suite 1: `core-ladder` (Core NATS Saturation Ladder)
+* **Configuration File**: `suites/core-ladder.conf`
+* **Scenario**: `pub-sub` (Core NATS normal pub/sub broadcast)
+* **Fixed Settings**: Payload = 1,024 B, Publishers = 4, Subscribers = 4, Duration = 30s
+* **Primary Objective**: Identify the maximum in-memory throughput ceiling, saturation knee, and the onset of socket buffer bloat.
 
-### Suite 3: Target-Rate Load Ladder
-
-**Objective:** Identify sustainable publishing throughput and understand resource utilization as offered load increases.
-
-Fixed settings:
-- Scenario: Pub/Sub.
-- Publishers: 4.
-- Subscribers: 2.
-- Payload: 1 KiB.
-- Test duration: 60 seconds per rate.
-- Target rate: Aggregate publishing rate.
-
-| Test ID | Target Publish Rate | Duration | Objective |
-|---|---:|---:|---|
-| TEST-3.1 | 5,000 msg/sec | 60 sec | Establish low-load behaviour. |
-| TEST-3.2 | 15,000 msg/sec | 60 sec | Evaluate moderate-load behaviour. |
-| TEST-3.3 | 30,000 msg/sec | 60 sec | Evaluate increased resource consumption. |
-| TEST-3.4 | 50,000 msg/sec | 60 sec | Evaluate high-load behaviour. |
-| TEST-3.5 | Unthrottled | Until workload completes | Identify maximum achievable throughput. |
-
-Evaluate:
-- Achieved publishing throughput.
-- Subscription delivery throughput.
-- CPU and memory utilization per node.
-- Network and block I/O.
-- Message delivery correctness.
-- Latency, where available.
-
-The maximum achievable throughput is not automatically considered sustainable capacity. Identify the highest operating rate that satisfies the applicable performance and resource requirements.
+| Test ID | Target Rate | Payload | Pubs | Subs | Duration | Explicit Test Objective |
+| :--- | ---:| :--- | ---:| ---:| :--- | :--- |
+| **`TEST-CL-1K`** | 1,000 /s | 1024 B | 4 | 4 | 30s | Low-throughput baseline; measure microsecond routing latency. |
+| **`TEST-CL-10K`** | 10,000 /s | 1024 B | 4 | 4 | 30s | Moderate operational load; evaluate Go runtime socket batching. |
+| **`TEST-CL-25K`** | 25,000 /s | 1024 B | 4 | 4 | 30s | Elevated throughput; evaluate multi-client connection scaling. |
+| **`TEST-CL-50K`** | 50,000 /s | 1024 B | 4 | 4 | 30s | High load near saturation boundary; detect latency inflection. |
+| **`TEST-CL-100K`** | 100,000 /s | 1024 B | 4 | 4 | 30s | Over-offered saturation; observe broker backpressure and memory growth. |
 
 ---
 
-## 5. Result Tracking
+### Suite 2: `payload-scaling` (Message Payload Dimension Scaling)
+* **Configuration File**: `suites/payload-scaling.conf`
+* **Scenario**: `pub-sub` (Core NATS normal pub/sub broadcast)
+* **Fixed Settings**: Target Rate = 10,000 msgs/s, Publishers = 4, Subscribers = 4, Duration = 30s
+* **Primary Objective**: Measure network interface serialization limits, bandwidth scaling (MB/s), and socket buffer memory expansion across message payload sizes.
 
-Every benchmark execution should capture:
-
-| Category | Measurements |
-|---|---|
-| Configuration | Test ID, scenario, payload, publishers, subscribers, target rate |
-| Throughput | Achieved publish rate and delivery rate |
-| CPU | Average and peak per node |
-| Memory | Average and peak per node |
-| Network | RX/TX throughput per node |
-| Block I/O | Read/write throughput per node |
-| Latency | Available latency percentiles |
-| Correctness | Expected versus received messages |
-| Execution | Actual duration and exit status |
-
-Results should be compared across repeated runs to identify consistency and performance variation.
+| Test ID | Payload Size | Target Rate | Pubs | Subs | Expected Bandwidth | Explicit Test Objective |
+| :--- | ---:| ---:| ---:| ---:| :--- | :--- |
+| **`TEST-PS-128B`** | 128 B | 10,000 /s | 4 | 4 | ~1.2 MB/s | Small telemetry/IoT payload; evaluate high-frequency message routing. |
+| **`TEST-PS-1KB`** | 1,024 B | 10,000 /s | 4 | 4 | ~9.8 MB/s | Enterprise standard event payload baseline. |
+| **`TEST-PS-8KB`** | 8,192 B | 10,000 /s | 4 | 4 | ~78.1 MB/s | Medium document payload; evaluate network buffer utilization. |
+| **`TEST-PS-32KB`** | 32,768 B | 10,000 /s | 4 | 4 | ~103 MB/s (Capped)| Large payload; test 1 Gbps physical network interface saturation wall. |
 
 ---
 
-## 6. Benchmark Deliverables
+### Suite 3: `subject-cardinality` (Prefix Trie Routing & Taxonomy Scaling)
+* **Configuration File**: `suites/subject-cardinality.conf`
+* **Scenario**: `pub-sub` (Core NATS dynamic subject pub/sub)
+* **Fixed Settings**: Target Rate = 10,000 msgs/s, Payload = 1,024 B, Publishers = 4, Subscribers = 4, Duration = 30s
+* **Primary Objective**: Evaluate the NATS sublist prefix trie lookup complexity, measuring whether high subject cardinality degrades routing latency or expands Go heap memory.
 
-The Core NATS benchmark should establish:
+| Test ID | Subject Hierarchy | Cardinality | Randomize | Pub Subject | Sub Subject | Explicit Test Objective |
+| :--- | :--- | ---:| :--- | :--- | :--- | :--- |
+| **`TEST-SC-1`** | `benchmark.core.test` | 1 | False | Exact match | Exact match | Single-subject baseline for trie cache comparison. |
+| **`TEST-SC-100`** | `benchmark.core.test.N`| 100 | True | Random (0-99) | Random (0-99) | Evaluate 100 dynamic subject branches. |
+| **`TEST-SC-1K`** | `benchmark.core.test.N`| 1,000 | True | Random (0-999) | Random (0-999) | Measure sublist trie memory growth across 1k subjects. |
+| **`TEST-SC-10K`** | `benchmark.core.test.N`| 10,000 | True | Random (0-9999)| Random (0-9999)| Large taxonomy stress; prove $O(K)$ lookup invariance. |
+| **`TEST-SC-WILDCARD`**| `benchmark.core.test.N`| 1,000 | True | Random (0-999) | `...test.>` | Test multi-token wildcard (`>`) routing efficiency parity. |
 
-1. Baseline publishing and Pub/Sub performance.
-2. Impact of publisher concurrency.
-3. Impact of message payload size.
-4. Impact of subscriber fan-out.
-5. Queue group worker distribution behaviour.
-6. Impact of subject cardinality, where relevant.
-7. Maximum achievable and sustainable throughput.
-8. Resource consumption per node at different workload levels.
+---
 
-These measurements form the Core NATS performance baseline for subsequent capacity planning and infrastructure TCO estimation.
+### Suite 4: `jetstream-ladder` (Synchronous File R=3 Saturation Ladder)
+* **Configuration File**: `suites/jetstream-ladder.conf`
+* **Scenario**: `js-pub-sync` (Synchronous JetStream publish waiting for quorum ACK)
+* **Fixed Settings**: Storage = File, Replicas = 3, Max Bytes = 5 GB, Payload = 1,024 B, Publishers = 8, Duration = 30s
+* **Primary Objective**: Measure synchronous disk `fsync()` write batching, Raft quorum latency, and identify the rotational/SSD physical storage write barrier.
+
+| Test ID | Target Rate | Storage | Replicas | Publishers | Duration | Explicit Test Objective |
+| :--- | ---:| :--- | ---:| ---:| :--- | :--- |
+| **`TEST-JL-250`** | 250 /s | File | 3 | 8 | 30s | Isolated single-message fsyncs; high per-message latency baseline. |
+| **`TEST-JL-500`** | 500 /s | File | 3 | 8 | 30s | Low-rate disk sync evaluation. |
+| **`TEST-JL-1K`** | 1,000 /s | File | 3 | 8 | 30s | Moderate rate; onset of Raft quorum write batching. |
+| **`TEST-JL-2.5K`** | 2,500 /s | File | 3 | 8 | 30s | High write concurrency; inverted latency curve acceleration. |
+| **`TEST-JL-5K`** | 5,000 /s | File | 3 | 8 | 30s | Performance sweet spot; optimal amortized disk sync commit. |
+| **`TEST-JL-10K`** | 10,000 /s | File | 3 | 8 | 30s | Hard storage saturation ceiling; identify maximum disk write limit. |
+
+---
+
+### Suite 5: `jetstream-guarantees` (Cost of Durability & Guarantees)
+* **Configuration File**: `suites/jetstream-guarantees.conf`
+* **Scenario**: Stepped across Core, Memory JetStream, File R=1, and File R=3
+* **Fixed Settings**: Target Rate = 10,000 msgs/s, Payload = 1,024 B, Publishers = 4, Subscribers = 4, Duration = 30s
+* **Primary Objective**: Isolate the exact latency, CPU, and disk tax imposed by each level of messaging guarantee.
+
+| Test ID | Engine Tier | Storage | Replicas | Max Bytes | Explicit Test Objective |
+| :--- | :--- | :--- | ---:| :--- | :--- |
+| **`TEST-G1-CORE-INMEM`** | Core NATS | Memory (none)| 0 | N/A | In-memory baseline: zero disk I/O, sub-microsecond latency. |
+| **`TEST-G2-JS-MEM-R3`** | JetStream | Memory | 3 | 256 MB | Replicated in-memory streaming: Raft consensus without disk sync. |
+| **`TEST-G3-JS-FILE-R1`** | JetStream | File | 1 | 5 GB | Single-node disk persistence: disk sync without Raft network quorum. |
+| **`TEST-G4-JS-FILE-R3`** | JetStream | File | 3 | 5 GB | Enterprise standard: disk persistence + 3-node Raft consensus. |
+
+---
+
+### Suite 6: `stream-scaling` (Stream Density & Multi-Raft Scaling)
+* **Configuration File**: `suites/stream-scaling.conf`
+* **Scenario**: `js-pub-sync` (Active primary stream under load + auxiliary background streams)
+* **Fixed Settings**: Target Rate = 1,000 msgs/s, Payload = 1,024 B, Storage = File, Replicas = 3, Max Bytes = 100 MB, Publishers = 4, Subscribers = 4, Duration = 30s
+* **Primary Objective**: Measure the multi-Raft control-plane tax, heartbeat CPU overhead, and baseline memory growth across 1 to 50 concurrent Raft streams.
+
+| Test ID | Active Streams | Auxiliary Streams | Total Cluster Raft Groups | Cluster Storage Reserved | Explicit Test Objective |
+| :--- | ---:| ---:| ---:| ---:| :--- |
+| **`TEST-SS-1`** | 1 | 0 | 1 | 300 MB | Single-stream baseline performance. |
+| **`TEST-SS-5`** | 1 | 4 | 5 | 1.5 GB | Measure onset of multi-Raft heartbeat loop timers. |
+| **`TEST-SS-20`** | 1 | 19 | 20 | 6.0 GB | Evaluate multi-Raft state machine scaling and memory expansion. |
+| **`TEST-SS-50`** | 1 | 49 | 50 | 15.0 GB (5 GB/node)| High stream density; evaluate Raft heartbeat aggregation efficiency. |
+
+---
+
+### Suite 7: `consumer-fanout` (Consumer Fan-Out & ACK Amplification)
+* **Configuration File**: `suites/consumer-fanout.conf`
+* **Scenario**: `js-pub-sync` (Active primary stream with concurrent durable consumers)
+* **Fixed Settings**: Target Rate = 1,000 msgs/s, Payload = 1,024 B, Storage = File, Replicas = 3, Max Bytes = 1 GB, Publishers = 4, Subscribers = 4, Duration = 30s
+* **Primary Objective**: Measure Persistent Disk write multiplication, network egress amplification, and ACK consensus commit overhead across 1 to 20 durable pull consumers.
+
+| Test ID | Durable Consumers | Total Deliveries | Total ACKs Processed | Explicit Test Objective |
+| :--- | ---:| ---:| ---:| :--- |
+| **`TEST-CF-1`** | 1 | 60,000 | 60,000 | Single-consumer baseline; measure base consumer ACK write overhead. |
+| **`TEST-CF-3`** | 3 | 180,000 | 180,000 | 3x ACK amplification; evaluate concurrent consumer write batching. |
+| **`TEST-CF-10`** | 10 | 600,000 | 600,000 | 10x ACK amplification; detect onset of ACK queueing and latency rise. |
+| **`TEST-CF-20`** | 20 | 1,200,000 | 1,200,000 | 20x ACK amplification; identify hard disk IOPS / ACK consensus knee. |
+
+---
+
+## 3. Preflight & Baseline Validation Tests
+
+Before executing workload suites, the benchmark harness runs two foundational checks:
+
+| Test ID | Name | Objective | Acceptance Criteria |
+| :--- | :--- | :--- | :--- |
+| **`TEST-PRE-0.1`** | Cluster & Storage Preflight | Validate NATS route connectivity, Raft quorum, and storage admission quotas via `/jsz`. | All 3 nodes healthy, routes active, declared storage $\le$ cluster max limits. |
+| **`TEST-IDLE-0.2`** | Background Idle Baseline | Sample 15s of idle cluster metrics before applying workload. | Node CPU $<0.5\%$, RAM baseline recorded, zero disk write activity. |
+
+---
+
+## 4. Result Telemetry & Metrics Schema Mapping
+
+Every test execution generates structured metrics captured in `results.json` and rolled up in `suite-results.json`:
+
+| Schema Field | Source | Description |
+| :--- | :--- | :--- |
+| `client.throughput_msgs_sec` | `pub.csv` | Empirical publishing throughput achieved across the test window. |
+| `client.latency_us.p50` | `pub.csv` | Median end-to-end publish latency in microseconds. |
+| `client.latency_us.p99` | `pub.csv` | 99th percentile tail latency. |
+| `cluster.avg_cpu_pct` | `metrics.json` | Arithmetic mean of CPU utilization across all 3 nodes. |
+| `cluster.total_peak_mem_mb` | `metrics.json` | Sum of peak RAM consumed across all 3 nodes. |
+| `nodes[].disk_growth_bytes` | Directory scan | Net physical bytes written to `/data/jetstream` per node. |
+| `metadata` | `test-config.txt` | Complete snapshot of 20+ runtime parameters for audit repeatability. |

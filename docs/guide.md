@@ -179,10 +179,8 @@ It represents: **"How many messages per second does the cluster route for every 
 * *At 50k msgs/s*: CPU Efficiency climbs to **~157,600 msgs/core** (a 10x improvement in computational efficiency).
 
 #### How it matters for overall sizing:
-* CPU Efficiency enables precise capacity forecasting:
-  $$\text{Estimated Cores Needed} = \frac{\text{Target Production Throughput}}{\text{CPU Efficiency at Expected Load}} \times \text{Safety Factor (e.g. 1.5)}$$
-* If an enterprise plans to process 300,000 msgs/sec of Core NATS traffic with 1 KiB payloads, and the benchmark demonstrates an efficiency of 150,000 msgs/core at high load:
-  $$\text{Estimated Cores} = \left(\frac{300,000}{150,000}\right) \times 1.5 = 3.0\text{ CPU Cores across the cluster}$$
+* CPU Efficiency indicates the computational headroom of the messaging engine under load. At low throughput (1k msgs/s), CPU efficiency is ~15,500 msgs/core due to isolated context switches; at high throughput (50k msgs/s), efficiency expands to ~157,600 msgs/core as socket buffers prime and Go goroutines batch packet processing.
+* Workloads operating well below the saturation knee exhibit ample CPU headroom, while sharp drops in CPU efficiency indicate the onset of socket contention or lock serialization.
 
 ---
 
@@ -202,9 +200,8 @@ The benchmark reports four memory metrics: Baseline RAM, Average RAM, Peak RAM, 
 * **Architectural Inference**: Memory growth on a Core NATS broker is a direct physical measure of **unconsumed messages trapped in server socket buffers**. When subscribers lag behind publishers, the broker buffers data in RAM.
 
 #### How it matters for overall sizing:
-* **Pod Memory Request**: Set to `Baseline RAM + Normal Workload Buffer` (e.g. 256 MB per node for Core NATS; 1 GB to 2 GB for JetStream).
-* **Pod Memory Limit**: Set to at least **2x to 3x baseline** to absorb temporary subscriber lag without being killed by the OS.
-* **Alert Rule**: Trigger a high-priority operational alert if Core NATS container RAM grows by more than 100 MB above baseline, indicating that slow consumers are falling behind.
+* **Container Memory Quotas**: Sizing container memory limits based on "Average RAM" risks Linux OOM killer termination during bursts. Memory limits should provide sufficient headroom (2x to 3x baseline) to absorb temporary subscriber lag.
+* **Operational Alerting**: A steady expansion in Core NATS container RAM indicates that consumers are lagging behind publishers and messages are accumulating in socket buffers.
 
 ---
 
@@ -264,17 +261,12 @@ $$\text{Cluster Egress Bandwidth (TX)} \approx \text{Cluster Ingress Bandwidth (
   * Messages and Raft state logs are synchronously replicated across all 3 cluster nodes.
   * Every node in the quorum writes identical byte volumes (**~32.7 MB per node, totaling 98.0 MB across the cluster** for 30,000 messages of 1 KiB).
 
-#### Disk Sizing Standard for JetStream:
-$$\text{Daily Disk Growth (GB/day)} = \left(\frac{\text{Throughput (msgs/sec)} \times \text{Payload Size (bytes)} \times \text{Replicas}}{10^9}\right) \times 86,400 \times 1.05$$
-
-* At **1,000 msgs/sec** of 1 KiB messages with R=3:
-  $$\text{Storage} = \left(\frac{1000 \times 1024 \times 3}{10^9}\right) \times 86,400 \times 1.05 \approx \mathbf{278\text{ GB / day}}$$
-* At **5,000 msgs/sec** with R=3:
-  $$\text{Storage} \approx \mathbf{1.39\text{ TB / day}}$$
+#### Storage Persistence Characteristics:
+In synchronous JetStream File storage, physical disk writes scale linearly with message throughput, payload size, and the configured replica count ($R$). With $R=3$, each published message is persisted identically across all three quorum replicas along with Raft consensus headers.
 
 #### How it matters for overall sizing:
-1. **Retention Limits are Mandatory**: JetStream streams must define retention limits (`max_bytes`, `max_age`) to prevent unbounded disk growth.
-2. **IOPS & Fsync Requirements**: Synchronous JetStream clusters must be deployed on **local NVMe SSDs or high-IOPS provisioned storage (e.g. AWS EBS gp3/io2 with dedicated IOPS)**. Standard network-attached storage with high fsync latency (> 5 ms) will throttle cluster throughput below 2,000 msgs/sec.
+1. **Retention Limits are Mandatory**: JetStream streams must define retention limits (`max_bytes`, `max_age`, `max_msgs`) to prevent unbounded disk growth.
+2. **IOPS & Fsync Requirements**: Synchronous JetStream clusters must be deployed on **local NVMe SSDs or provisioned high-IOPS storage**. Standard network-attached storage with high fsync latency (> 5 ms) will throttle cluster throughput below 2,000 msgs/sec.
 
 ---
 
@@ -291,44 +283,34 @@ Synthesizing all benchmark dimensions yields the following operational sizing bo
 
 ---
 
-### 5.1 Subject Cardinality & GKE Pod Memory Sizing
+### 5.1 Subject Cardinality & Memory Footprint
 
 Core NATS routes messages using an in-memory prefix trie called the `sublist`.
-* **Routing Mechanism**: Each token in a subject (e.g. `orders.us-east.checkout`) forms a node in the trie. Lookup is $O(K)$ where $K$ is the number of tokens in the hierarchy.
-* **Memory Footprint**: Each distinct subject node registered in the trie consumes approximately 64 to 128 bytes of heap memory, plus subscriber link structures.
-* **Wildcard Traversals**: Wildcard subscriptions (`*` for single-token and `>` for multi-token) require branching traversal during message routing, increasing CPU cache misses.
-* **GKE Pod Memory Sizing Formula**:
-  $$\text{Memory}_{\text{subjects}} \approx N_{\text{subjects}} \times 128\text{ bytes} \times N_{\text{subscriptions}}$$
-  For 100,000 unique subjects with 4 subscriptions per subject:
-  $$\text{RAM Overhead} \approx 100,000 \times 128 \times 4 \approx 51.2\text{ MB}$$
-* **GKE Production Rule**: Add 100 MB of `resources.requests.memory` and `resources.limits.memory` per 100,000 active subjects in the cluster taxonomy.
+* **Routing Mechanism**: Each token in a subject (e.g. `orders.us-east.checkout`) forms a node in the trie. Lookup is $O(K)$ where $K$ is the number of tokens in the hierarchy, proven to be completely invariant to subject cardinality $N$.
+* **Empirical Memory Footprint**: Empirically measured in Report 5, each registered subject entry in the trie accounts for approximately **530 to 580 bytes of RAM per node** (~1.50 KiB across a 3-node cluster).
+* **Wildcard Traversals**: Multi-level wildcard routing (`>`) incurs zero median latency penalty (identical to discrete subjects at 0.33 us) and avoids registering individual child subscriptions.
+* **Operational Memory Guidance**: In environments with dynamic subject generation, allocate memory headroom (~1 MiB per 1,500 active subjects) to accommodate trie structures and Go runtime garbage collector pacing.
 
 ---
 
-### 5.2 Stream Density & GKE Pod vCPU Sizing
+### 5.2 Stream Density & Control-Plane Overhead
 
 In JetStream, every stream operates as an independent Raft consensus group.
 * **Multi-Raft Architecture**: With 50 streams, the cluster maintains 50 distinct Raft state machines, leader elections, and log sequences.
-* **Control-Plane Tax**: Every Raft group periodically exchanges heartbeats (typically every 250ms) and flushes state metadata, consuming idle control-plane CPU cycles even with zero client traffic.
-* **File Descriptors**: Each stream maintains open file descriptors for its message blocks, index files, and Raft consensus logs.
-* **GKE Pod vCPU Sizing Formula**:
-  $$\text{vCPU}_{\text{streams}} \approx 0.02\text{ vCPU} \times N_{\text{streams}}$$
-  For 50 active Raft streams:
-  $$\text{vCPU Overhead} \approx 50 \times 0.02 = 1.0\text{ vCPU}$$
-* **GKE Production Rule**: Provision an additional 20m vCPU in `resources.requests.cpu` per active Raft stream to prevent Raft heartbeat starvation and leader re-elections caused by CFS throttling.
+* **Control-Plane Tax**: Empirically measured in Report 6, the multi-Raft control-plane tax is **~0.07% of a CPU core per stream** across the cluster. Scaling from 1 to 50 streams increased average cluster CPU by only +3.32% (from 12.60% to 15.92%).
+* **Memory Footprint**: Each idle/auxiliary stream state machine and buffer pool accounts for approximately **312 KiB of RAM per node replica** (~0.94 MB cluster-wide).
+* **Operational Guidance**: Multi-stream segregation per tenant or domain service is highly viable without excessive CPU overhead. The primary operational constraint is **strict storage reservation** (`max_bytes` sum across streams must not exceed node `max_file_store`), not CPU or RAM.
 
 ---
 
-### 5.3 Consumer Fan-Out & GKE Persistent Disk Sizing
+### 5.3 Consumer Fan-Out & Storage I/O Dynamics
 
-In JetStream File storage with `explicit` acknowledgment, consumer message reads and ACKs directly generate disk write operations.
-* **ACK Amplification**: When a consumer acknowledges a message, the server must persist the updated consumer sequence state to disk through Raft consensus.
-* **Write IOPS Multiplication**: Each additional durable consumer increases write IOPS on the persistent volume:
-  $$\text{Disk Write Rate (MB/s)} \approx \frac{\text{Rate} \times \text{Size} \times R}{10^6} + \frac{\text{Rate} \times N_{\text{consumers}} \times \text{ACK\_Bytes} \times R}{10^6}$$
-  Where $\text{ACK\_Bytes} \approx 64\text{ B}$ of Raft state record and $R$ is the replica factor.
-* **GKE Persistent Disk Tiering (`pd-balanced` vs `pd-ssd`)**:
-  * `pd-balanced` (baseline 3,000 IOPS): Suitable for up to 5 concurrent consumers at 1,000 msgs/s.
-  * `pd-ssd` (provisioned 6,000 - 10,000+ IOPS): Required for >= 10 concurrent consumers or publish rates exceeding 2,000 msgs/s to maintain sub-5ms commit latency.
+In JetStream File storage with `explicit` acknowledgment, consumer message reads and ACKs directly generate disk write operations and Raft consensus commits.
+* **ACK Consensus Amplification**: When a consumer acknowledges a message, the server must persist the updated consumer sequence state to disk through Raft consensus. For 20 consumers, 1 publish generates 20 incoming ACKs and 20 consensus state updates.
+* **Write Volume Amplification**: Empirically measured in Report 7, active durable consumers increase physical disk writes by up to **+65.4%** over baseline publish writes (expanding disk growth from 32.4 MB/node to 53.6 MB/node for 60,000 messages) purely for ACK journal logs.
+* **Memory Escalation**: Each active durable consumer managing 60,000 deliveries and inflight ACK windows requires approximately **19.0 MB of cluster RAM (~6.3 MB per node)**.
+* **The Saturation Knee**: Under standard virtualized block storage, 10 consumers induce latency queueing (P50 jumps from 1.07 ms to 3.74 ms), and 20 consumers saturate physical IOPS, throttling throughput by 50% (down to 494 msgs/s) while P99 latency spikes to 17.7 ms.
+* **Storage Tiering Guidance**: For streams with $\le 5$ durable consumers, standard balanced storage is sufficient. For streams with $> 5$ durable consumers or publish rates exceeding 1,000 msgs/s, clusters require high-performance provisioned IOPS storage (e.g. dedicated SSD or NVMe) to prevent ACK write serialization.
 
 ---
 

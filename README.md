@@ -28,10 +28,7 @@ flowchart TD
     HAProxy -->|Round Robin| N3
 ```
 
-- **Client Isolation**: The benchmark runner executes on the host machine outside container resource limits.
-- **L4 Distribution**: Client connections are balanced across backend NATS nodes via HAProxy round-robin.
-- **Resource Constraints**: Enforced at container level (1.0 CPU and 1 GB RAM per NATS node; 0.5 CPU and 512 MB for HAProxy).
-- **Telemetry Collection**: Podman statistics collector samples per-container CPU, RAM, Network RX/TX, and Disk Block Read/Write in the background.
+Client connections access the 3-node full-mesh NATS cluster via an HAProxy L4 TCP load balancer (`:4222`), while background telemetry collectors sample per-container CPU, RAM, Network I/O, and Disk Block I/O.
 
 ---
 
@@ -45,7 +42,7 @@ Ensure the following tools are installed on your workstation:
 - **jq**
 
 ### Podman Machine Sizing (macOS)
-The benchmarking cluster requests up to **3.5 vCPUs** and **3.5 GiB RAM** across the 3 NATS nodes and HAProxy. To provide headroom for macOS hypervisor daemons (`gvproxy`, `virtiofsd`), ensure your Podman machine has at least **5 vCPUs** and **6 GiB RAM**:
+The benchmarking cluster requests up to **3.5 vCPUs** and **3.5 GiB RAM** across the 3 NATS nodes and HAProxy. To provide headroom for macOS hypervisor daemons (`gvproxy`, `virtiofsd`), ensure your Podman machine has at least **6 vCPUs** and **8 GiB RAM**:
 
 ```bash
 # Check current Podman VM resource allocations:
@@ -72,7 +69,7 @@ podman compose up -d
 podman ps
 
 # 3. Access HAProxy live health and connection statistics:
-open http://127.0.0.1:8404
+open http://127.0.0.1:8404/stats
 ```
 
 To tear down the environment after testing:
@@ -111,13 +108,18 @@ MSGS=30000                      # --msgs (used when throughput is 0 or duration 
 
 # Core NATS Routing Patterns
 SUBJECT="benchmark.core.test"   # <subject>
+PUB_SUBJECT=""                  # Publisher subject override (defaults to SUBJECT)
+SUB_SUBJECT=""                  # Subscriber subject override (e.g. for wildcard > routing)
 QUEUE=""                        # --queue (blank for broadcast fan-out; set group name for load balancing)
 MULTISUBJECT=false              # --multisubject
 MULTISUBJECT_MAX=100000         # --multisubjectmax
+MULTISUBJECT_RANDOM=false       # --multisubjectrandomize
 
 # JetStream Specific Options (active when SCENARIO is js-*)
 STREAM="BENCH_STREAM"           # --stream
+STREAM_COUNT=1                  # Number of concurrent JetStream streams (for stream density testing)
 CONSUMER="bench-consumer"       # --consumer
+CONSUMER_COUNT=0                # Concurrent active consumers (0 disables background consume)
 STORAGE="file"                  # file | memory
 REPLICAS=3                      # Stream replication factor (1 or 3)
 MAX_BYTES="5GB"                 # Stream storage quota
@@ -200,57 +202,39 @@ Execute an entire test matrix unattended with automated cluster isolation, 10-se
 ```
 
 Available Predefined Suites (`suites/*.conf`):
-- `jetstream-guarantees.conf`: Compares Core NATS, JetStream Memory R=3, JetStream File R=1, and JetStream File R=3.
-- `core-ladder.conf`: Core NATS saturation ladder across offered rates (1k to 100k msgs/s).
-- `jetstream-ladder.conf`: JetStream synchronous write saturation ladder (250 to 10,000 msgs/s).
-- `payload-scaling.conf`: Payload dimension scaling from 128 B to 32 KiB.
+- `core-ladder`: Core NATS throughput saturation ladder across offered rates (1k to 100k msgs/s).
+- `payload-scaling`: Message payload dimension scaling from 128 B to 32 KiB.
+- `subject-cardinality`: Prefix trie routing and taxonomy scaling (1 to 10,000 subjects, wildcard `>`).
+- `jetstream-ladder`: JetStream synchronous File R=3 write saturation ladder (250 to 10,000 msgs/s).
+- `jetstream-guarantees`: Cost of guarantees (Core in-memory vs Memory R=3 vs File R=1/R=3).
+- `stream-scaling`: Multi-Raft density scaling across 1 to 50 concurrent streams.
+- `consumer-fanout`: Persistent Disk write multiplication and ACK amplification across 1 to 20 durable consumers.
 
 ---
 
 ## 6. Supported Workload Scenarios
 
-### A. Core NATS
-1. **Publish + Subscribe (`SCENARIO="pubsub"`)**:
-   - Publishers and subscribers run simultaneously.
-   - **Broadcast Mode (`QUEUE=""`)**: Every subscriber receives a full copy of every published message (Fan-out = Subscriber Concurrency).
-   - **Queue Group Mode (`QUEUE="<queue_name>"`)**: Subscribers join a shared queue group, load-balancing messages across workers (Fan-out = 1x).
-2. **Publish-Only (`SCENARIO="publish"`)**:
-   - Publishers send messages without active subscribers to measure raw publishing throughput, connection handling, and server ingress routing without delivery costs.
-3. **Subscribe-Only (`SCENARIO="subscribe"`)**:
-   - Measures subscriber ingress consumption, connection handling, and delivery processing overhead.
+The benchmark harness executes the **End-to-End Publish/Subscribe Operational Model**, evaluating simultaneous publishing, broker routing/persistence, and subscriber/consumer deliveries:
 
-### B. JetStream
-1. **Synchronous Publish (`SCENARIO="js-pub-sync"`)**:
-   - Publishers append messages to the stream and wait for consensus commit acknowledgment before proceeding (`nats bench js pub sync`).
-2. **Asynchronous Publish (`SCENARIO="js-pub-async"`)**:
-   - Pipelined asynchronous publishing without per-message round-trip wait (`nats bench js pub async`).
-3. **Pull Consume (`SCENARIO="js-consume"`)**:
-   - Durable pull consumers replay and acknowledge messages in batches from a pre-populated stream (`nats bench js consume`).
+| Scenario ID | Engine | Pattern | Operational Delivery Flow |
+| :--- | :--- | :--- | :--- |
+| **`pubsub`** (`QUEUE=""`) | Core NATS | Broadcast Fan-Out | 1:N delivery to all active subscribers; egress scales linearly. |
+| **`pubsub`** (`QUEUE="name"`) | Core NATS | Queue Groups | 1:1 load-balanced worker delivery; egress equals ingress. |
+| **`js-pub-sync`** | JetStream | Replicated Publish | Synchronous append waiting for Raft quorum commit (`PUB-ACK`). |
+| **`js-pub-sync`** (`CONSUMER_COUNT>0`)| JetStream | Consumer Fan-Out | Replicated publish with concurrent pull consumers and explicit ACKs. |
 
 ---
 
-## 7. Results & Output Artifacts
+## 7. Results & Primary Deliverables
 
-Every benchmark run creates an organized output directory under `results/<TEST_ID>/` (or `results/<TEST_ID>/<TIMESTAMP>/` if `TIMESTAMP_SUBFOLDER=true`):
+Every benchmark execution produces structured output under `results/<TEST_ID>/` (or `results/suites/<SUITE_ID>/<TIMESTAMP>/` for automated suites):
 
-| File | Description | Primary Purpose |
-| :--- | :--- | :--- |
-| **`results.json`** | Canonical machine-readable benchmark results containing test metadata, client latency percentiles, achieved throughput, cluster rollups, and per-node resource metrics. | Automated data collection, CI/CD, trend analysis |
-| **`report.html`** | Standalone, self-contained offline HTML report with responsive KPI cards, latency percentiles, node infrastructure table, cluster totals, console logs, and visual configurator. | Visual review, architecture reports, executive dashboards |
-| **`metrics.json`** | Time-series container resource telemetry (CPU, memory, net RX/TX, block read/write, disk growth) sampled across baseline and workload phases. | Deep-dive telemetry, capacity analysis |
-| **`pub.csv`** | Native CSV benchmark output from publisher client (MsgCount, MsgBytes, MsgsPerSec, BytesPerSec, and full latency percentiles). | Statistical analysis, audit trail |
-| **`sub.csv`** | Native CSV benchmark output from subscriber client. | Delivery verification, bandwidth confirmation |
-| **`test-config.txt`** | Complete snapshot of runtime parameters and configurations used during the test. | Test auditability, repeatability |
-| **`workload_outcome.txt`** | Workload completion state (`COMPLETED`, `TIMEOUT`, `INTERRUPTED`). | Automation pipelines, status validation |
-
-### Executive Suite Deliverables
-
-When executing benchmark suites via `./suite.sh <suite-name>`, a consolidated suite directory is created under `results/suites/<SUITE_ID>/<TIMESTAMP>/` containing all individual test runs plus two executive deliverables:
-
-| File | Description | Primary Purpose |
-| :--- | :--- | :--- |
-| **`suite-results.json`** | Canonical JSON rollup aggregating all child test runs, containing executive sizing boundaries (sustained capacity, saturation knee, peak throughput, cluster peak headroom). | Tooling, long-term capacity tracking |
-| **`executive-report.html`** / **`suite-report.html`** | Offline executive dashboard featuring: (1) Sizing & Capacity Recommendation cards, (2) Pure SVG Throughput vs Latency Saturation Curve ("hockey stick" curve) with P50/P99 latency knee callouts, (3) Comparative "Cost of Guarantees" Matrix with direct links to per-test diagnostic reports, and (4) Interactive child-run drill-down drawer. Includes professional print/PDF styling. | Architecture reviews, leadership presentations, capacity sign-off |
+| Deliverable | Format | Scope | Primary Purpose |
+| :--- | :--- | :--- | :--- |
+| **`report.html`** | HTML | Single Run | Standalone offline dashboard with responsive KPI cards, latency tables, per-node hardware charts, and console logs. |
+| **`results.json`** | JSON | Single Run | Machine-readable metrics: test metadata, client latency percentiles, achieved throughput, and cluster rollups. |
+| **`suite-report.html`** / **`executive-report.html`** | HTML | Suite Rollup | Executive dashboard with SVG throughput vs. latency saturation curves, comparative matrices, and drill-down drawer. |
+| **`suite-results.json`** | JSON | Suite Rollup | Aggregated JSON rollup capturing sustained capacity, saturation knees, and cluster peak headroom across all runs. |
 
 ---
 
@@ -262,9 +246,10 @@ When executing benchmark suites via `./suite.sh <suite-name>`, a consolidated su
 
 ---
 
-## 9. Next Steps & Cross-References
+## 9. Documentation Index
 
-- For the detailed metric definitions, calculation formulas, and enterprise sizing rules of thumb, see [docs/METRICS_AND_SIZING_GUIDE.md](docs/METRICS_AND_SIZING_GUIDE.md).
-- For the Core NATS test case inventory and run cards, see [docs/tests.md](docs/tests.md).
-- For the JetStream test case inventory and parameter sweep matrices, see [docs/tests-jetstream.md](docs/tests-jetstream.md).
-- For the architectural design, evaluation methodology, and capacity planning standards, see [docs/benchmarking.md](docs/benchmarking.md).
+- **Architecture & Methodology**: `docs/benchmarking.md` (System topology, operational model, capacity lifecycle).
+- **Test Inventory & Matrices**: `docs/tests.md` (Consolidated 7-suite inventory, parameters, execution flags).
+- **Telemetry & Sizing Reference**: `docs/guide.md` (Metric definitions, latency quantiles, empirical bottleneck rules).
+- **R&D Notes & Technical FAQs**: `docs/notes.md` (OFAT scientific rationale, standards citations, Two-Tier calibration).
+- **Modeling Sufficiency**: `docs/model.md` (Decadal span sampling proof, USL regression, quantization law).
