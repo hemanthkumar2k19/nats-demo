@@ -123,8 +123,9 @@ def main():
     suite_title = sys.argv[3] if len(sys.argv) > 3 else ""
     suite_desc = sys.argv[4] if len(sys.argv) > 4 else ""
 
-    # Attempt to load canonical title and description from suite configuration file
+    # Attempt to load canonical title, description, and test case sequence from suite configuration file
     conf_candidate = ROOT_DIR / "suites" / f"{suite_id}.conf"
+    canonical_order = []
     if conf_candidate.exists():
         for line in conf_candidate.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -132,6 +133,9 @@ def main():
                 suite_title = line.split("=", 1)[1].strip("\"'")
             elif not suite_desc and line.startswith("SUITE_DESCRIPTION="):
                 suite_desc = line.split("=", 1)[1].strip("\"'")
+            elif "|" in line and (line.startswith('"TEST-') or line.startswith("'TEST-")):
+                case_id = line.strip("\"'").split("|", 1)[0].strip()
+                canonical_order.append(case_id)
 
     if not suite_title:
         suite_title = f"{suite_id.replace('-', ' ').title()} Suite" if suite_id != suite_timestamp else f"Benchmark Suite: {suite_id}"
@@ -169,19 +173,42 @@ def main():
             except Exception:
                 pass
 
-            runs.append({
+            fallback_meta = {
+                "test_description": meta.get("test_description", child.name),
+                "scenario": meta.get("scenario", "unknown"),
+                "target_rate": safe_int(meta.get("target_publish_msgs_per_sec", 0)),
+                "payload_size": meta.get("message_size_bytes", "1024B"),
+                "publisher_concurrency": safe_int(meta.get("publisher_concurrency", 1), 1),
+                "subscriber_concurrency": safe_int(meta.get("subscriber_concurrency", 1), 1),
+                "duration": meta.get("nominal_duration_seconds", "0s"),
+                "messaging_type": meta.get("messaging_type", "Core NATS")
+            }
+            for key in (
+                "subject", "pub_subject", "sub_subject", "queue_name",
+                "multisubject", "multisubject_max", "multisubject_random",
+                "stream_name", "stream_count", "storage_type", "replication_factor",
+                "max_bytes", "retention_policy", "consumer_name", "consumer_count",
+                "consumer_ack_policy", "consumer_batch_size"
+            ):
+                if key in meta and meta[key]:
+                    fallback_meta[key] = meta[key]
+
+            err_file = child / "error.log"
+            err_phase = ""
+            err_msg = ""
+            if err_file.exists():
+                for line in err_file.read_text(errors="replace").splitlines():
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        if k.strip() == "error_phase":
+                            err_phase = v.strip()
+                        elif k.strip() == "error_message":
+                            err_msg = v.strip()
+
+            fallback_record = {
                 "test_id": child.name,
                 "status": "FAILED",
-                "metadata": {
-                    "test_description": meta.get("test_description", child.name),
-                    "scenario": meta.get("scenario", "unknown"),
-                    "target_rate": safe_int(meta.get("target_publish_msgs_per_sec", 0)),
-                    "payload_size": meta.get("message_size_bytes", "1024B"),
-                    "publisher_concurrency": safe_int(meta.get("publisher_concurrency", 1), 1),
-                    "subscriber_concurrency": safe_int(meta.get("subscriber_concurrency", 1), 1),
-                    "duration": meta.get("nominal_duration_seconds", "0s"),
-                    "messaging_type": meta.get("messaging_type", "Core NATS")
-                },
+                "metadata": fallback_meta,
                 "client": {
                     "published_msgs": 0,
                     "received_msgs": 0,
@@ -198,13 +225,26 @@ def main():
                     "cpu_efficiency_msgs_per_core": 0.0
                 },
                 "nodes": []
-            })
+            }
+            if err_msg:
+                fallback_record["error_message"] = err_msg
+            if err_phase:
+                fallback_record["error_phase"] = err_phase
+            runs.append(fallback_record)
 
-    # Sort runs ascending by target rate and payload size for proper sequential ladders
-    runs.sort(key=lambda r: (
-        safe_int((r.get("metadata") or {}).get("target_rate", 0)),
-        parse_payload_bytes((r.get("metadata") or {}).get("payload_size", "0B"))
-    ))
+    # Sort runs according to canonical suite definition order, falling back to rate and payload size
+    def sort_key(r):
+        t_id = r.get("test_id", "")
+        if t_id in canonical_order:
+            return (0, canonical_order.index(t_id), 0, 0)
+        return (
+            1,
+            0,
+            safe_int((r.get("metadata") or {}).get("target_rate", 0)),
+            parse_payload_bytes((r.get("metadata") or {}).get("payload_size", "0B"))
+        )
+
+    runs.sort(key=sort_key)
 
     recs = compute_recommendations(runs)
 

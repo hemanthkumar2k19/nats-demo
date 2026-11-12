@@ -43,6 +43,12 @@ CONSUMER="${15:-bench-consumer}"
 BATCH="${16:-500}"
 ACKS="${17:-explicit}"
 
+: "${PUB_SUBJECT:=${SUBJECT}}"
+: "${SUB_SUBJECT:=${SUBJECT}}"
+: "${MULTISUBJECT_RANDOM:=false}"
+: "${STREAM_COUNT:=1}"
+: "${CONSUMER_COUNT:=0}"
+
 PUB_CSV="${RESULT_DIR}/pub.csv"
 SUB_CSV="${RESULT_DIR}/sub.csv"
 OUTCOME_FILE="${RESULT_DIR}/workload_outcome.txt"
@@ -52,7 +58,12 @@ SUB_FLAGS=(--no-progress --csv="$SUB_CSV")
 
 if [[ "$MULTISUBJECT" == "true" ]]; then
   PUB_FLAGS+=(--multisubject --multisubjectmax="$MULTI_MAX")
-  SUB_FLAGS+=(--multisubject)
+  if [[ "$MULTISUBJECT_RANDOM" == "true" ]]; then
+    PUB_FLAGS+=(--multisubjectrandomize)
+  fi
+  if [[ "$SUB_SUBJECT" != *">"* && "$SUB_SUBJECT" != *"*"* ]]; then
+    SUB_FLAGS+=(--multisubject)
+  fi
 fi
 
 SUB_PIDS=()
@@ -90,14 +101,14 @@ case "$SCENARIO" in
       SHARE=$((TOTAL / SUBS))
       (( SHARE > 0 )) || SHARE=1
       for ((i=1; i<=SUBS; i++)); do
-        nats --server "$NATS_URL" sub --queue="$QUEUE" --count="$SHARE" --raw "$SUBJECT" > /dev/null 2>&1 &
+        nats --server "$NATS_URL" sub --queue="$QUEUE" --count="$SHARE" --raw "$SUB_SUBJECT" > /dev/null 2>&1 &
         SUB_PIDS+=($!)
       done
     else
       # Broadcast fan-out pattern:
       # Without a queue group, every subscriber receives a full copy of every message.
       # The aggregate messages received across all subscribers will equal TOTAL * SUBS.
-      nats --server "$NATS_URL" bench sub "$SUBJECT" \
+      nats --server "$NATS_URL" bench sub "$SUB_SUBJECT" \
         --clients "$SUBS" \
         --msgs "$TOTAL" \
         --size "$SIZE" \
@@ -108,7 +119,7 @@ case "$SCENARIO" in
 
     # Run publisher with native duration and csv
     PUB_ARGS=(
-      nats --server "$NATS_URL" bench pub "$SUBJECT"
+      nats --server "$NATS_URL" bench pub "$PUB_SUBJECT"
       --clients "$PUBS"
       --size "$SIZE"
       ${PUB_FLAGS[@]+"${PUB_FLAGS[@]}"}
@@ -127,7 +138,7 @@ case "$SCENARIO" in
 
   publish)
     PUB_ARGS=(
-      nats --server "$NATS_URL" bench pub "$SUBJECT"
+      nats --server "$NATS_URL" bench pub "$PUB_SUBJECT"
       --clients "$PUBS"
       --size "$SIZE"
       ${PUB_FLAGS[@]+"${PUB_FLAGS[@]}"}
@@ -145,7 +156,7 @@ case "$SCENARIO" in
     ;;
 
   subscribe)
-    nats --server "$NATS_URL" bench sub "$SUBJECT" \
+    nats --server "$NATS_URL" bench sub "$SUB_SUBJECT" \
       --clients "$SUBS" \
       --msgs "$TOTAL" \
       --size "$SIZE" \
@@ -157,8 +168,28 @@ case "$SCENARIO" in
     MODE="sync"
     [[ "$SCENARIO" == "js-pub-async" ]] && MODE="async"
 
+    # In consumer fan-out benchmark scenarios, launch background JetStream consumers
+    # to acknowledge messages concurrently with the publisher, capturing real-time
+    # disk write IOPS and Raft consensus tax of consumer fan-out.
+    if [[ "$CONSUMER_COUNT" -gt 0 ]]; then
+      echo "Launching $CONSUMER_COUNT concurrent background JetStream consumer(s)..."
+      for ((j=1; j<=CONSUMER_COUNT; j++)); do
+        c_name="${CONSUMER}-${j}"
+        nats --server "$NATS_URL" bench js consume \
+          --stream "$STREAM" \
+          --consumer "$c_name" \
+          --clients 1 \
+          --batch "$BATCH" \
+          --acks "$ACKS" \
+          --msgs "$TOTAL" \
+          --no-progress > /dev/null 2>&1 &
+        SUB_PIDS+=($!)
+      done
+      sleep 1
+    fi
+
     PUB_ARGS=(
-      nats --server "$NATS_URL" bench js pub "$MODE" "$SUBJECT"
+      nats --server "$NATS_URL" bench js pub "$MODE" "$PUB_SUBJECT"
       --stream "$STREAM"
       --clients "$PUBS"
       --size "$SIZE"

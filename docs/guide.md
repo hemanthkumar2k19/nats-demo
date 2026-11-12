@@ -291,6 +291,49 @@ Synthesizing all benchmark dimensions yields the following operational sizing bo
 
 ---
 
+### 5.1 Subject Cardinality & GKE Pod Memory Sizing
+
+Core NATS routes messages using an in-memory prefix trie called the `sublist`.
+* **Routing Mechanism**: Each token in a subject (e.g. `orders.us-east.checkout`) forms a node in the trie. Lookup is $O(K)$ where $K$ is the number of tokens in the hierarchy.
+* **Memory Footprint**: Each distinct subject node registered in the trie consumes approximately 64 to 128 bytes of heap memory, plus subscriber link structures.
+* **Wildcard Traversals**: Wildcard subscriptions (`*` for single-token and `>` for multi-token) require branching traversal during message routing, increasing CPU cache misses.
+* **GKE Pod Memory Sizing Formula**:
+  $$\text{Memory}_{\text{subjects}} \approx N_{\text{subjects}} \times 128\text{ bytes} \times N_{\text{subscriptions}}$$
+  For 100,000 unique subjects with 4 subscriptions per subject:
+  $$\text{RAM Overhead} \approx 100,000 \times 128 \times 4 \approx 51.2\text{ MB}$$
+* **GKE Production Rule**: Add 100 MB of `resources.requests.memory` and `resources.limits.memory` per 100,000 active subjects in the cluster taxonomy.
+
+---
+
+### 5.2 Stream Density & GKE Pod vCPU Sizing
+
+In JetStream, every stream operates as an independent Raft consensus group.
+* **Multi-Raft Architecture**: With 50 streams, the cluster maintains 50 distinct Raft state machines, leader elections, and log sequences.
+* **Control-Plane Tax**: Every Raft group periodically exchanges heartbeats (typically every 250ms) and flushes state metadata, consuming idle control-plane CPU cycles even with zero client traffic.
+* **File Descriptors**: Each stream maintains open file descriptors for its message blocks, index files, and Raft consensus logs.
+* **GKE Pod vCPU Sizing Formula**:
+  $$\text{vCPU}_{\text{streams}} \approx 0.02\text{ vCPU} \times N_{\text{streams}}$$
+  For 50 active Raft streams:
+  $$\text{vCPU Overhead} \approx 50 \times 0.02 = 1.0\text{ vCPU}$$
+* **GKE Production Rule**: Provision an additional 20m vCPU in `resources.requests.cpu` per active Raft stream to prevent Raft heartbeat starvation and leader re-elections caused by CFS throttling.
+
+---
+
+### 5.3 Consumer Fan-Out & GKE Persistent Disk Sizing
+
+In JetStream File storage with `explicit` acknowledgment, consumer message reads and ACKs directly generate disk write operations.
+* **ACK Amplification**: When a consumer acknowledges a message, the server must persist the updated consumer sequence state to disk through Raft consensus.
+* **Write IOPS Multiplication**: Each additional durable consumer increases write IOPS on the persistent volume:
+  $$\text{Disk Write Rate (MB/s)} \approx \frac{\text{Rate} \times \text{Size} \times R}{10^6} + \frac{\text{Rate} \times N_{\text{consumers}} \times \text{ACK\_Bytes} \times R}{10^6}$$
+  Where $\text{ACK\_Bytes} \approx 64\text{ B}$ of Raft state record and $R$ is the replica factor.
+* **GKE Persistent Disk Tiering (`pd-balanced` vs `pd-ssd`)**:
+  * `pd-balanced` (baseline 3,000 IOPS): Suitable for up to 5 concurrent consumers at 1,000 msgs/s.
+  * `pd-ssd` (provisioned 6,000 - 10,000+ IOPS): Required for >= 10 concurrent consumers or publish rates exceeding 2,000 msgs/s to maintain sub-5ms commit latency.
+
+---
+
+---
+
 ## 6. Sizing Rules of Thumb for Platform Engineers
 
 1. **The 70% Network Bandwidth Rule**:

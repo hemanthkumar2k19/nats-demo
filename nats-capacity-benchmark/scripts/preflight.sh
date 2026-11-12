@@ -51,6 +51,10 @@ preflight_checks() {
       echo "FAIL: JetStream is not enabled or accessible at ${NATS_URL}"
       failures=$((failures + 1))
     fi
+
+    if ! "${ROOT_DIR}/scripts/js_stream.sh" admission "${STORAGE:-file}" "${STREAM_COUNT:-1}" "${MAX_BYTES:-5GB}"; then
+      failures=$((failures + 1))
+    fi
   elif [[ -z "${REPLICATION_STREAMS:-}" ]]; then
     echo "SKIP: REPLICATION_STREAMS is not configured"
   else

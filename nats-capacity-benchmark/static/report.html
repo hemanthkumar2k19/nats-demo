@@ -60,6 +60,39 @@
     .badge-timeout { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
     .badge-idle { background: var(--border); color: var(--text-dim); }
 
+    .badge-variant {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: 0.2px;
+      background: rgba(88, 166, 255, 0.15);
+      color: #58a6ff;
+      border: 1px solid rgba(88, 166, 255, 0.3);
+    }
+    .badge-variant-wildcard {
+      background: rgba(210, 153, 34, 0.15);
+      color: #d29922;
+      border: 1px solid rgba(210, 153, 34, 0.3);
+    }
+    .badge-variant-js {
+      background: rgba(163, 113, 247, 0.15);
+      color: #bc8cff;
+      border: 1px solid rgba(163, 113, 247, 0.3);
+    }
+    .badge-variant-fanout {
+      background: rgba(248, 81, 73, 0.15);
+      color: #f85149;
+      border: 1px solid rgba(248, 81, 73, 0.3);
+    }
+    .badge-variant-stream {
+      background: rgba(56, 139, 253, 0.15);
+      color: #79c0ff;
+      border: 1px solid rgba(56, 139, 253, 0.3);
+    }
+
     .btn {
       background: #21262d;
       color: var(--text-bright);
@@ -255,6 +288,29 @@
       </div>
 
       <div id="data-view" style="display:none;">
+        <!-- Run Identification & Test Focus Banner -->
+        <div class="card" id="run-focus-card" style="margin-bottom:16px; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+          <div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span id="run-focus-title" style="font-size:16px; font-weight:600; color:var(--text-bright);">-</span>
+              <span id="run-focus-badge" class="badge badge-variant">-</span>
+            </div>
+            <div id="run-focus-desc" style="font-size:12px; color:var(--text-dim); margin-top:4px;">-</div>
+          </div>
+          <div id="run-focus-pills" style="display:flex; gap:8px; flex-wrap:wrap; font-size:12px;"></div>
+        </div>
+
+        <!-- Error Alert Banner (visible when status is FAILED) -->
+        <div id="error-alert-card" class="card" style="display:none; border:1px solid var(--red); background:rgba(248,81,73,0.12); margin-bottom:16px;">
+          <div style="display:flex; align-items:flex-start; gap:12px;">
+            <div style="color:var(--red); font-size:18px; font-weight:bold; line-height:1;">!</div>
+            <div style="flex:1;">
+              <div id="error-alert-title" style="color:var(--red); font-weight:600; font-size:14px; margin-bottom:4px;">Benchmark Execution Failed</div>
+              <div id="error-alert-body" style="color:var(--text-bright); font-family:monospace; font-size:12px; white-space:pre-wrap; word-break:break-all;"></div>
+            </div>
+          </div>
+        </div>
+
         <div class="grid-kpi">
           <div class="kpi-card">
             <div class="label">Achieved Throughput</div>
@@ -399,6 +455,7 @@
             <thead>
               <tr>
                 <th>Test ID</th>
+                <th style="min-width:220px;">Test Description &amp; Focus</th>
                 <th>Target Rate</th>
                 <th>Achieved Rate</th>
                 <th>P50 Latency</th>
@@ -414,7 +471,7 @@
               </tr>
             </thead>
             <tbody id="suite-rows">
-              <tr><td colspan="13" style="text-align:center; color:var(--text-dim);">No suite data loaded</td></tr>
+              <tr><td colspan="14" style="text-align:center; color:var(--text-dim);">No suite data loaded</td></tr>
             </tbody>
           </table>
         </div>
@@ -539,6 +596,129 @@
       return isNaN(val) || val <= 0 ? 30.0 : val;
     }
 
+    const cleanLabels = {
+      test_description: 'Test Description',
+      messaging_type: 'Messaging Engine',
+      scenario: 'Workload Scenario',
+      target_rate: 'Target Rate (msgs/sec)',
+      payload_size: 'Message Payload Size',
+      publisher_concurrency: 'Publisher Concurrency',
+      subscriber_concurrency: 'Subscriber Concurrency',
+      duration: 'Nominal Duration',
+      subject: 'Primary Subject Hierarchy',
+      pub_subject: 'Publisher Target Subject',
+      sub_subject: 'Subscriber Target Subject',
+      queue_name: 'Queue Group Name',
+      multisubject: 'Multi-Subject Mode',
+      multisubject_max: 'Max Multi-Subject Cardinality',
+      multisubject_random: 'Multi-Subject Randomization',
+      stream_name: 'JetStream Primary Stream',
+      stream_count: 'Concurrent JetStream Streams',
+      storage_type: 'JetStream Storage Medium',
+      replication_factor: 'Raft Replication Factor',
+      max_bytes: 'Stream Storage Quota',
+      retention_policy: 'Stream Retention Policy',
+      consumer_name: 'JetStream Consumer Name',
+      consumer_count: 'Concurrent Active Consumers',
+      consumer_ack_policy: 'Consumer Acknowledgment Policy',
+      consumer_batch_size: 'Consumer Batch Size'
+    };
+
+    function getVariantBadge(run, allRuns = []) {
+      const m = run.metadata || {};
+      
+      // 1. Wildcard routing
+      if ((m.sub_subject && m.sub_subject.includes('>')) || (m.subject && m.subject.includes('>')) || (m.test_description && m.test_description.toLowerCase().includes('wildcard'))) {
+        return { label: 'Wildcard (>)', className: 'badge-variant badge-variant-wildcard' };
+      }
+
+      // 2. Multisubject cardinality
+      if (m.multisubject === 'true' || m.multisubject === true || (m.multisubject_max && parseInt(m.multisubject_max) > 0)) {
+        const num = parseInt(m.multisubject_max);
+        const max = num >= 1000 ? (num / 1000) + 'k' : (m.multisubject_max || 'Multi');
+        return { label: `${max} subjects`, className: 'badge-variant' };
+      }
+      const anyMultisubject = allRuns.some(r => r.metadata?.multisubject === 'true' || r.metadata?.multisubject === true);
+      if (anyMultisubject && (m.multisubject === 'false' || !m.multisubject)) {
+        return { label: '1 subject', className: 'badge-variant' };
+      }
+
+      // 3. Stream density
+      if (m.stream_count && parseInt(m.stream_count) > 1) {
+        return { label: `${m.stream_count} Streams`, className: 'badge-variant badge-variant-stream' };
+      }
+      const anyStreamScaling = allRuns.some(r => parseInt(r.metadata?.stream_count || 1) > 1);
+      if (anyStreamScaling && parseInt(m.stream_count || 1) === 1) {
+        return { label: '1 Stream', className: 'badge-variant badge-variant-stream' };
+      }
+
+      // 4. Consumer fan-out
+      if (m.consumer_count && parseInt(m.consumer_count) > 0) {
+        return { label: `${m.consumer_count} Consumer${parseInt(m.consumer_count) > 1 ? 's' : ''}`, className: 'badge-variant badge-variant-fanout' };
+      }
+      const anyConsumerScaling = allRuns.some(r => parseInt(r.metadata?.consumer_count || 0) > 0);
+      if (anyConsumerScaling && parseInt(m.consumer_count || 0) === 0) {
+        return { label: '0 Consumers', className: 'badge-variant badge-variant-fanout' };
+      }
+
+      // 5. JetStream Guarantees (Memory vs File, R=1 vs R=3, Core NATS)
+      const hasVaryingStorage = allRuns.some(r => (r.metadata?.storage_type || '') !== (allRuns[0]?.metadata?.storage_type || '')) ||
+                               allRuns.some(r => (r.metadata?.messaging_type || '') !== (allRuns[0]?.metadata?.messaging_type || ''));
+      if (hasVaryingStorage || m.messaging_type === 'JetStream') {
+        if (m.messaging_type === 'Core NATS') {
+          return { label: 'Core In-Memory', className: 'badge-variant' };
+        }
+        const st = (m.storage_type || 'file').charAt(0).toUpperCase() + (m.storage_type || 'file').slice(1);
+        const rep = m.replication_factor ? ` R=${m.replication_factor}` : '';
+        return { label: `${st}${rep}`, className: 'badge-variant badge-variant-js' };
+      }
+
+      // 6. Payload dimension scaling
+      const hasVaryingPayload = allRuns.some(r => (r.metadata?.payload_size || '') !== (allRuns[0]?.metadata?.payload_size || ''));
+      if (hasVaryingPayload) {
+        return { label: m.payload_size || '1024B', className: 'badge-variant' };
+      }
+
+      // 7. Throughput ladder (default)
+      if (m.target_rate && parseInt(m.target_rate) > 0) {
+        const rate = parseInt(m.target_rate);
+        const rateStr = rate >= 1000 ? (rate / 1000) + 'k /s' : rate + ' /s';
+        return { label: rateStr, className: 'badge-variant' };
+      }
+
+      return { label: m.scenario || 'Benchmark', className: 'badge-variant' };
+    }
+
+    function renderParameterPills(m) {
+      const pills = [];
+      if (m.subject) {
+        let subjText = m.subject;
+        if (m.multisubject === 'true' || m.multisubject === true) {
+          subjText += ` (${m.multisubject_max || 'Multi'} subjects)`;
+        }
+        pills.push(`<span class="badge" style="background:#21262d; border:1px solid var(--border); color:var(--text); text-transform:none;">Subject: <strong class="mono" style="color:#79c0ff;">${subjText}</strong></span>`);
+      }
+      if (m.sub_subject && m.sub_subject !== m.subject) {
+        pills.push(`<span class="badge" style="background:#21262d; border:1px solid var(--border); color:var(--text); text-transform:none;">Sub: <strong class="mono" style="color:#d29922;">${m.sub_subject}</strong></span>`);
+      }
+      if (m.queue_name) {
+        pills.push(`<span class="badge" style="background:#21262d; border:1px solid var(--border); color:var(--text); text-transform:none;">Queue: <strong class="mono">${m.queue_name}</strong></span>`);
+      }
+      if (m.stream_count && parseInt(m.stream_count) > 1) {
+        pills.push(`<span class="badge" style="background:#21262d; border:1px solid var(--border); color:var(--text); text-transform:none;">Streams: <strong class="mono" style="color:#79c0ff;">${m.stream_count}</strong></span>`);
+      }
+      if (m.consumer_count && parseInt(m.consumer_count) > 0) {
+        pills.push(`<span class="badge" style="background:#21262d; border:1px solid var(--border); color:var(--text); text-transform:none;">Consumers: <strong class="mono" style="color:#f85149;">${m.consumer_count}</strong></span>`);
+      }
+      if (m.messaging_type === 'JetStream' && m.storage_type) {
+        pills.push(`<span class="badge" style="background:#21262d; border:1px solid var(--border); color:var(--text); text-transform:none;">Storage: <strong class="mono" style="color:#bc8cff;">${m.storage_type} R=${m.replication_factor || 3}</strong></span>`);
+      }
+      if (m.payload_size) {
+        pills.push(`<span class="badge" style="background:#21262d; border:1px solid var(--border); color:var(--text); text-transform:none;">Payload: <strong class="mono">${m.payload_size}</strong></span>`);
+      }
+      return pills.join('');
+    }
+
     // =========================================================================
     // 2. Single-Run Dashboard & KPI Rendering
     // =========================================================================
@@ -547,6 +727,9 @@
       if (!targetContainerId) activeData = data;
 
       const outcome = data.status || 'COMPLETED';
+      const m = data.metadata || {};
+      const badgeInfo = getVariantBadge(data, [data]);
+
       if (!targetContainerId) {
         document.getElementById('no-data-notice').style.display = 'none';
         document.getElementById('data-view').style.display = 'block';
@@ -554,20 +737,81 @@
         const badge = document.getElementById('status-badge');
         badge.textContent = outcome;
         badge.className = 'badge ' + (outcome === 'COMPLETED' ? 'badge-completed' : (outcome === 'TIMEOUT' ? 'badge-timeout' : 'badge-failed'));
-        document.getElementById('sub-header').textContent = (data.test_id || '') + ' - ' + (data.metadata?.test_description || '');
+        document.getElementById('sub-header').innerHTML = (data.test_id || '') + ' - ' + (m.test_description || '') + ` <span class="badge ${badgeInfo.className}" style="margin-left:8px; vertical-align:middle;">${badgeInfo.label}</span>`;
+
+        const focusCard = document.getElementById('run-focus-card');
+        if (focusCard) {
+          document.getElementById('run-focus-title').textContent = m.test_description || data.test_id || 'Benchmark Run';
+          const rfb = document.getElementById('run-focus-badge');
+          if (rfb) {
+            rfb.className = 'badge ' + badgeInfo.className;
+            rfb.textContent = badgeInfo.label;
+          }
+          const rfd = document.getElementById('run-focus-desc');
+          if (rfd) {
+            rfd.innerHTML = `Scenario: <strong class="mono" style="color:var(--text);">${m.scenario || 'pubsub'}</strong> | Engine: <strong class="mono" style="color:var(--text);">${m.messaging_type || 'Core NATS'}</strong> | Duration: <strong class="mono" style="color:var(--text);">${m.duration || '-'}</strong>`;
+          }
+          const rfp = document.getElementById('run-focus-pills');
+          if (rfp) {
+            rfp.innerHTML = renderParameterPills(m);
+          }
+        }
+
+        const errCard = document.getElementById('error-alert-card');
+        if (errCard) {
+          if (outcome === 'FAILED') {
+            errCard.style.display = 'block';
+            const titleEl = document.getElementById('error-alert-title');
+            const bodyEl = document.getElementById('error-alert-body');
+            if (titleEl) titleEl.textContent = 'Benchmark Execution Failed (' + (data.error_phase || 'execution') + ')';
+            if (bodyEl) bodyEl.textContent = data.error_message || 'The benchmark process exited with a non-zero failure code.';
+          } else {
+            errCard.style.display = 'none';
+          }
+        }
       }
 
       const client = data.client || {};
       const lat = client.latency_us || {};
       const totalMsgs = client.published_msgs || 0;
-      const durSec = parseDurationSeconds(data.metadata?.duration);
+      const durSec = parseDurationSeconds(m.duration);
+
+      const errorBannerHtml = (outcome === 'FAILED' && (data.error_message || data.error_phase))
+        ? `
+        <div style="background:rgba(248,81,73,0.15); border:1px solid var(--red); border-radius:var(--radius); padding:12px 16px; margin-bottom:16px;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+            <span class="badge badge-failed" style="font-size:11px;">FAILURE DETECTED</span>
+            <strong style="color:var(--red); font-size:13px;">Phase: ${data.error_phase || 'execution'}</strong>
+          </div>
+          <div class="mono" style="color:var(--text-bright); font-size:12px; white-space:pre-wrap; word-break:break-all;">${data.error_message || 'The test run exited with an error status.'}</div>
+        </div>
+        `
+        : '';
 
       const htmlContent = `
+        ${errorBannerHtml}
+        <div style="background:rgba(13, 17, 23, 0.7); border:1px solid var(--border); border-radius:var(--radius); padding:12px 16px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <div style="font-weight:600; font-size:14px; color:var(--text-bright); display:flex; align-items:center; gap:8px;">
+              <span>${m.test_description || data.test_id || 'Test Run'}</span>
+              <span class="badge ${badgeInfo.className}">${badgeInfo.label}</span>
+            </div>
+            <div style="font-size:12px; color:var(--text-dim); margin-top:3px;">
+              Scenario: <strong class="mono" style="color:var(--text);">${m.scenario || 'pubsub'}</strong> |
+              Engine: <strong class="mono" style="color:var(--text);">${m.messaging_type || 'Core NATS'}</strong> |
+              Duration: <strong class="mono" style="color:var(--text);">${m.duration || '-'}</strong>
+            </div>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; font-size:11px;">
+            ${renderParameterPills(m)}
+          </div>
+        </div>
+
         <div class="grid-kpi" style="margin-bottom:16px;">
           <div class="kpi-card">
             <div class="label">Achieved Throughput</div>
             <div class="value mono">${formatNumber(client.throughput_msgs_sec)} /s</div>
-            <div class="sub">Target: ${formatNumber(data.metadata?.target_rate)} msgs/sec</div>
+            <div class="sub">Target: ${formatNumber(m.target_rate)} msgs/sec</div>
           </div>
           <div class="kpi-card">
             <div class="label">P50 Latency</div>
@@ -582,7 +826,7 @@
           <div class="kpi-card">
             <div class="label">Bandwidth</div>
             <div class="value mono">${(client.bandwidth_mb_sec || 0).toFixed(2)} MB/s</div>
-            <div class="sub">Payload: ${data.metadata?.payload_size || '-'}</div>
+            <div class="sub">Payload: ${m.payload_size || '-'}</div>
           </div>
         </div>
 
@@ -609,7 +853,7 @@
         </div>
 
         <h3 style="font-size:14px; margin-bottom:8px; color:var(--text-bright);">Node Resource Telemetry</h3>
-        <div class="table-container">
+        <div class="table-container" style="margin-bottom:16px;">
           <table>
             <thead>
               <tr>
@@ -639,17 +883,29 @@
             </tbody>
           </table>
         </div>
+
+        <h3 style="font-size:14px; margin-bottom:8px; color:var(--text-bright);">Run Configuration &amp; Metadata</h3>
+        <div class="table-container">
+          <table>
+            <tbody>
+              ${Object.entries(m).map(([k, v]) => {
+                const label = cleanLabels[k] || k.replace(/_/g, ' ');
+                return `<tr><td style="color:var(--text-dim); text-transform:none; font-weight:500;">${label}</td><td class="mono" style="color:var(--text-bright);">${v}</td></tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
       `;
 
       if (targetContainerId) {
         document.getElementById(targetContainerId).innerHTML = htmlContent;
       } else {
         document.getElementById('kpi-rate').textContent = formatNumber(client.throughput_msgs_sec) + ' /s';
-        document.getElementById('kpi-rate-sub').textContent = 'Target: ' + formatNumber(data.metadata?.target_rate) + ' msgs/sec';
+        document.getElementById('kpi-rate-sub').textContent = 'Target: ' + formatNumber(m.target_rate) + ' msgs/sec';
         document.getElementById('kpi-p50').textContent = formatLatency(lat.p50);
         document.getElementById('kpi-p99').textContent = formatLatency(lat.p99);
         document.getElementById('kpi-bw').textContent = (client.bandwidth_mb_sec || 0).toFixed(2) + ' MB/s';
-        document.getElementById('kpi-bw-sub').textContent = 'Payload: ' + (data.metadata?.payload_size || '-');
+        document.getElementById('kpi-bw-sub').textContent = 'Payload: ' + (m.payload_size || '-');
 
         const totalSamplesEl = document.getElementById('lat-total-samples');
         if (totalSamplesEl) totalSamplesEl.textContent = formatNumber(totalMsgs) + ' msgs';
@@ -690,9 +946,10 @@
         }).join('');
 
         const tbodyCfg = document.getElementById('config-rows');
-        tbodyCfg.innerHTML = Object.entries(data.metadata || {}).map(([k, v]) => `
-          <tr><td style="color:var(--text-dim); text-transform:capitalize;">${k.replace(/_/g, ' ')}</td><td class="mono">${v}</td></tr>
-        `).join('');
+        tbodyCfg.innerHTML = Object.entries(m).map(([k, v]) => {
+          const label = cleanLabels[k] || k.replace(/_/g, ' ');
+          return `<tr><td style="color:var(--text-dim); text-transform:none; font-weight:500;">${label}</td><td class="mono" style="color:var(--text-bright);">${v}</td></tr>`;
+        }).join('');
       }
     }
 
@@ -773,8 +1030,20 @@
         const diskCell = `${effectiveWriteRate.toFixed(2)} MB/s (${diskGrowthStr})`;
         const cpuEff = r.cluster?.cpu_efficiency_msgs_per_core ? formatNumber(r.cluster.cpu_efficiency_msgs_per_core) : '-';
 
+        const badgeInfo = getVariantBadge(r, runs);
+        const testDesc = r.metadata?.test_description || r.test_id || '';
+        const isFailed = (r.status || '').toUpperCase() === 'FAILED';
+        const errorHtml = isFailed && r.error_message
+          ? `<div style="font-size:11px; color:var(--red); margin-top:4px; font-family:monospace; background:rgba(248,81,73,0.12); padding:4px 8px; border-radius:4px; border-left:3px solid var(--red); word-break:break-all;"><strong>[FAILED${r.error_phase ? ': ' + r.error_phase : ''}]</strong> ${r.error_message}</div>`
+          : (isFailed ? `<div style="font-size:11px; margin-top:4px;"><span class="badge badge-failed">FAILED</span></div>` : '');
+
         tr.innerHTML = `
           <td class="mono" style="font-weight:600;"><a href="./${r.test_id}/report.html" target="_blank" style="color:var(--accent); text-decoration:none;">${r.test_id}</a></td>
+          <td>
+            <div style="font-weight:500; color:var(--text-bright); margin-bottom:3px;">${testDesc}</div>
+            <span class="badge ${badgeInfo.className}">${badgeInfo.label}</span>
+            ${errorHtml}
+          </td>
           <td class="mono">${formatNumber(r.metadata?.target_rate)}</td>
           <td class="mono" style="font-weight:600;">${formatNumber(r.client?.throughput_msgs_sec)}</td>
           <td class="mono">${formatLatency(lat.p50)}</td>
@@ -920,15 +1189,18 @@
         let calloutY = p.y99 - 10;
         if (calloutY < padT + 10) calloutY = p.y99 + 18;
 
+        const badgeInfo = getVariantBadge(p.raw || {}, runs);
+        const testDesc = p.raw?.metadata?.test_description || p.id;
+
         dotsHtml += `
           <!-- P50 Dot -->
           <circle cx="${p.x.toFixed(1)}" cy="${p.y50.toFixed(1)}" r="4.5" class="series-dot series-p50" style="cursor:pointer;">
-            <title>Test: ${p.id}&#10;Delivered: ${formatNumber(p.rate)} msgs/sec&#10;P50 Median: ${p50Label}&#10;P99 Tail: ${p99Label}</title>
+            <title>Test: ${p.id} (${testDesc})&#10;Focus: ${badgeInfo.label}&#10;Delivered: ${formatNumber(p.rate)} msgs/sec&#10;P50 Median: ${p50Label}&#10;P99 Tail: ${p99Label}</title>
           </circle>
 
           <!-- P99 Dot -->
           <circle cx="${p.x.toFixed(1)}" cy="${p.y99.toFixed(1)}" r="4.5" class="series-dot series-p99" style="cursor:pointer;">
-            <title>Test: ${p.id}&#10;Delivered: ${formatNumber(p.rate)} msgs/sec&#10;P99 Tail: ${p99Label}&#10;P50 Median: ${p50Label}</title>
+            <title>Test: ${p.id} (${testDesc})&#10;Focus: ${badgeInfo.label}&#10;Delivered: ${formatNumber(p.rate)} msgs/sec&#10;P99 Tail: ${p99Label}&#10;P50 Median: ${p50Label}</title>
           </circle>
 
           <!-- P99 Value Callout -->

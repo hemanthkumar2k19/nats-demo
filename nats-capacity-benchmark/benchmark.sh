@@ -37,6 +37,8 @@ _ENV_DURATION="${DURATION:-}"
 _ENV_MSGS="${MSGS:-}"
 _ENV_SIZE="${SIZE:-}"
 _ENV_SUBJECT="${SUBJECT:-}"
+_ENV_PUB_SUBJECT="${PUB_SUBJECT:-}"
+_ENV_SUB_SUBJECT="${SUB_SUBJECT:-}"
 _ENV_QUEUE="${QUEUE:-}"
 _ENV_STREAM="${STREAM:-}"
 _ENV_CONSUMER="${CONSUMER:-}"
@@ -46,6 +48,11 @@ _ENV_MAX_BYTES="${MAX_BYTES:-}"
 _ENV_RETENTION="${RETENTION:-}"
 _ENV_BATCH="${BATCH:-}"
 _ENV_ACKS="${ACKS:-}"
+_ENV_MULTISUBJECT="${MULTISUBJECT:-}"
+_ENV_MULTISUBJECT_MAX="${MULTISUBJECT_MAX:-}"
+_ENV_MULTISUBJECT_RANDOM="${MULTISUBJECT_RANDOM:-}"
+_ENV_STREAM_COUNT="${STREAM_COUNT:-}"
+_ENV_CONSUMER_COUNT="${CONSUMER_COUNT:-}"
 _ENV_CONTAINERS="${CONTAINERS:-}"
 _ENV_BASELINE_DURATION_SECONDS="${BASELINE_DURATION_SECONDS:-}"
 _ENV_RESULTS_DIR="${RESULTS_DIR:-}"
@@ -70,6 +77,8 @@ fi
 [[ -n "$_ENV_MSGS" ]] && MSGS="$_ENV_MSGS"
 [[ -n "$_ENV_SIZE" ]] && SIZE="$_ENV_SIZE"
 [[ -n "$_ENV_SUBJECT" ]] && SUBJECT="$_ENV_SUBJECT"
+[[ -n "$_ENV_PUB_SUBJECT" ]] && PUB_SUBJECT="$_ENV_PUB_SUBJECT"
+[[ -n "$_ENV_SUB_SUBJECT" ]] && SUB_SUBJECT="$_ENV_SUB_SUBJECT"
 [[ -n "$_ENV_QUEUE" ]] && QUEUE="$_ENV_QUEUE"
 [[ -n "$_ENV_STREAM" ]] && STREAM="$_ENV_STREAM"
 [[ -n "$_ENV_CONSUMER" ]] && CONSUMER="$_ENV_CONSUMER"
@@ -79,6 +88,11 @@ fi
 [[ -n "$_ENV_RETENTION" ]] && RETENTION="$_ENV_RETENTION"
 [[ -n "$_ENV_BATCH" ]] && BATCH="$_ENV_BATCH"
 [[ -n "$_ENV_ACKS" ]] && ACKS="$_ENV_ACKS"
+[[ -n "$_ENV_MULTISUBJECT" ]] && MULTISUBJECT="$_ENV_MULTISUBJECT"
+[[ -n "$_ENV_MULTISUBJECT_MAX" ]] && MULTISUBJECT_MAX="$_ENV_MULTISUBJECT_MAX"
+[[ -n "$_ENV_MULTISUBJECT_RANDOM" ]] && MULTISUBJECT_RANDOM="$_ENV_MULTISUBJECT_RANDOM"
+[[ -n "$_ENV_STREAM_COUNT" ]] && STREAM_COUNT="$_ENV_STREAM_COUNT"
+[[ -n "$_ENV_CONSUMER_COUNT" ]] && CONSUMER_COUNT="$_ENV_CONSUMER_COUNT"
 [[ -n "$_ENV_CONTAINERS" ]] && CONTAINERS="$_ENV_CONTAINERS"
 [[ -n "$_ENV_BASELINE_DURATION_SECONDS" ]] && BASELINE_DURATION_SECONDS="$_ENV_BASELINE_DURATION_SECONDS"
 [[ -n "$_ENV_RESULTS_DIR" ]] && RESULTS_DIR="$_ENV_RESULTS_DIR"
@@ -124,13 +138,18 @@ fi
 
 # 3. Subject & Queue Grouping
 : "${SUBJECT:=benchmark.core.test}"
+: "${PUB_SUBJECT:=${SUBJECT}}"
+: "${SUB_SUBJECT:=${SUBJECT}}"
 : "${QUEUE:=}"
 : "${MULTISUBJECT:=false}"
 : "${MULTISUBJECT_MAX:=100000}"
+: "${MULTISUBJECT_RANDOM:=false}"
 
 # 4. JetStream Semantics
 : "${STREAM:=BENCH_STREAM}"
+: "${STREAM_COUNT:=1}"
 : "${CONSUMER:=bench-consumer}"
+: "${CONSUMER_COUNT:=0}"
 : "${STORAGE:=file}"
 : "${REPLICAS:=3}"
 : "${MAX_BYTES:=5GB}"
@@ -187,6 +206,8 @@ messaging_type=${MESSAGING_TYPE}
 scenario=${SCENARIO}
 nats_url=${NATS_URL}
 subject=${SUBJECT}
+pub_subject=${PUB_SUBJECT}
+sub_subject=${SUB_SUBJECT}
 queue_name=${QUEUE}
 target_publish_msgs_per_sec=${THROUGHPUT}
 message_size_bytes=${SIZE}
@@ -202,17 +223,53 @@ retention_policy=${RETENTION}
 consumer_name=${CONSUMER}
 consumer_ack_policy=${ACKS}
 consumer_batch_size=${BATCH}
+multisubject=${MULTISUBJECT}
+multisubject_max=${MULTISUBJECT_MAX}
+multisubject_random=${MULTISUBJECT_RANDOM}
+stream_count=${STREAM_COUNT}
+consumer_count=${CONSUMER_COUNT}
 EOF
 
 # JetStream setup if required
 if [[ "$MESSAGING_TYPE" == "JetStream" ]]; then
-  echo "Preparing JetStream stream: $STREAM (storage=$STORAGE, R=$REPLICAS)..."
+  echo "Preparing JetStream stream: $STREAM (storage=$STORAGE, R=$REPLICAS, streams=$STREAM_COUNT, consumers=$CONSUMER_COUNT)..."
+  set +e
+  STREAM_COUNT="$STREAM_COUNT" CONSUMER_COUNT="$CONSUMER_COUNT" \
   bash "${ROOT_DIR}/scripts/js_stream.sh" setup \
-    "$NATS_URL" "$STREAM" "$SUBJECT" "$STORAGE" "$REPLICAS" "$MAX_BYTES" "$RETENTION" "$CONSUMER" "$ACKS"
+    "$NATS_URL" "$STREAM" "$SUBJECT" "$STORAGE" "$REPLICAS" "$MAX_BYTES" "$RETENTION" "$CONSUMER" "$ACKS" 2>&1 | tee "$RESULT_DIR/setup.log"
+  JS_SETUP_EXIT=${PIPESTATUS[0]}
+  set -e
+
+  if [[ "$JS_SETUP_EXIT" -ne 0 ]]; then
+    echo "ERROR: JetStream stream setup failed with exit code $JS_SETUP_EXIT" >&2
+    ERROR_MSG=$(grep -E "(error:|ERROR:|FAIL:)" "$RESULT_DIR/setup.log" | tail -n 1 | sed 's/^[ \t]*//' || echo "JetStream stream setup failed")
+    cat > "$RESULT_DIR/error.log" <<EOF
+error_phase=jetstream_setup
+error_message=${ERROR_MSG}
+exit_code=${JS_SETUP_EXIT}
+EOF
+    python3 "${ROOT_DIR}/scripts/aggregate.py" "$RESULT_DIR" "$TEST_ID" || true
+    exit "$JS_SETUP_EXIT"
+  fi
 
   if [[ "$SCENARIO" == "js-consume" && "$PREPOPULATE_COUNT" -gt 0 ]]; then
+    set +e
     bash "${ROOT_DIR}/scripts/js_stream.sh" prepopulate \
-      "$NATS_URL" "$STREAM" "$SUBJECT" "$PREPOPULATE_COUNT" "$SIZE"
+      "$NATS_URL" "$STREAM" "$SUBJECT" "$PREPOPULATE_COUNT" "$SIZE" 2>&1 | tee -a "$RESULT_DIR/setup.log"
+    JS_PREPOP_EXIT=${PIPESTATUS[0]}
+    set -e
+
+    if [[ "$JS_PREPOP_EXIT" -ne 0 ]]; then
+      echo "ERROR: JetStream prepopulate failed with exit code $JS_PREPOP_EXIT" >&2
+      ERROR_MSG=$(grep -E "(error:|ERROR:|FAIL:)" "$RESULT_DIR/setup.log" | tail -n 1 | sed 's/^[ \t]*//' || echo "JetStream prepopulate failed")
+      cat > "$RESULT_DIR/error.log" <<EOF
+error_phase=jetstream_prepopulate
+error_message=${ERROR_MSG}
+exit_code=${JS_PREPOP_EXIT}
+EOF
+      python3 "${ROOT_DIR}/scripts/aggregate.py" "$RESULT_DIR" "$TEST_ID" || true
+      exit "$JS_PREPOP_EXIT"
+    fi
   fi
 fi
 
@@ -246,12 +303,31 @@ fi
 # Execute workload
 echo "Executing workload..."
 set +e
+MULTISUBJECT_RANDOM="$MULTISUBJECT_RANDOM" PUB_SUBJECT="$PUB_SUBJECT" SUB_SUBJECT="$SUB_SUBJECT" \
+STREAM_COUNT="$STREAM_COUNT" CONSUMER_COUNT="$CONSUMER_COUNT" \
 bash "${ROOT_DIR}/scripts/workload.sh" \
   "$NATS_URL" "$SUBJECT" "$PUBS" "$SUBS" "$MSGS" "$SIZE" "$THROUGHPUT" "$DURATION" \
   "$RESULT_DIR" "$SCENARIO" "$QUEUE" "$MULTISUBJECT" "$MULTISUBJECT_MAX" \
-  "$STREAM" "$CONSUMER" "$BATCH" "$ACKS"
-WORKLOAD_EXIT=$?
+  "$STREAM" "$CONSUMER" "$BATCH" "$ACKS" 2>&1 | tee "$RESULT_DIR/workload.log"
+WORKLOAD_EXIT=${PIPESTATUS[0]}
 set -e
+
+if [[ "$WORKLOAD_EXIT" -ne 0 ]]; then
+  echo "WARNING: Workload finished with non-zero exit code: $WORKLOAD_EXIT" >&2
+  ERROR_MSG="Workload execution returned exit code ${WORKLOAD_EXIT}"
+  if [[ -f "$RESULT_DIR/workload_outcome.txt" ]]; then
+    outcome_txt=$(cat "$RESULT_DIR/workload_outcome.txt" | head -n 1)
+    [[ -n "$outcome_txt" ]] && ERROR_MSG="Workload failed: ${outcome_txt}"
+  else
+    extracted_err=$(grep -E "(error:|ERROR:|FAIL:)" "$RESULT_DIR/workload.log" | tail -n 1 | sed 's/^[ \t]*//' || true)
+    [[ -n "$extracted_err" ]] && ERROR_MSG="${extracted_err}"
+  fi
+  cat > "$RESULT_DIR/error.log" <<EOF
+error_phase=workload
+error_message=${ERROR_MSG}
+exit_code=${WORKLOAD_EXIT}
+EOF
+fi
 
 # Stop telemetry
 if [[ -n "$METRICS_PID" ]]; then

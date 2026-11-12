@@ -165,10 +165,44 @@ def main():
     if outcome_file.exists():
         outcome = outcome_file.read_text(errors="replace").strip() or "COMPLETED"
 
+    error_log = result_dir / "error.log"
+    error_phase = ""
+    error_message = ""
+    if error_log.exists():
+        outcome = "FAILED"
+        for line in error_log.read_text(errors="replace").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip()
+                if k == "error_phase":
+                    error_phase = v
+                elif k == "error_message":
+                    error_message = v
+
     pub_rows = parse_bench_csv(result_dir / "pub.csv")
     sub_rows = parse_bench_csv(result_dir / "sub.csv")
     client_stats = aggregate_pub_stats(pub_rows)
     sub_stats = aggregate_sub_stats(sub_rows)
+
+    if not client_stats:
+        client_stats = {
+            "published_msgs": 0,
+            "total_bytes": 0,
+            "throughput_msgs_sec": 0.0,
+            "bandwidth_mb_sec": 0.0,
+            "delivery_efficiency_pct": 0.0,
+            "latency_us": {
+                "min": 0.0,
+                "avg": 0.0,
+                "p50": 0.0,
+                "p90": 0.0,
+                "p99": 0.0,
+                "p999": 0.0,
+                "max": 0.0,
+                "std_dev": 0.0
+            }
+        }
 
     if sub_stats:
         client_stats.update(sub_stats)
@@ -204,23 +238,40 @@ def main():
         "cpu_efficiency_msgs_per_core": cpu_eff
     }
 
+    metadata = {
+        "test_description": cfg.get("test_description", ""),
+        "scenario": cfg.get("scenario", "pubsub"),
+        "target_rate": int(cfg.get("target_publish_msgs_per_sec", 0) or 0),
+        "payload_size": cfg.get("message_size_bytes", "1024B"),
+        "publisher_concurrency": int(cfg.get("publisher_concurrency", 1) or 1),
+        "subscriber_concurrency": int(cfg.get("subscriber_concurrency", 1) or 1),
+        "duration": cfg.get("nominal_duration_seconds", "30s"),
+        "messaging_type": cfg.get("messaging_type", "Core NATS")
+    }
+
+    # Extended routing, JetStream, and workload parameters from test-config.txt
+    for key in (
+        "subject", "pub_subject", "sub_subject", "queue_name",
+        "multisubject", "multisubject_max", "multisubject_random",
+        "stream_name", "stream_count", "storage_type", "replication_factor",
+        "max_bytes", "retention_policy", "consumer_name", "consumer_count",
+        "consumer_ack_policy", "consumer_batch_size"
+    ):
+        if key in cfg and cfg[key]:
+            metadata[key] = cfg[key]
+
     results_data = {
         "test_id": test_id,
         "status": outcome,
-        "metadata": {
-            "test_description": cfg.get("test_description", ""),
-            "scenario": cfg.get("scenario", "pubsub"),
-            "target_rate": int(cfg.get("target_publish_msgs_per_sec", 0) or 0),
-            "payload_size": cfg.get("message_size_bytes", "1024B"),
-            "publisher_concurrency": int(cfg.get("publisher_concurrency", 1) or 1),
-            "subscriber_concurrency": int(cfg.get("subscriber_concurrency", 1) or 1),
-            "duration": cfg.get("nominal_duration_seconds", "30s"),
-            "messaging_type": cfg.get("messaging_type", "Core NATS")
-        },
+        "metadata": metadata,
         "client": client_stats,
         "cluster": cluster_rollup,
         "nodes": nodes
     }
+    if error_message:
+        results_data["error_message"] = error_message
+    if error_phase:
+        results_data["error_phase"] = error_phase
 
     results_json_path = result_dir / "results.json"
     results_json_path.write_text(json.dumps(results_data, indent=2))
