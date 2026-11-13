@@ -4,9 +4,49 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [Unreleased] - 2026-11-13
+
+### Added
+- **Interactive Infrastructure Capacity Calculator (`static/report.html` & `capacity-calculator.html`)**:
+  - Embedded an interactive client-side Infrastructure Capacity Calculator as a dedicated 4th tab (`Infra Capacity Calculator`) in `nats-capacity-benchmark/static/report.html`.
+  - Built a standalone single-file HTML calculator `capacity-calculator.html` in the repository root modeled after `temporal-index.html`, requiring zero backend dependencies and running 100% in-browser with sub-millisecond reactive calculations.
+  - Implemented the complete empirical mathematical sizing model from `docs/model.md` across both tools:
+    - **Memory Sizing**: Baseline cluster/node footprint ($45 \text{ MB}$ Core, $240 \text{ MB}$ JetStream), subject prefix trie scaling (~940 B/subject), multi-Raft stream replica state (~720 KiB/stream), and durable consumer progress tracking (~21.88 MB/consumer).
+    - **CPU Utilization**: Base cluster overhead (5%), Core NATS routing coefficient ($1.01 \times 10^{-4}\%$ per msg/s), JetStream File R=3 publish tax ($3.17 \times 10^{-3}\%$ per msg/s), subscriber egress fan-out, consumer ACK consensus tax ($3.25 \times 10^{-3}\%$ per ACK/s), and idle stream heartbeat ticks ($0.0165\%$ per stream).
+    - **Latency Projection**: Group commit fsync amortization modeling $T_{p50}(\lambda) = 600 \ \mu\text{s} + \frac{3,800 \ \mu\text{s}}{1 + 0.0008 \cdot \lambda}$ for JetStream File R=3 workloads.
+    - **Storage & Bandwidth**: Persistent disk write throughput and capacity projection across retention windows (hours/days), alongside ingress, egress, and inter-node cluster replication bandwidth.
+    - **Message Retention Window**: Interactive retention slider (24h to 168h / 7 days, 72h enterprise standard) governing persistent disk storage volume ($D_{\text{total}} = \lambda \cdot S_{\text{eff}} \cdot R \cdot T_{\text{retention}}$) and In-Memory stream backlog RAM requirements, complete with a dedicated 5th Resource Metric Card displaying total and per-node retained storage.
+    - **Constant 3-Node Cluster Topology**: Sizing models the standard enterprise 3-node cluster ($R=3$ Raft quorum) as constant, accurately calculating per-node vCPU, RAM, persistent disk volume, continuous disk write throughput, and network wire bandwidth without artificial node multiplication.
+    - **Stream Partitioning Advisory**: When offered ingestion rate exceeds single-stream disk fsync saturation (~7,234 msgs/s on File R=3), advises sharding traffic across $\ge \lceil \lambda / 7000 \rceil$ partitioned streams (`ORDERS.partition.*`) across the 3 nodes rather than inflating physical node counts.
+    - **Coupled Cloud Packaging Ratios & Dual-Constraint Envelope**: Sizing strictly couples vCPU and RAM to realistic cloud machine catalogs matching standard ratios: Compute Optimized (1:2 - AWS `c6i`/GCP `c2`), General Purpose (1:4 - AWS `m6i`/GCP `n2`), Balanced Enterprise (1:6), and Memory Optimized (1:8 - AWS `r6i`/GCP `n2-highmem`), eliminating impossible uncoupled configurations such as 32 vCPU with 2 GB RAM.
+    - **Physical Bottleneck Guardrails**: Live system health warnings and critical alerts for single-socket Core NATS write locks (>80k msgs/s), 1 Gbps physical NIC saturation (>850 Mbps), JetStream File R=3 fsync barriers (>6.5k msgs/s), and durable consumer ACK consensus saturation (>14k ACKs/s).
+    - **Multi-NIC & High-Bandwidth Networking**: Network tiering dynamically scales across 1 Gbps, 10 Gbps, 25 Gbps, 100 Gbps, and Distributed 100G Multi-NIC Fabric.
+    - **Workload Presets & Exports**: Pre-configured enterprise sizing profiles, comprehensive JSON configuration export (including parameters, recommendation, stream partitioning advisory, metrics, and guardrail statuses), and Markdown sizing summary copy.
+  - Preserved the template sentinel pattern (`window.BENCHMARK_DATA = null;`) in `static/report.html` to maintain 100% backward compatibility with `aggregate.py` and `aggregate_suite.py`.
+
+### Changed
+- **Unified Mathematical Model Consolidation (`docs/model.md`)**:
+  - Reorganized `docs/model.md` into a single, cohesive, end-to-end mathematical capacity sizing framework:
+    - Merged the 5 Methodological Pillars of Sufficiency (DOE Decadal Spans, Queueing Regimes, USL, Deterministic Invariants, Quantization) with the empirical parametric deductions.
+    - Integrated the master empirical reference dataset across all 7 canonical suites (`20261112` runs).
+    - Structured sequential mathematical derivations for Memory ($M_{\text{req}}$), CPU ($C_{\text{req}}$), Latency/USL ($\sigma, \kappa$), Disk I/O, and Network Bandwidth.
+    - Added the discrete cloud infrastructure quantization step function with the 30% operational headroom buffer, followed by two complete worked sizing examples (Core NATS broadcast and Enterprise JetStream clustered ingestion).
+    - Verified 100% strict ASCII compliance, proper KaTeX math rendering, and zero local file markdown links.
+
 ## [Unreleased] - 2026-11-12
 
 ### Added
+- **Dedicated NATS Behavioral Analysis Reports**:
+  - Authored comprehensive behavioral analysis reports across all 7 canonical suites under `reports/`:
+    - `reports/core-ladder-analysis.md`: Analysis of in-memory socket batching ($p50 = 0.2 - 0.3 \ \mu\text{s}$), 83.7k msgs/s ceiling, and socket buffer bloat (+354 MB RAM) at 100k msgs/s.
+    - `reports/payload-scaling-analysis.md`: Analysis of sub-microsecond routing up to 8 KiB and 1 Gbps physical network card saturation wall at 32 KiB (103.6 MB/s, $p99 = 25.1 \text{ ms}$).
+    - `reports/subject-cardinality-analysis.md`: Verification of $O(K)$ sublist trie routing latency invariance ($0.32 \ \mu\text{s}$) across 1 to 10k subjects, wildcard parity, and ~940 B/subject memory slope.
+    - `reports/jetstream-ladder-analysis.md`: Systems explanation of hyperbolic fsync group commit amortization ($4.4 \text{ ms} \to 0.97 \text{ ms}$) and physical disk saturation knee at 7,234 msgs/s.
+    - `reports/jetstream-guarantees-analysis.md`: Controlled step-by-step isolation of the 700x distributed consensus latency tax (Core vs Mem R=3 vs File R=1 vs File R=3).
+    - `reports/stream-scaling-analysis.md`: Demonstration of multi-Raft control-plane isolation (flat $1.9 \text{ ms}$ latency), negligible idle heartbeat tax (+0.81% CPU across 49 streams), and 720 KiB/stream memory footprint.
+    - `reports/consumer-fanout-analysis.md`: Analysis of linear consumer memory scaling (~21.9 MB/consumer) and the ACK amplification consensus saturation wall at 20 consumers.
+- **Mathematical Model Deduction Framework**:
+  - Authored complete mathematical derivations connecting empirical data points to unified capacity sizing formulas for Cluster Memory, CPU, Latency/USL, Disk I/O, and Cloud Infrastructure Quantization with 30% Headroom Buffer.
 - **README Technical Accuracy Alignment**:
   - **HAProxy Stats Endpoint**: Corrected Section 3 HAProxy stats command to open `http://127.0.0.1:8404/stats` (matching `stats uri /stats` in `deploy/haproxy.cfg`), resolving an HTTP 404 error.
   - **Exposed 5 Suite Parameters**: Updated Section 4 configuration guide to include `PUB_SUBJECT`, `SUB_SUBJECT`, `MULTISUBJECT_RANDOM`, `STREAM_COUNT`, and `CONSUMER_COUNT` from `benchmark.conf`.
