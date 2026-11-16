@@ -4,9 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
-## [Unreleased] - 2026-11-13
+## [Unreleased] - 2026-11-16
 
 ### Added
+- **Operation-First Capacity Evaluation Model (`docs/operations.md`)**:
+  - Established a dedicated operational inventory model for NATS JetStream capacity evaluation, decoupling message operations, cluster keepalives, and notation into clean reference tables.
+  - Standardized Section 2.2 Heartbeats and Keepalives using symbolic notation (`t_raft`, `t_route`, `t_ping`, `t_hb`), decoupling mechanism flows from tuning constants.
+  - Refined Section 2.1 Core NATS Write flow to isolate memory ingress from read delivery.
+  - Adopted lowercase `n_` prefix convention for resource cardinality symbols (`n_conn`, `n_subj`, `n_stream`, `n_consumer`).
+  - Categorized Monitoring/Telemetry (Prometheus scrapes, K8s probes, $SYS advisories) and Subscription Interest Gossip as Priority 2 (P2) background operations, explicitly isolating them from core capacity sizing formulas.
+  - Defined decoupled notation distinguishing JetStream stateful disk persistence (`x_js`, `c_js`, `y_js`, `batch`) from Core NATS ephemeral routing (`x_core`, `c_core`, `y_core`), payload specs, and storage/cache windows.
+  - Formatted Section 4 (Parameters) into user workload inputs (`n_conn`, message size, write rates, fan-out, retention, resource counts) and Section 4.2 consolidated constants (`batch`, `w`, `headroom`, `S_proto`, `t_raft`, `t_route`, `t_ping`, `t_hb`) with tuning scope.
+  - Consolidated Section 5 (System Invariants) establishing deterministic mathematical relations: Read Throughput ($y = x \times c$), Batch Request Rate ($y / \text{batch}$), Wire Message Size, $R=3$ Replication, 70% Target Utilization ($1 - \text{headroom}$), and Page Cache working set RAM.
+
+## [Unreleased] - 2026-11-13
+
+### Fixed
+- **Calculator DOM Reactivity (`capacity-calculator.html` & `static/report.html`)**:
+  - Resolved a fatal JavaScript `SyntaxError: Identifier 'bAck' has already been declared` in `calculateInfraCapacity()`, which prevented the `<script>` block from executing and caused slider and parameter changes to silently fail to update right-side UI elements.
+  - Disambiguated the disk IOPS ACK batching divisor (`batchAck`) from the consumer ACK consensus guardrail badge element (`bAck`), restoring immediate, reactive updates across all 5 resource metric cards, hero deployment cards, and guardrails.
+  - Aligned initial static fallback HTML values with the exact mathematical output for the default 2,500 msgs/s profile.
+
+### Added
+- **Dual Slider + Direct Numeric Input Controls (`capacity-calculator.html` & `static/report.html`)**:
+  - Implemented bidirectional numeric `<input type="number">` controls paired alongside every parameter slider (Ingress Rate, Payload Size, Subject Cardinality, Stream Count, Consumer Count, Retention Hours, Headroom Buffer).
+  - Eliminates precision difficulties when tuning large numerical spans (e.g. 50k subjects, 64 KiB payloads, 168h retention), enabling users to either drag sliders for broad sweeps or type exact numerical values directly with immediate real-time synchronization.
+
 - **Interactive Infrastructure Capacity Calculator (`static/report.html` & `capacity-calculator.html`)**:
   - Embedded an interactive client-side Infrastructure Capacity Calculator as a dedicated 4th tab (`Infra Capacity Calculator`) in `nats-capacity-benchmark/static/report.html`.
   - Built a standalone single-file HTML calculator `capacity-calculator.html` in the repository root modeled after `temporal-index.html`, requiring zero backend dependencies and running 100% in-browser with sub-millisecond reactive calculations.
@@ -15,13 +38,12 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
     - **CPU Utilization**: Base cluster overhead (5%), Core NATS routing coefficient ($1.01 \times 10^{-4}\%$ per msg/s), JetStream File R=3 publish tax ($3.17 \times 10^{-3}\%$ per msg/s), subscriber egress fan-out, consumer ACK consensus tax ($3.25 \times 10^{-3}\%$ per ACK/s), and idle stream heartbeat ticks ($0.0165\%$ per stream).
     - **Latency Projection**: Group commit fsync amortization modeling $T_{p50}(\lambda) = 600 \ \mu\text{s} + \frac{3,800 \ \mu\text{s}}{1 + 0.0008 \cdot \lambda}$ for JetStream File R=3 workloads.
     - **Storage & Bandwidth**: Persistent disk write throughput and capacity projection across retention windows (hours/days), alongside ingress, egress, and inter-node cluster replication bandwidth.
-    - **Message Retention Window**: Interactive retention slider (24h to 168h / 7 days, 72h enterprise standard) governing persistent disk storage volume ($D_{\text{total}} = \lambda \cdot S_{\text{eff}} \cdot R \cdot T_{\text{retention}}$) and In-Memory stream backlog RAM requirements, complete with a dedicated 5th Resource Metric Card displaying total and per-node retained storage.
-    - **Constant 3-Node Cluster Topology**: Sizing models the standard enterprise 3-node cluster ($R=3$ Raft quorum) as constant, accurately calculating per-node vCPU, RAM, persistent disk volume, continuous disk write throughput, and network wire bandwidth without artificial node multiplication.
+    - **Fixed 3-Node JetStream File R=3 Deployment Architecture**: Fixed the calculator exclusively to the enterprise production standard: a 3-Node High-Availability Cluster with File Storage and Replication Factor R=3 (Raft quorum), eliminating distracting variable dropdowns (1-node standalone, Core NATS routing patterns, in-memory stream modes).
+    - **Streamlined 3 Canonical FinOps Packaging Ratios (GCP GKE Reference Primary)**: Restricted instance selection to the three universal cloud packaging ratios: General Purpose (1:4 - GKE `n2-standard` / AWS `m6i` / Azure `Dsv5`), Compute Optimized (1:2 - GKE `c3-highcpu` / AWS `c6i` / Azure `Fsv2`), and Memory Optimized (1:8 - GKE `n2-highmem` / AWS `r6i` / Azure `Esv5`), with GCP GKE established as the primary reference baseline.
+    - **Memory Breakdown (Process Heap vs. Linux OS Page Cache)**: Metric cards and sizing specs explicitly distinguish NATS Go process heap (~240-600 MB) from remaining node RAM utilized as Linux OS Page Cache for zero-disk message replays.
+    - **Message Retention Window**: Interactive retention slider (24h to 168h / 7 days, 72h enterprise standard) governing persistent disk storage volume ($D_{\text{total}} = \lambda \cdot S_{\text{eff}} \cdot R \cdot T_{\text{retention}}$), complete with a dedicated metric card displaying total cluster and per-node retained storage.
     - **Stream Partitioning Advisory**: When offered ingestion rate exceeds single-stream disk fsync saturation (~7,234 msgs/s on File R=3), advises sharding traffic across $\ge \lceil \lambda / 7000 \rceil$ partitioned streams (`ORDERS.partition.*`) across the 3 nodes rather than inflating physical node counts.
-    - **Coupled Cloud Packaging Ratios & Dual-Constraint Envelope**: Sizing strictly couples vCPU and RAM to realistic cloud machine catalogs matching standard ratios: Compute Optimized (1:2 - AWS `c6i`/GCP `c2`), General Purpose (1:4 - AWS `m6i`/GCP `n2`), Balanced Enterprise (1:6), and Memory Optimized (1:8 - AWS `r6i`/GCP `n2-highmem`), eliminating impossible uncoupled configurations such as 32 vCPU with 2 GB RAM.
-    - **Physical Bottleneck Guardrails**: Live system health warnings and critical alerts for single-socket Core NATS write locks (>80k msgs/s), 1 Gbps physical NIC saturation (>850 Mbps), JetStream File R=3 fsync barriers (>6.5k msgs/s), and durable consumer ACK consensus saturation (>14k ACKs/s).
-    - **Multi-NIC & High-Bandwidth Networking**: Network tiering dynamically scales across 1 Gbps, 10 Gbps, 25 Gbps, 100 Gbps, and Distributed 100G Multi-NIC Fabric.
-    - **Workload Presets & Exports**: Pre-configured enterprise sizing profiles, comprehensive JSON configuration export (including parameters, recommendation, stream partitioning advisory, metrics, and guardrail statuses), and Markdown sizing summary copy.
+    - **Workload Presets & Exports**: 6 pre-configured enterprise JetStream File R=3 sizing profiles (Microservices Event Log, Order Processing Pipeline, High Throughput Partitioned, Consumer Fan-Out Hub, IoT Large Payloads, Ultra-Scale Ingestion), comprehensive JSON export, CSV export, and Markdown sizing summary copy.
   - Preserved the template sentinel pattern (`window.BENCHMARK_DATA = null;`) in `static/report.html` to maintain 100% backward compatibility with `aggregate.py` and `aggregate_suite.py`.
 
 ### Changed

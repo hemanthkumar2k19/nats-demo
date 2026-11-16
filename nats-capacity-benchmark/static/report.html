@@ -802,7 +802,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
           <div>
             <h2 style="font-size:20px; color:var(--text-bright); margin-bottom:4px;">NATS Infrastructure Capacity Calculator</h2>
-            <p style="font-size:12px; color:var(--text-dim);">Mathematically deduced sizing engine based on empirical benchmark models (docs/model.md).</p>
+            <p style="font-size:12px; color:var(--text-dim);">Sizing model for 3-Node Clustered JetStream (File R=3 Raft Quorum) grounded in empirical benchmark measurements (docs/model.md).</p>
           </div>
           <div class="export-toolbar">
             <button class="btn btn-primary" onclick="exportStandaloneCalculator()">Export Standalone HTML</button>
@@ -813,15 +813,14 @@
 
         <!-- Presets Toolbar -->
         <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
-          <div style="font-size:11px; text-transform:uppercase; color:var(--text-dim); margin-bottom:8px; font-weight:600; letter-spacing:0.5px;">Quick Workload Presets:</div>
+          <div style="font-size:11px; text-transform:uppercase; color:var(--text-dim); margin-bottom:8px; font-weight:600; letter-spacing:0.5px;">Quick Architecture Presets (3-Node JetStream File R=3 Profiles):</div>
           <div class="preset-toolbar">
-            <button class="preset-btn" onclick="applyCalcPreset('baseline')">Baseline Core (1k msg/s)</button>
-            <button class="preset-btn" onclick="applyCalcPreset('high-fanout')">Core Broadcast (30k msg/s, 4 subs)</button>
-            <button class="preset-btn" onclick="applyCalcPreset('high-cardinality')">Large Taxonomy (10k subjects)</button>
-            <button class="preset-btn" onclick="applyCalcPreset('jetstream-sync')">JS File R=3 Sync (2.5k msg/s)</button>
-            <button class="preset-btn" onclick="applyCalcPreset('stream-density')">Multi-Stream Density (20 streams)</button>
-            <button class="preset-btn" onclick="applyCalcPreset('consumer-fanout')">Durable Consumer Fan-Out (10 consumers)</button>
-            <button class="preset-btn" onclick="applyCalcPreset('payload-stress')">Large Payloads (32 KiB)</button>
+            <button class="preset-btn" onclick="applyCalcPreset('microservices')">Microservices Event Log (1k msg/s)</button>
+            <button class="preset-btn" onclick="applyCalcPreset('order-pipeline')">Order Pipeline (2.5k msg/s, 5 streams)</button>
+            <button class="preset-btn" onclick="applyCalcPreset('high-throughput')">High Throughput (10k msg/s - Partitioned)</button>
+            <button class="preset-btn" onclick="applyCalcPreset('consumer-fanout')">Consumer Fan-Out (10 Consumers, 10k ACKs/s)</button>
+            <button class="preset-btn" onclick="applyCalcPreset('large-payload')">IoT Large Payloads (16 KiB)</button>
+            <button class="preset-btn" onclick="applyCalcPreset('ultra-scale')">Ultra-Scale Ingestion (50k msg/s - 8x Partitioned)</button>
           </div>
         </div>
       </div>
@@ -832,15 +831,11 @@
           <div class="card">
             <h3 style="font-size:14px; color:var(--text-bright); margin-bottom:14px; border-bottom:1px solid var(--border); padding-bottom:8px;">1. Workload Specification</h3>
 
-            <!-- Messaging Engine -->
-            <div class="calc-form-group">
-              <label class="calc-label" for="calc-engine">Messaging Engine &amp; Persistence</label>
-              <select id="calc-engine" class="calc-select" onchange="onEngineChange()">
-                <option value="core">Core NATS (In-Memory Broadcast &amp; Queuing)</option>
-                <option value="js-file-r3" selected>JetStream File R=3 (Clustered Raft Consensus Standard)</option>
-                <option value="js-mem-r3">JetStream Memory R=3 (Replicated In-Memory Streams)</option>
-                <option value="js-file-r1">JetStream File R=1 (Single-Node Disk Persistence)</option>
-              </select>
+            <!-- Fixed Deployment Architecture Banner -->
+            <div style="background: rgba(31, 111, 235, 0.12); border: 1px solid #1f6feb; border-radius: 6px; padding: 10px 12px; margin-bottom: 16px;">
+              <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #58a6ff; font-weight: 600;">Fixed Deployment Architecture</div>
+              <div style="font-size: 13px; font-weight: 600; color: #f0f6fc; margin-top: 2px;">3-Node High-Availability Cluster &bull; JetStream File Storage (R=3)</div>
+              <div style="font-size: 11px; color: #8b949e; margin-top: 3px;">Enterprise standard multi-Raft clustered quorum with synchronous disk persistence.</div>
             </div>
 
             <!-- Target Rate (Offered Load) -->
@@ -849,10 +844,13 @@
                 <label class="calc-label" for="calc-rate-slider">Offered Ingress Rate</label>
                 <span class="calc-val-badge" id="calc-rate-badge">2,500 msgs/s</span>
               </div>
-              <input type="range" id="calc-rate-slider" class="calc-input-slider" min="100" max="100000" step="100" value="2500" oninput="syncRateInput(this.value)" />
+              <input type="range" id="calc-rate-slider" class="calc-input-slider" min="100" max="100000" step="100" value="2500" oninput="syncRateFromSlider(this.value)" />
               <div style="display:flex; justify-content:space-between; margin-top:4px; align-items:center;">
                 <span style="font-size:10px; color:var(--text-dim);">100/s</span>
-                <input type="number" id="calc-rate-num" class="calc-input-number" style="width:110px; height:26px; padding:2px 6px;" value="2500" min="1" max="250000" oninput="syncRateSlider(this.value)" />
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <input type="number" id="calc-rate-num" class="calc-input-number" style="width:90px; height:24px; padding:2px 6px; text-align:right;" value="2500" min="1" max="500000" oninput="syncRateFromNum(this.value)" />
+                  <span style="font-size:10px; color:var(--text-dim);">msgs/s</span>
+                </div>
                 <span style="font-size:10px; color:var(--text-dim);">100k/s</span>
               </div>
             </div>
@@ -863,32 +861,23 @@
                 <label class="calc-label" for="calc-payload-slider">Message Payload Size</label>
                 <span class="calc-val-badge" id="calc-payload-badge">1,024 Bytes</span>
               </div>
-              <input type="range" id="calc-payload-slider" class="calc-input-slider" min="64" max="65536" step="64" value="1024" oninput="syncPayloadInput(this.value)" />
+              <input type="range" id="calc-payload-slider" class="calc-input-slider" min="64" max="65536" step="64" value="1024" oninput="syncPayloadFromSlider(this.value)" />
+              <div style="display:flex; justify-content:space-between; margin-top:4px; align-items:center;">
+                <span style="font-size:10px; color:var(--text-dim);">64 B</span>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <input type="number" id="calc-payload-num" class="calc-input-number" style="width:85px; height:24px; padding:2px 6px; text-align:right;" value="1024" min="1" max="1048576" oninput="syncPayloadFromNum(this.value)" />
+                  <span style="font-size:10px; color:var(--text-dim);">Bytes</span>
+                </div>
+                <span style="font-size:10px; color:var(--text-dim);">64 KiB</span>
+              </div>
               <div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
                 <button class="preset-btn" style="padding:2px 6px;" onclick="setPayloadBytes(128)">128 B</button>
                 <button class="preset-btn" style="padding:2px 6px;" onclick="setPayloadBytes(1024)">1 KiB</button>
                 <button class="preset-btn" style="padding:2px 6px;" onclick="setPayloadBytes(4096)">4 KiB</button>
                 <button class="preset-btn" style="padding:2px 6px;" onclick="setPayloadBytes(8192)">8 KiB</button>
+                <button class="preset-btn" style="padding:2px 6px;" onclick="setPayloadBytes(16384)">16 KiB</button>
                 <button class="preset-btn" style="padding:2px 6px;" onclick="setPayloadBytes(32768)">32 KiB</button>
               </div>
-            </div>
-
-            <!-- Routing Pattern (Core NATS) -->
-            <div class="calc-form-group" id="group-routing-pattern" style="display:none;">
-              <label class="calc-label" for="calc-pattern">Core NATS Routing Pattern</label>
-              <select id="calc-pattern" class="calc-select" onchange="calculateInfraCapacity()">
-                <option value="broadcast">Broadcast Fan-Out (1:N delivery to all subscribers)</option>
-                <option value="queue" selected>Queue Group (1:1 load-balanced worker pool)</option>
-              </select>
-            </div>
-
-            <!-- Subscribers Count (Active when Broadcast selected) -->
-            <div class="calc-form-group" id="group-subscribers" style="display:none;">
-              <div class="calc-label-row">
-                <label class="calc-label" for="calc-subs-slider">Subscriber Fan-Out Count</label>
-                <span class="calc-val-badge" id="calc-subs-badge">4 Subscribers</span>
-              </div>
-              <input type="range" id="calc-subs-slider" class="calc-input-slider" min="1" max="20" step="1" value="4" oninput="syncSubsInput(this.value)" />
             </div>
 
             <!-- Subject Cardinality -->
@@ -897,7 +886,15 @@
                 <label class="calc-label" for="calc-subjects-slider">Registered Subject Taxonomy</label>
                 <span class="calc-val-badge" id="calc-subjects-badge">1,000 Subjects</span>
               </div>
-              <input type="range" id="calc-subjects-slider" class="calc-input-slider" min="1" max="50000" step="100" value="1000" oninput="syncSubjectsInput(this.value)" />
+              <input type="range" id="calc-subjects-slider" class="calc-input-slider" min="1" max="50000" step="100" value="1000" oninput="syncSubjectsFromSlider(this.value)" />
+              <div style="display:flex; justify-content:space-between; margin-top:4px; align-items:center;">
+                <span style="font-size:10px; color:var(--text-dim);">1</span>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <input type="number" id="calc-subjects-num" class="calc-input-number" style="width:85px; height:24px; padding:2px 6px; text-align:right;" value="1000" min="1" max="500000" oninput="syncSubjectsFromNum(this.value)" />
+                  <span style="font-size:10px; color:var(--text-dim);">Subjects</span>
+                </div>
+                <span style="font-size:10px; color:var(--text-dim);">50k</span>
+              </div>
             </div>
 
             <!-- JetStream Stream Count -->
@@ -906,16 +903,32 @@
                 <label class="calc-label" for="calc-streams-slider">JetStream Concurrent Streams</label>
                 <span class="calc-val-badge" id="calc-streams-badge">5 Streams</span>
               </div>
-              <input type="range" id="calc-streams-slider" class="calc-input-slider" min="1" max="50" step="1" value="5" oninput="syncStreamsInput(this.value)" />
+              <input type="range" id="calc-streams-slider" class="calc-input-slider" min="1" max="50" step="1" value="5" oninput="syncStreamsFromSlider(this.value)" />
+              <div style="display:flex; justify-content:space-between; margin-top:4px; align-items:center;">
+                <span style="font-size:10px; color:var(--text-dim);">1</span>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <input type="number" id="calc-streams-num" class="calc-input-number" style="width:70px; height:24px; padding:2px 6px; text-align:right;" value="5" min="1" max="1000" oninput="syncStreamsFromNum(this.value)" />
+                  <span style="font-size:10px; color:var(--text-dim);">Streams</span>
+                </div>
+                <span style="font-size:10px; color:var(--text-dim);">50</span>
+              </div>
             </div>
 
             <!-- JetStream Consumer Count -->
             <div class="calc-form-group" id="group-consumers">
               <div class="calc-label-row">
                 <label class="calc-label" for="calc-consumers-slider">Active Durable Pull Consumers</label>
-                <span class="calc-val-badge" id="calc-consumers-badge">10 Consumers</span>
+                <span class="calc-val-badge" id="calc-consumers-badge">5 Consumers</span>
               </div>
-              <input type="range" id="calc-consumers-slider" class="calc-input-slider" min="0" max="30" step="1" value="10" oninput="syncConsumersInput(this.value)" />
+              <input type="range" id="calc-consumers-slider" class="calc-input-slider" min="0" max="30" step="1" value="5" oninput="syncConsumersFromSlider(this.value)" />
+              <div style="display:flex; justify-content:space-between; margin-top:4px; align-items:center;">
+                <span style="font-size:10px; color:var(--text-dim);">0</span>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <input type="number" id="calc-consumers-num" class="calc-input-number" style="width:70px; height:24px; padding:2px 6px; text-align:right;" value="5" min="0" max="200" oninput="syncConsumersFromNum(this.value)" />
+                  <span style="font-size:10px; color:var(--text-dim);">Consumers</span>
+                </div>
+                <span style="font-size:10px; color:var(--text-dim);">30</span>
+              </div>
             </div>
 
             <!-- Message Retention Window -->
@@ -924,13 +937,16 @@
                 <label class="calc-label" for="calc-retention-slider">Message Retention Window</label>
                 <span class="calc-val-badge" id="calc-retention-badge">72 Hours (3 Days Standard)</span>
               </div>
-              <input type="range" id="calc-retention-slider" class="calc-input-slider" min="24" max="168" step="24" value="72" oninput="syncRetentionInput(this.value)" />
-              <div style="display:flex; justify-content:space-between; margin-top:4px;">
-                <span style="font-size:10px; color:var(--text-dim);">24h (1 Day)</span>
-                <span style="font-size:10px; color:var(--text-dim);">72h (Standard)</span>
-                <span style="font-size:10px; color:var(--text-dim);">168h (7 Days)</span>
+              <input type="range" id="calc-retention-slider" class="calc-input-slider" min="24" max="168" step="24" value="72" oninput="syncRetentionFromSlider(this.value)" />
+              <div style="display:flex; justify-content:space-between; margin-top:4px; align-items:center;">
+                <span style="font-size:10px; color:var(--text-dim);">24h (1d)</span>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <input type="number" id="calc-retention-num" class="calc-input-number" style="width:70px; height:24px; padding:2px 6px; text-align:right;" value="72" min="1" max="720" oninput="syncRetentionFromNum(this.value)" />
+                  <span style="font-size:10px; color:var(--text-dim);">Hours</span>
+                </div>
+                <span style="font-size:10px; color:var(--text-dim);">168h (7d)</span>
               </div>
-              <div style="font-size:10px; color:var(--text-dim); margin-top:4px;">Governs persistent disk capacity for File streams and RAM backlog for Memory streams.</div>
+              <div style="font-size:10px; color:var(--text-dim); margin-top:4px;">Governs persistent disk capacity for File streams (R=3).</div>
             </div>
 
             <!-- Operational Headroom Buffer -->
@@ -939,28 +955,26 @@
                 <label class="calc-label" for="calc-buffer-slider">Safety Headroom Buffer</label>
                 <span class="calc-val-badge" id="calc-buffer-badge">30% Operational Headroom</span>
               </div>
-              <input type="range" id="calc-buffer-slider" class="calc-input-slider" min="0" max="50" step="5" value="30" oninput="syncBufferInput(this.value)" />
+              <input type="range" id="calc-buffer-slider" class="calc-input-slider" min="0" max="50" step="5" value="30" oninput="syncBufferFromSlider(this.value)" />
+              <div style="display:flex; justify-content:space-between; margin-top:4px; align-items:center;">
+                <span style="font-size:10px; color:var(--text-dim);">0%</span>
+                <div style="display:flex; align-items:center; gap:4px;">
+                  <input type="number" id="calc-buffer-num" class="calc-input-number" style="width:65px; height:24px; padding:2px 6px; text-align:right;" value="30" min="0" max="100" oninput="syncBufferFromNum(this.value)" />
+                  <span style="font-size:10px; color:var(--text-dim);">% Buffer</span>
+                </div>
+                <span style="font-size:10px; color:var(--text-dim);">50%</span>
+              </div>
             </div>
 
-            <!-- Cluster Topology -->
-            <div class="calc-form-group" style="margin-bottom:0;">
-              <label class="calc-label" for="calc-nodes">Target Cluster Topology</label>
-              <select id="calc-nodes" class="calc-select" onchange="calculateInfraCapacity()">
-                <option value="3" selected>3-Node High-Availability Cluster (Raft Quorum)</option>
-                <option value="1">1-Node Standalone (Non-HA)</option>
-              </select>
-            </div>
-
-            <!-- Cloud Machine Family (CPU:RAM Ratio) -->
+            <!-- Cloud Machine Family (CPU:RAM Ratio) - GKE Reference Primary -->
             <div class="calc-form-group" style="margin-bottom:0; margin-top:14px;">
-              <label class="calc-label" for="calc-family">Cloud Machine Family (vCPU : RAM Ratio)</label>
+              <label class="calc-label" for="calc-family">Cloud Machine Family (FinOps Packaging Ratio)</label>
               <select id="calc-family" class="calc-select" onchange="calculateInfraCapacity()">
-                <option value="general-1-4" selected>General Purpose (1:4 Ratio) - AWS m6i / GCP n2-standard / Azure Dsv5</option>
-                <option value="compute-1-2">Compute Optimized (1:2 Ratio) - AWS c6i / GCP c2-standard / Azure Fsv2</option>
-                <option value="balanced-1-6">Balanced Enterprise (1:6 Ratio) - Messaging / Storage Tier</option>
-                <option value="memory-1-8">Memory Optimized (1:8 Ratio) - AWS r6i / GCP n2-highmem / Azure Esv5</option>
+                <option value="general-1-4" selected>General Purpose (1:4 Ratio) - GKE n2-standard / AWS m6i / Azure Dsv5</option>
+                <option value="compute-1-2">Compute Optimized (1:2 Ratio) - GKE c3-highcpu / AWS c6i / Azure Fsv2</option>
+                <option value="memory-1-8">Memory Optimized (1:8 Ratio) - GKE n2-highmem / AWS r6i / Azure Esv5</option>
               </select>
-              <div style="font-size:10px; color:var(--text-dim); margin-top:4px;">Couples vCPU and RAM into standard cloud instance catalog tiers.</div>
+              <div style="font-size:10px; color:var(--text-dim); margin-top:4px;">Couples vCPU and RAM to canonical GKE / cloud VM instance catalog tiers.</div>
             </div>
           </div>
         </div>
@@ -970,11 +984,12 @@
           <!-- Hero Sizing Card -->
           <div class="hero-sizing-card">
             <div class="hero-sizing-header">
-              <span class="hero-badge" id="hero-badge-status">Recommended Cloud Deployment</span>
-              <span id="hero-tier-tag" style="font-size:11px; font-family:var(--font-mono); color:var(--text-dim);">Quantized Standard Tier</span>
+              <span class="hero-badge" id="hero-badge-status">Recommended GKE / Cloud Deployment</span>
+              <span id="hero-tier-tag" style="font-size:11px; font-family:var(--font-mono); color:var(--text-dim);">GKE Reference SKU</span>
             </div>
-            <div class="hero-shape-title" id="hero-node-shape">3x Nodes: 4 vCPU | 16 GB RAM with 26 TB Storage / node</div>
-            <div class="hero-shape-subtitle" id="hero-cluster-total">Total Allocation: 12 vCPU | 48 GB RAM | 78 TB Storage across 3 Clustered Instances</div>
+            <div class="hero-shape-title" id="hero-node-shape">3x Nodes: GKE n2-standard-2 (2 vCPU | 8 GB RAM) with 1.1 TB SSD / node</div>
+            <div class="hero-shape-subtitle" id="hero-cluster-total">Total Cluster: 6 vCPU | 24 GB RAM | 2.9 TB Persistent SSD across 3 Nodes (R=3 Quorum)</div>
+            <div id="hero-cloud-mapping" style="font-size:11px; font-family:var(--font-mono); color:var(--text-dim); margin-top:4px;">Cross-Cloud Equivalents: AWS m6i.large | Azure D2s_v5</div>
 
             <div id="hero-partition-alert" style="display:none; margin-top:14px; padding:12px; background:rgba(210,153,34,0.12); border:1px solid #d29922; border-radius:6px; font-size:12px; line-height:1.5; color:#e3b341;">
               <strong>Stream Partitioning Recommended:</strong> <span id="hero-partition-msg"></span>
@@ -995,11 +1010,11 @@
               </div>
               <div class="hero-meta-item">
                 <span class="hero-meta-label">Storage Profile</span>
-                <span class="hero-meta-val" id="hero-storage-val">Persistent SSD (R=3)</span>
+                <span class="hero-meta-val" id="hero-storage-val">Persistent SSD (R=3 Raft Log)</span>
               </div>
               <div class="hero-meta-item">
                 <span class="hero-meta-label">Target Latency</span>
-                <span class="hero-meta-val" id="hero-latency-val">~1.2 ms (p50)</span>
+                <span class="hero-meta-val" id="hero-latency-val">~1.2 ms (p50 Group Commit)</span>
               </div>
             </div>
           </div>
@@ -1007,29 +1022,29 @@
           <!-- 5 Resource Metric Cards -->
           <div class="calc-metric-grid">
             <div class="calc-card">
-              <div class="calc-card-title">Cluster CPU Cores</div>
-              <div class="calc-card-val" id="metric-cpu-cores">0.70 Cores</div>
-              <div class="calc-card-sub" id="metric-cpu-sub">53.7% model load (+30% buf = 0.70)</div>
+              <div class="calc-card-title">Node vCPU Allocation</div>
+              <div class="calc-card-val" id="metric-cpu-cores">2 vCPU / node</div>
+              <div class="calc-card-sub" id="metric-cpu-sub">0.24 vCPU req per node (0.71 cluster cores)</div>
             </div>
             <div class="calc-card">
-              <div class="calc-card-title">Cluster RAM (Heap)</div>
-              <div class="calc-card-val" id="metric-ram-total">602 MB</div>
-              <div class="calc-card-sub" id="metric-ram-sub">463 MB raw + 139 MB buffer</div>
-            </div>
-            <div class="calc-card">
-              <div class="calc-card-title">Network Wire Bandwidth</div>
-              <div class="calc-card-val" id="metric-net-bw">21.5 MB/s</div>
-              <div class="calc-card-sub" id="metric-net-sub">Ingress: 2.5 MB/s | Egress: 25.0 MB/s</div>
+              <div class="calc-card-title">Node RAM (Heap + Page Cache)</div>
+              <div class="calc-card-val" id="metric-ram-total">8 GB / node</div>
+              <div class="calc-card-sub" id="metric-ram-sub">NATS Heap: ~153 MB | Linux Page Cache: ~7.8 GB</div>
             </div>
             <div class="calc-card">
               <div class="calc-card-title">Replicated Disk Writes</div>
-              <div class="calc-card-val" id="metric-disk-rate">12.3 MB/s</div>
-              <div class="calc-card-sub" id="metric-disk-sub">Est. 1,850 IOPS (R=3 Raft log)</div>
+              <div class="calc-card-val" id="metric-disk-rate">12.48 MB/s</div>
+              <div class="calc-card-sub" id="metric-disk-sub">4.2 MB/s write per node (1,970 IOPS)</div>
             </div>
             <div class="calc-card">
               <div class="calc-card-title">Retained Storage Capacity</div>
-              <div class="calc-card-val" id="metric-storage-vol">74.2 TB</div>
-              <div class="calc-card-sub" id="metric-storage-sub">24.7 TB per node (72h retention, R=3)</div>
+              <div class="calc-card-val" id="metric-storage-vol">2.9 TB Total</div>
+              <div class="calc-card-sub" id="metric-storage-sub">1.1 TB SSD per node (72h retention, R=3)</div>
+            </div>
+            <div class="calc-card">
+              <div class="calc-card-title">Network Wire Bandwidth</div>
+              <div class="calc-card-val" id="metric-net-bw">20.48 MB/s</div>
+              <div class="calc-card-sub" id="metric-net-sub">Ingress: 2.6 MB/s | Egress: 12.8 MB/s | Repl: 5.1 MB/s</div>
             </div>
           </div>
 
@@ -1062,19 +1077,28 @@
           <div class="advisor-box">
             <div class="advisor-header">
               <span style="font-size:12px; font-weight:600; color:var(--text-bright);">Architectural Bottleneck Advisor</span>
-              <span style="font-size:11px; color:var(--text-dim);">Physical Systems Guardrails</span>
+              <span style="font-size:11px; color:var(--text-dim);">3-Node JetStream Physical Guardrails</span>
             </div>
 
-            <!-- Guardrail 1: Core Socket -->
+            <!-- Guardrail 1: JetStream Disk Append -->
             <div class="advisor-item">
-              <span class="status-pill status-ok" id="badge-guard-core">OK</span>
+              <span class="status-pill status-ok" id="badge-guard-disk">OK</span>
               <div>
-                <strong style="color:var(--text-bright);">Core Socket Throughput Limit:</strong>
-                <span id="text-guard-core" style="color:var(--text-dim); margin-left:4px;">Within safe routing zone (ceiling: 83.7k msgs/s).</span>
+                <strong style="color:var(--text-bright);">Single-Stream Disk Write Barrier:</strong>
+                <span id="text-guard-disk" style="color:var(--text-dim); margin-left:4px;">Offered load within synchronous File R=3 fsync capacity (ceiling: 7,234 msgs/s).</span>
               </div>
             </div>
 
-            <!-- Guardrail 2: Wire Bandwidth -->
+            <!-- Guardrail 2: Consumer ACK Consensus -->
+            <div class="advisor-item">
+              <span class="status-pill status-ok" id="badge-guard-ack">OK</span>
+              <div>
+                <strong style="color:var(--text-bright);">Consumer ACK Consensus Limit:</strong>
+                <span id="text-guard-ack" style="color:var(--text-dim); margin-left:4px;">Aggregate ACK mutations within Raft stream commit capacity (ceiling: 15,000 ACKs/s).</span>
+              </div>
+            </div>
+
+            <!-- Guardrail 3: Wire Bandwidth -->
             <div class="advisor-item">
               <span class="status-pill status-ok" id="badge-guard-net">OK</span>
               <div>
@@ -1083,23 +1107,15 @@
               </div>
             </div>
 
-            <!-- Guardrail 3: JetStream Disk Append -->
+            <!-- Guardrail 4: Storage IOPS & Write Rate -->
             <div class="advisor-item">
-              <span class="status-pill status-ok" id="badge-guard-disk">OK</span>
+              <span class="status-pill status-ok" id="badge-guard-iops">OK</span>
               <div>
-                <strong style="color:var(--text-bright);">JetStream Disk Write Barrier:</strong>
-                <span id="text-guard-disk" style="color:var(--text-dim); margin-left:4px;">Offered load within synchronous File R=3 fsync capacity (ceiling: 7,234 msgs/s).</span>
+                <strong style="color:var(--text-bright);">Persistent Disk IOPS &amp; Throughput:</strong>
+                <span id="text-guard-iops" style="color:var(--text-dim); margin-left:4px;">Disk write IOPS fits standard cloud SSD performance envelope.</span>
               </div>
             </div>
-
-            <!-- Guardrail 4: Consumer ACK Consensus -->
-            <div class="advisor-item">
-              <span class="status-pill status-ok" id="badge-guard-ack">OK</span>
-              <div>
-                <strong style="color:var(--text-bright);">Consumer ACK Consensus Limit:</strong>
-                <span id="text-guard-ack" style="color:var(--text-dim); margin-left:4px;">Aggregate ACK mutations within Raft stream commit capacity (ceiling: 15,000 ACKs/s).</span>
-              </div>
-            </div>
+          </div>
           </div>
         </div>
       </div>
@@ -1130,6 +1146,9 @@
       if (activeBtn) activeBtn.classList.add('active');
       const activePane = document.getElementById('tab-' + tabId);
       if (activePane) activePane.classList.add('active');
+      if (tabId === 'calculator' && typeof calculateInfraCapacity === 'function') {
+        calculateInfraCapacity();
+      }
     }
 
     function formatNumber(num) {
@@ -1919,77 +1938,101 @@
     // =========================================================================
     // 6. INFRASTRUCTURE CAPACITY CALCULATOR ENGINE
     // =========================================================================
-    function onEngineChange() {
-      const engine = document.getElementById("calc-engine").value;
-      const isJS = engine.startsWith("js");
-      const isCore = (engine === "core");
-
-      const grpPattern = document.getElementById("group-routing-pattern");
-      const grpSubs = document.getElementById("group-subscribers");
-      const grpStreams = document.getElementById("group-streams");
-      const grpConsumers = document.getElementById("group-consumers");
-
-      if (grpPattern) grpPattern.style.display = isCore ? "block" : "none";
-      if (grpSubs) {
-        const pattern = document.getElementById("calc-pattern").value;
-        grpSubs.style.display = (isCore && pattern === "broadcast") ? "block" : "none";
-      }
-      if (grpStreams) grpStreams.style.display = isJS ? "block" : "none";
-      if (grpConsumers) grpConsumers.style.display = isJS ? "block" : "none";
-
+    function syncRateFromSlider(val) {
+      const v = parseFloat(val) || 0;
+      const numEl = document.getElementById("calc-rate-num");
+      if (numEl) numEl.value = v;
+      document.getElementById("calc-rate-badge").textContent = formatNumber(v) + " msgs/s";
       calculateInfraCapacity();
     }
 
-    function syncRateInput(val) {
-      document.getElementById("calc-rate-num").value = val;
-      document.getElementById("calc-rate-badge").textContent = formatNumber(val) + " msgs/s";
+    function syncRateFromNum(val) {
+      const v = parseFloat(val) || 0;
+      const sliderEl = document.getElementById("calc-rate-slider");
+      if (sliderEl) sliderEl.value = Math.min(Math.max(v, 100), 100000);
+      document.getElementById("calc-rate-badge").textContent = formatNumber(v) + " msgs/s";
       calculateInfraCapacity();
     }
 
-    function syncRateSlider(val) {
-      document.getElementById("calc-rate-slider").value = Math.min(val, 100000);
-      document.getElementById("calc-rate-badge").textContent = formatNumber(val) + " msgs/s";
+    function syncPayloadFromSlider(val) {
+      const v = parseFloat(val) || 1024;
+      const numEl = document.getElementById("calc-payload-num");
+      if (numEl) numEl.value = v;
+      document.getElementById("calc-payload-badge").textContent = formatNumber(v) + " Bytes";
       calculateInfraCapacity();
     }
 
-    function syncPayloadInput(val) {
-      document.getElementById("calc-payload-badge").textContent = formatNumber(val) + " Bytes";
+    function syncPayloadFromNum(val) {
+      const v = parseFloat(val) || 64;
+      const sliderEl = document.getElementById("calc-payload-slider");
+      if (sliderEl) sliderEl.value = Math.min(Math.max(v, 64), 65536);
+      document.getElementById("calc-payload-badge").textContent = formatNumber(v) + " Bytes";
       calculateInfraCapacity();
     }
 
     function setPayloadBytes(val) {
-      document.getElementById("calc-payload-slider").value = val;
-      syncPayloadInput(val);
-    }
-
-    function syncSubsInput(val) {
-      document.getElementById("calc-subs-badge").textContent = val + " Subscribers";
+      const v = parseFloat(val) || 1024;
+      const slider = document.getElementById("calc-payload-slider");
+      const num = document.getElementById("calc-payload-num");
+      if (slider) slider.value = Math.min(Math.max(v, 64), 65536);
+      if (num) num.value = v;
+      document.getElementById("calc-payload-badge").textContent = formatNumber(v) + " Bytes";
       calculateInfraCapacity();
     }
 
-    function syncSubjectsInput(val) {
-      document.getElementById("calc-subjects-badge").textContent = formatNumber(val) + " Subjects";
+    function syncSubjectsFromSlider(val) {
+      const v = parseFloat(val) || 1;
+      const numEl = document.getElementById("calc-subjects-num");
+      if (numEl) numEl.value = v;
+      document.getElementById("calc-subjects-badge").textContent = formatNumber(v) + " Subjects";
       calculateInfraCapacity();
     }
 
-    function syncStreamsInput(val) {
-      document.getElementById("calc-streams-badge").textContent = val + " Streams";
+    function syncSubjectsFromNum(val) {
+      const v = parseFloat(val) || 1;
+      const sliderEl = document.getElementById("calc-subjects-slider");
+      if (sliderEl) sliderEl.value = Math.min(Math.max(v, 1), 50000);
+      document.getElementById("calc-subjects-badge").textContent = formatNumber(v) + " Subjects";
       calculateInfraCapacity();
     }
 
-    function syncConsumersInput(val) {
-      document.getElementById("calc-consumers-badge").textContent = val + " Consumers";
+    function syncStreamsFromSlider(val) {
+      const v = parseFloat(val) || 1;
+      const numEl = document.getElementById("calc-streams-num");
+      if (numEl) numEl.value = v;
+      document.getElementById("calc-streams-badge").textContent = v + " Streams";
       calculateInfraCapacity();
     }
 
-    function syncBufferInput(val) {
-      document.getElementById("calc-buffer-badge").textContent = val + "% Operational Headroom";
+    function syncStreamsFromNum(val) {
+      const v = parseFloat(val) || 1;
+      const sliderEl = document.getElementById("calc-streams-slider");
+      if (sliderEl) sliderEl.value = Math.min(Math.max(v, 1), 50);
+      document.getElementById("calc-streams-badge").textContent = v + " Streams";
       calculateInfraCapacity();
     }
 
-    function syncRetentionInput(val) {
-      const hours = parseInt(val, 10);
-      const days = (hours / 24).toFixed(0);
+    function syncConsumersFromSlider(val) {
+      const v = parseFloat(val) || 0;
+      const numEl = document.getElementById("calc-consumers-num");
+      if (numEl) numEl.value = v;
+      document.getElementById("calc-consumers-badge").textContent = v + " Consumers";
+      calculateInfraCapacity();
+    }
+
+    function syncConsumersFromNum(val) {
+      const v = parseFloat(val) || 0;
+      const sliderEl = document.getElementById("calc-consumers-slider");
+      if (sliderEl) sliderEl.value = Math.min(Math.max(v, 0), 30);
+      document.getElementById("calc-consumers-badge").textContent = v + " Consumers";
+      calculateInfraCapacity();
+    }
+
+    function syncRetentionFromSlider(val) {
+      const hours = parseFloat(val) || 72;
+      const numEl = document.getElementById("calc-retention-num");
+      if (numEl) numEl.value = hours;
+      const days = (hours / 24).toFixed(1).replace(/\.0$/, "");
       const badge = document.getElementById("calc-retention-badge");
       if (badge) {
         badge.textContent = hours + " Hours (" + (hours === 72 ? "3 Days Standard" : days + " Days") + ")";
@@ -1997,270 +2040,218 @@
       calculateInfraCapacity();
     }
 
-    function applyCalcPreset(preset) {
-      const engineEl = document.getElementById("calc-engine");
-      const rateEl = document.getElementById("calc-rate-slider");
-      const payloadEl = document.getElementById("calc-payload-slider");
-      const patternEl = document.getElementById("calc-pattern");
-      const subsEl = document.getElementById("calc-subs-slider");
-      const subjsEl = document.getElementById("calc-subjects-slider");
-      const streamsEl = document.getElementById("calc-streams-slider");
-      const consumersEl = document.getElementById("calc-consumers-slider");
-      const bufferEl = document.getElementById("calc-buffer-slider");
-      const familyEl = document.getElementById("calc-family");
-
-      if (preset === "baseline") {
-        engineEl.value = "core";
-        rateEl.value = 1000;
-        payloadEl.value = 1024;
-        patternEl.value = "broadcast";
-        subsEl.value = 1;
-        subjsEl.value = 100;
-        streamsEl.value = 1;
-        consumersEl.value = 0;
-        bufferEl.value = 30;
-        if (familyEl) familyEl.value = "compute-1-2";
-      } else if (preset === "high-fanout") {
-        engineEl.value = "core";
-        rateEl.value = 30000;
-        payloadEl.value = 1024;
-        patternEl.value = "broadcast";
-        subsEl.value = 4;
-        subjsEl.value = 25000;
-        streamsEl.value = 1;
-        consumersEl.value = 0;
-        bufferEl.value = 30;
-        if (familyEl) familyEl.value = "compute-1-2";
-      } else if (preset === "high-cardinality") {
-        engineEl.value = "core";
-        rateEl.value = 10000;
-        payloadEl.value = 1024;
-        patternEl.value = "broadcast";
-        subsEl.value = 4;
-        subjsEl.value = 10000;
-        streamsEl.value = 1;
-        consumersEl.value = 0;
-        bufferEl.value = 30;
-        if (familyEl) familyEl.value = "compute-1-2";
-      } else if (preset === "jetstream-sync") {
-        engineEl.value = "js-file-r3";
-        rateEl.value = 2500;
-        payloadEl.value = 1024;
-        patternEl.value = "queue";
-        subsEl.value = 2;
-        subjsEl.value = 1000;
-        streamsEl.value = 5;
-        consumersEl.value = 10;
-        bufferEl.value = 30;
-        if (familyEl) familyEl.value = "general-1-4";
-      } else if (preset === "stream-density") {
-        engineEl.value = "js-file-r3";
-        rateEl.value = 1000;
-        payloadEl.value = 1024;
-        patternEl.value = "queue";
-        subsEl.value = 2;
-        subjsEl.value = 1000;
-        streamsEl.value = 20;
-        consumersEl.value = 5;
-        bufferEl.value = 30;
-        if (familyEl) familyEl.value = "general-1-4";
-      } else if (preset === "consumer-fanout") {
-        engineEl.value = "js-file-r3";
-        rateEl.value = 1000;
-        payloadEl.value = 1024;
-        patternEl.value = "queue";
-        subsEl.value = 2;
-        subjsEl.value = 1000;
-        streamsEl.value = 1;
-        consumersEl.value = 10;
-        bufferEl.value = 30;
-        if (familyEl) familyEl.value = "general-1-4";
-      } else if (preset === "payload-stress") {
-        engineEl.value = "core";
-        rateEl.value = 3300;
-        payloadEl.value = 32768;
-        patternEl.value = "queue";
-        subsEl.value = 2;
-        subjsEl.value = 100;
-        streamsEl.value = 1;
-        consumersEl.value = 0;
-        bufferEl.value = 30;
-        if (familyEl) familyEl.value = "general-1-4";
+    function syncRetentionFromNum(val) {
+      const hours = parseFloat(val) || 24;
+      const sliderEl = document.getElementById("calc-retention-slider");
+      if (sliderEl) sliderEl.value = Math.min(Math.max(hours, 24), 168);
+      const days = (hours / 24).toFixed(1).replace(/\.0$/, "");
+      const badge = document.getElementById("calc-retention-badge");
+      if (badge) {
+        badge.textContent = hours + " Hours (" + (hours === 72 ? "3 Days Standard" : days + " Days") + ")";
       }
+      calculateInfraCapacity();
+    }
 
-      syncRateInput(rateEl.value);
-      syncPayloadInput(payloadEl.value);
-      syncSubsInput(subsEl.value);
-      syncSubjectsInput(subjsEl.value);
-      syncStreamsInput(streamsEl.value);
-      syncConsumersInput(consumersEl.value);
-      syncBufferInput(bufferEl.value);
-      onEngineChange();
+    function syncBufferFromSlider(val) {
+      const v = parseFloat(val) || 0;
+      const numEl = document.getElementById("calc-buffer-num");
+      if (numEl) numEl.value = v;
+      document.getElementById("calc-buffer-badge").textContent = v + "% Operational Headroom";
+      calculateInfraCapacity();
+    }
+
+    function syncBufferFromNum(val) {
+      const v = parseFloat(val) || 0;
+      const sliderEl = document.getElementById("calc-buffer-slider");
+      if (sliderEl) sliderEl.value = Math.min(Math.max(v, 0), 50);
+      document.getElementById("calc-buffer-badge").textContent = v + "% Operational Headroom";
+      calculateInfraCapacity();
+    }
+
+    // Backward-compatibility aliases
+    function syncRateInput(val) { syncRateFromSlider(val); }
+    function syncRateSlider(val) { syncRateFromNum(val); }
+    function syncPayloadInput(val) { syncPayloadFromSlider(val); }
+    function syncSubjectsInput(val) { syncSubjectsFromSlider(val); }
+    function syncStreamsInput(val) { syncStreamsFromSlider(val); }
+    function syncConsumersInput(val) { syncConsumersFromSlider(val); }
+    function syncRetentionInput(val) { syncRetentionFromSlider(val); }
+    function syncBufferInput(val) { syncBufferFromSlider(val); }
+
+    function setPresetValues(rate, payload, subjs, streams, consumers, retention, buffer, family) {
+      const rateSlider = document.getElementById("calc-rate-slider");
+      const rateNum = document.getElementById("calc-rate-num");
+      if (rateSlider) rateSlider.value = Math.min(rate, 100000);
+      if (rateNum) rateNum.value = rate;
+
+      const payloadSlider = document.getElementById("calc-payload-slider");
+      const payloadNum = document.getElementById("calc-payload-num");
+      if (payloadSlider) payloadSlider.value = Math.min(payload, 65536);
+      if (payloadNum) payloadNum.value = payload;
+
+      const subjsSlider = document.getElementById("calc-subjects-slider");
+      const subjsNum = document.getElementById("calc-subjects-num");
+      if (subjsSlider) subjsSlider.value = Math.min(subjs, 50000);
+      if (subjsNum) subjsNum.value = subjs;
+
+      const streamsSlider = document.getElementById("calc-streams-slider");
+      const streamsNum = document.getElementById("calc-streams-num");
+      if (streamsSlider) streamsSlider.value = Math.min(streams, 50);
+      if (streamsNum) streamsNum.value = streams;
+
+      const consumersSlider = document.getElementById("calc-consumers-slider");
+      const consumersNum = document.getElementById("calc-consumers-num");
+      if (consumersSlider) consumersSlider.value = Math.min(consumers, 30);
+      if (consumersNum) consumersNum.value = consumers;
+
+      const retentionSlider = document.getElementById("calc-retention-slider");
+      const retentionNum = document.getElementById("calc-retention-num");
+      if (retentionSlider) retentionSlider.value = Math.min(retention, 168);
+      if (retentionNum) retentionNum.value = retention;
+
+      const bufferSlider = document.getElementById("calc-buffer-slider");
+      const bufferNum = document.getElementById("calc-buffer-num");
+      if (bufferSlider) bufferSlider.value = Math.min(buffer, 50);
+      if (bufferNum) bufferNum.value = buffer;
+
+      const familyEl = document.getElementById("calc-family");
+      if (familyEl && family) familyEl.value = family;
+
+      syncRateFromNum(rate);
+      syncPayloadFromNum(payload);
+      syncSubjectsFromNum(subjs);
+      syncStreamsFromNum(streams);
+      syncConsumersFromNum(consumers);
+      syncRetentionFromNum(retention);
+      syncBufferFromNum(buffer);
+    }
+
+    function applyCalcPreset(preset) {
+      if (preset === "microservices") {
+        setPresetValues(1000, 1024, 500, 1, 2, 72, 30, "general-1-4");
+      } else if (preset === "order-pipeline") {
+        setPresetValues(2500, 1024, 1000, 5, 5, 72, 30, "general-1-4");
+      } else if (preset === "high-throughput") {
+        setPresetValues(10000, 1024, 2000, 2, 2, 72, 30, "general-1-4");
+      } else if (preset === "consumer-fanout") {
+        setPresetValues(1000, 1024, 1000, 1, 10, 72, 30, "general-1-4");
+      } else if (preset === "large-payload") {
+        setPresetValues(2000, 16384, 500, 5, 2, 72, 30, "general-1-4");
+      } else if (preset === "ultra-scale") {
+        setPresetValues(50000, 512, 5000, 10, 2, 72, 30, "general-1-4");
+      }
     }
 
     function calculateInfraCapacity() {
-      const engine = document.getElementById("calc-engine") ? document.getElementById("calc-engine").value : "js-file-r3";
-      const rate = parseFloat(document.getElementById("calc-rate-num") ? document.getElementById("calc-rate-num").value : 2500) || 0;
-      const payload = parseFloat(document.getElementById("calc-payload-slider") ? document.getElementById("calc-payload-slider").value : 1024) || 1024;
-      const pattern = document.getElementById("calc-pattern") ? document.getElementById("calc-pattern").value : "queue";
-      const subs = parseFloat(document.getElementById("calc-subs-slider") ? document.getElementById("calc-subs-slider").value : 4) || 1;
-      const subjs = parseFloat(document.getElementById("calc-subjects-slider") ? document.getElementById("calc-subjects-slider").value : 1000) || 1;
-      const streams = parseFloat(document.getElementById("calc-streams-slider") ? document.getElementById("calc-streams-slider").value : 1) || 1;
-      const consumers = parseFloat(document.getElementById("calc-consumers-slider") ? document.getElementById("calc-consumers-slider").value : 0) || 0;
-      const bufferPct = parseFloat(document.getElementById("calc-buffer-slider") ? document.getElementById("calc-buffer-slider").value : 30) || 30;
-      const nodes = parseFloat(document.getElementById("calc-nodes") ? document.getElementById("calc-nodes").value : 3) || 3;
-      const retentionHours = parseFloat(document.getElementById("calc-retention-slider") ? document.getElementById("calc-retention-slider").value : 72) || 72;
+      const rateEl = document.getElementById("calc-rate-num") || document.getElementById("calc-rate-slider");
+      const payloadEl = document.getElementById("calc-payload-num") || document.getElementById("calc-payload-slider");
+      const subjsEl = document.getElementById("calc-subjects-num") || document.getElementById("calc-subjects-slider");
+      const streamsEl = document.getElementById("calc-streams-num") || document.getElementById("calc-streams-slider");
+      const consumersEl = document.getElementById("calc-consumers-num") || document.getElementById("calc-consumers-slider");
+      const bufferEl = document.getElementById("calc-buffer-num") || document.getElementById("calc-buffer-slider");
+      const retentionEl = document.getElementById("calc-retention-num") || document.getElementById("calc-retention-slider");
 
-      const isCore = (engine === "core");
-      const isJS = engine.startsWith("js");
-      const isFileR3 = (engine === "js-file-r3");
-      const isMemR3 = (engine === "js-mem-r3");
-      const isFileR1 = (engine === "js-file-r1");
+      const rate = parseFloat(rateEl ? rateEl.value : 2500) || 0;
+      const payload = parseFloat(payloadEl ? payloadEl.value : 1024) || 1024;
+      const subjs = parseFloat(subjsEl ? subjsEl.value : 1000) || 1;
+      const streams = parseFloat(streamsEl ? streamsEl.value : 5) || 1;
+      const consumers = parseFloat(consumersEl ? consumersEl.value : 5) || 0;
+      const bufferPct = parseFloat(bufferEl ? bufferEl.value : 30) || 30;
+      const retentionHours = parseFloat(retentionEl ? retentionEl.value : 72) || 72;
 
-      // 1. Throughput & Network Egress
-      let egressDeliveries = 0;
-      if (isCore) {
-        egressDeliveries = (pattern === "broadcast") ? (rate * subs) : rate;
-      } else {
-        egressDeliveries = rate * Math.max(1, consumers);
-      }
+      // Fixed Architecture Standard: 3-Node High-Availability Cluster, JetStream File Storage (R=3)
+      const nodes = 3;
+      const replicaFactor = 3.0;
 
+      // 1. Ingress, Egress & Intra-Cluster Replication Network Bandwidth
       const ingressMBs = (rate * payload) / 1000000.0;
+      const egressDeliveries = rate * Math.max(1, consumers);
       const egressMBs = (egressDeliveries * payload) / 1000000.0;
-      const totalWireMBs = ingressMBs + egressMBs;
+      const replMBs = (rate * payload * (replicaFactor - 1.0)) / 1000000.0;
+      const totalWireMBs = ingressMBs + egressMBs + replMBs;
       const totalWireMbps = totalWireMBs * 8.0 * 1.048576;
 
       // 2. Storage & ACK Rates
-      let ackRate = 0;
-      if (isJS) {
-        ackRate = rate * consumers;
-      }
+      const ackRate = rate * consumers;
+      const diskWriteMBs = ((rate * payload * replicaFactor) / 1000000.0) + ((ackRate * 128.0 * replicaFactor) / 1000000.0);
+      const bMsg = Math.max(1, Math.floor(1 + 0.0008 * rate));
+      const batchAck = Math.max(1, Math.floor(1 + 0.0008 * ackRate));
+      const diskIOPS = Math.round((rate / bMsg) + (ackRate / batchAck));
 
-      let diskWriteMBs = 0;
-      let diskIOPS = 0;
-      if (isFileR3) {
-        diskWriteMBs = ((rate * payload * 3.0) / 1000000.0) + ((ackRate * 128.0 * 3.0) / 1000000.0);
-        const bMsg = Math.max(1, Math.floor(1 + 0.0008 * rate));
-        const bAck = Math.max(1, Math.floor(1 + 0.0008 * ackRate));
-        diskIOPS = Math.round((rate / bMsg) + (ackRate / bAck));
-      } else if (isFileR1) {
-        diskWriteMBs = ((rate * payload * 1.0) / 1000000.0) + ((ackRate * 128.0 * 1.0) / 1000000.0);
-        const bMsg = Math.max(1, Math.floor(1 + 0.0008 * rate));
-        const bAck = Math.max(1, Math.floor(1 + 0.0008 * ackRate));
-        diskIOPS = Math.round((rate / bMsg) + (ackRate / bAck));
-      }
-
-      // 2b. Retained Storage Volume Calculation (docs/model.md Section 3.4)
+      // 2b. Retained Storage Volume Calculation (docs/model.md Section 6.5)
       const retentionSec = retentionHours * 3600.0;
-      const rawIngestBytesSec = rate * payload;
-      const replicaFactor = (isFileR3 || isMemR3) ? 3.0 : (isFileR1 ? 1.0 : 0.0);
-      let totalRetainedBytes = 0;
-      if (isFileR3 || isFileR1) {
-        totalRetainedBytes = rawIngestBytesSec * replicaFactor * retentionSec;
-      }
-      const totalRetainedGB = totalRetainedBytes / (1024.0 * 1024.0 * 1024.0);
-      const perNodeStorageGB = nodes > 0 ? (totalRetainedGB / nodes) : 0;
+      const rawIngestBytes = rate * payload * replicaFactor * retentionSec;
+      const ackJournalBytes = ackRate * 128.0 * replicaFactor * retentionSec;
+      const totalRetainedGB = (rawIngestBytes + ackJournalBytes) / (1024.0 * 1024.0 * 1024.0);
+      const perNodeStorageGB = (totalRetainedGB / nodes) * 1.10; // 10% filesystem metadata overhead
       const perNodeStorageTB = perNodeStorageGB / 1024.0;
 
-      // 3. Memory Calculation (docs/model.md Section 3)
-      const mBase = isCore ? 45.0 : 240.0;
+      // 3. Memory Calculation (docs/model.md Section 6.1)
+      const mBase = 240.0; // JetStream base cluster heap
       const mSubj = (subjs * 940.0) / 1000000.0;
-      const mStream = isJS ? ((streams * 720.0) / 1024.0) : 0.0;
-      const mConsumer = isJS ? (consumers * 21.88) : 0.0;
-      let mRaw = mBase + mSubj + mStream + mConsumer;
-
-      if (isMemR3) {
-        const memRetainedMB = (rawIngestBytesSec * 3.0 * retentionSec) / (1024.0 * 1024.0);
-        mRaw += memRetainedMB;
-      }
+      const mStream = (streams * 720.0) / 1024.0;
+      const mConsumer = consumers * 21.88;
+      const mRaw = mBase + mSubj + mStream + mConsumer;
       const mBuffered = mRaw * (1.0 + (bufferPct / 100.0));
+      const nodeHeapMb = mBuffered / nodes;
+      const nodeHeapGb = nodeHeapMb / 1024.0;
 
-      // 4. CPU Calculation (docs/model.md Section 4)
+      // 4. CPU Calculation (docs/model.md Section 6.2)
       const cBase = 5.0;
-      let cPub = 0.0;
-      let cEgress = 0.0;
-      let cAck = 0.0;
-      let cHeartbeat = 0.0;
-
-      if (isCore) {
-        cPub = rate * 1.01e-4;
-        cEgress = egressDeliveries * 1.01e-4;
-      } else if (isFileR3) {
-        cPub = rate * 3.17e-3;
-        cAck = ackRate * 3.25e-3;
-        cHeartbeat = Math.max(0, streams - 1) * 0.0165;
-      } else if (isMemR3) {
-        cPub = rate * 2.80e-3;
-        cAck = ackRate * 2.80e-3;
-        cHeartbeat = Math.max(0, streams - 1) * 0.0165;
-      } else if (isFileR1) {
-        cPub = rate * 1.60e-3;
-        cAck = ackRate * 1.60e-3;
-        cHeartbeat = 0.0;
-      }
-
-      const cTotalPct = cBase + cPub + cEgress + cAck + cHeartbeat;
+      const cPub = rate * 3.17e-3;
+      const cAck = ackRate * 3.25e-3;
+      const cEgress = (rate * consumers) * 1.01e-4;
+      const cHeartbeat = Math.max(0, streams - 1) * 0.0165;
+      const cTotalPct = cBase + cPub + cAck + cEgress + cHeartbeat;
       const coresModel = cTotalPct / 100.0;
       const coresBuffered = coresModel * (1.0 + (bufferPct / 100.0));
+      const targetNodeCores = coresBuffered / nodes;
 
-      // 5. Cloud Machine Family & Coupled Quantization Catalog (docs/model.md Section 7)
+      // 5. Cloud Machine Family & Coupled Quantization Catalog (GKE Reference Primary)
       const INSTANCE_FAMILIES = {
         "general-1-4": {
           name: "General Purpose (1:4)",
-          desc: "AWS m6i / GCP n2-standard / Azure Dsv5",
+          ratioName: "1:4 Ratio",
+          primaryFamily: "GKE n2-standard",
+          desc: "GKE n2-standard (AWS m6i / Azure Dsv5) - Industry Workhorse (~70% of deployments)",
           ratio: 4,
           tiers: [
-            { cores: 2, ramGb: 8 },
-            { cores: 4, ramGb: 16 },
-            { cores: 8, ramGb: 32 },
-            { cores: 16, ramGb: 64 },
-            { cores: 32, ramGb: 128 },
-            { cores: 48, ramGb: 192 },
-            { cores: 64, ramGb: 256 },
-            { cores: 96, ramGb: 384 },
-            { cores: 128, ramGb: 512 }
+            { cores: 2, ramGb: 8, gke: "n2-standard-2", aws: "m6i.large", az: "D2s_v5" },
+            { cores: 4, ramGb: 16, gke: "n2-standard-4", aws: "m6i.xlarge", az: "D4s_v5" },
+            { cores: 8, ramGb: 32, gke: "n2-standard-8", aws: "m6i.2xlarge", az: "D8s_v5" },
+            { cores: 16, ramGb: 64, gke: "n2-standard-16", aws: "m6i.4xlarge", az: "D16s_v5" },
+            { cores: 32, ramGb: 128, gke: "n2-standard-32", aws: "m6i.8xlarge", az: "D32s_v5" },
+            { cores: 64, ramGb: 256, gke: "n2-standard-64", aws: "m6i.16xlarge", az: "D64s_v5" }
           ]
         },
         "compute-1-2": {
           name: "Compute Optimized (1:2)",
-          desc: "AWS c6i / GCP c2-standard / Azure Fsv2",
+          ratioName: "1:2 Ratio",
+          primaryFamily: "GKE c3-highcpu",
+          desc: "GKE c3-highcpu (AWS c6i / Azure Fsv2) - Stateless compute & high-throughput routing",
           ratio: 2,
           tiers: [
-            { cores: 2, ramGb: 4 },
-            { cores: 4, ramGb: 8 },
-            { cores: 8, ramGb: 16 },
-            { cores: 16, ramGb: 32 },
-            { cores: 32, ramGb: 64 },
-            { cores: 48, ramGb: 96 },
-            { cores: 64, ramGb: 128 }
-          ]
-        },
-        "balanced-1-6": {
-          name: "Balanced Enterprise (1:6)",
-          desc: "Enterprise Messaging / Database Tier",
-          ratio: 6,
-          tiers: [
-            { cores: 2, ramGb: 12 },
-            { cores: 4, ramGb: 24 },
-            { cores: 8, ramGb: 48 },
-            { cores: 16, ramGb: 96 },
-            { cores: 32, ramGb: 192 },
-            { cores: 48, ramGb: 288 },
-            { cores: 64, ramGb: 384 }
+            { cores: 2, ramGb: 4, gke: "c3-highcpu-2", aws: "c6i.large", az: "F2s_v2" },
+            { cores: 4, ramGb: 8, gke: "c3-highcpu-4", aws: "c6i.xlarge", az: "F4s_v2" },
+            { cores: 8, ramGb: 16, gke: "c3-highcpu-8", aws: "c6i.2xlarge", az: "F8s_v2" },
+            { cores: 16, ramGb: 32, gke: "c3-highcpu-16", aws: "c6i.4xlarge", az: "F16s_v2" },
+            { cores: 32, ramGb: 64, gke: "c3-highcpu-32", aws: "c6i.8xlarge", az: "F32s_v2" },
+            { cores: 64, ramGb: 128, gke: "c3-highcpu-64", aws: "c6i.16xlarge", az: "F64s_v2" }
           ]
         },
         "memory-1-8": {
           name: "Memory Optimized (1:8)",
-          desc: "AWS r6i / GCP n2-highmem / Azure Esv5",
+          ratioName: "1:8 Ratio",
+          primaryFamily: "GKE n2-highmem",
+          desc: "GKE n2-highmem (AWS r6i / Azure Esv5) - In-memory caches & heavy buffers",
           ratio: 8,
           tiers: [
-            { cores: 2, ramGb: 16 },
-            { cores: 4, ramGb: 32 },
-            { cores: 8, ramGb: 64 },
-            { cores: 16, ramGb: 128 },
-            { cores: 32, ramGb: 256 },
-            { cores: 48, ramGb: 384 },
-            { cores: 64, ramGb: 512 }
+            { cores: 2, ramGb: 16, gke: "n2-highmem-2", aws: "r6i.large", az: "E2s_v5" },
+            { cores: 4, ramGb: 32, gke: "n2-highmem-4", aws: "r6i.xlarge", az: "E4s_v5" },
+            { cores: 8, ramGb: 64, gke: "n2-highmem-8", aws: "r6i.2xlarge", az: "E8s_v5" },
+            { cores: 16, ramGb: 128, gke: "n2-highmem-16", aws: "r6i.4xlarge", az: "E16s_v5" },
+            { cores: 32, ramGb: 256, gke: "n2-highmem-32", aws: "r6i.8xlarge", az: "E32s_v5" },
+            { cores: 64, ramGb: 512, gke: "n2-highmem-64", aws: "r6i.16xlarge", az: "E64s_v5" }
           ]
         }
       };
@@ -2270,37 +2261,21 @@
       const tiers = family.tiers;
       const maxTierCores = tiers[tiers.length - 1].cores;
 
-      // Keep user-selected cluster nodes constant (Standard HA Quorum = 3 nodes)
-      const targetNodeCores = coresBuffered / nodes;
-      const targetNodeRamGb = (mBuffered / 1024.0) / nodes;
-
-      // Architectural Pattern Advisories (Stream Partitioning vs Node Scaling)
+      // Architectural Stream Partitioning Advisory
       let partitionsNeeded = 1;
       let partitionMsg = "";
       let showPartitionAlert = false;
 
-      if (isFileR3 && rate > 7000) {
+      if (rate > 6500) {
         partitionsNeeded = Math.ceil(rate / 7000.0);
         showPartitionAlert = true;
-        partitionMsg = "Offered rate (" + formatNumber(rate) + " msgs/s) exceeds single-stream fsync write capacity (~7.2k msgs/s). Deploy across at least " + partitionsNeeded + " partitioned streams (e.g. ORDERS.partition.*) distributed across your " + nodes + "-node cluster to prevent commit queue backpressure.";
-      } else if (isCore && rate > 80000) {
-        partitionsNeeded = Math.ceil(rate / 80000.0);
-        showPartitionAlert = true;
-        partitionMsg = "Offered rate (" + formatNumber(rate) + " msgs/s) approaches single-socket routing ceiling (~83.7k msgs/s). Use multiple publisher connections or queue worker pools across your " + nodes + "-node cluster.";
-      }
-
-      // Check if per-node CPU exceeds largest commodity VM tier (128 vCPU)
-      let scaleOutRequired = (targetNodeCores > maxTierCores);
-      let scaleOutReason = "";
-      if (scaleOutRequired) {
-        const neededNodes = Math.ceil(coresBuffered / 64.0);
-        scaleOutReason = "Workload requires " + coresBuffered.toFixed(0) + " Cores (" + targetNodeCores.toFixed(0) + " Cores per node), exceeding the largest 128 vCPU cloud VM instance. Consider expanding cluster to " + neededNodes + " nodes.";
+        partitionMsg = "Offered rate (" + formatNumber(rate) + " msgs/s) exceeds single-stream fsync write capacity (~7.2k msgs/s). Deploy across at least " + partitionsNeeded + " partitioned streams (e.g. ORDERS.partition.*) distributed across your 3-node cluster to prevent commit queue backpressure.";
       }
 
       // Coupled Matching: Find smallest tier satisfying BOTH cores and RAM
       let matchedTier = null;
       for (let t of tiers) {
-        if (t.cores >= targetNodeCores && t.ramGb >= targetNodeRamGb) {
+        if (t.cores >= targetNodeCores && t.ramGb >= nodeHeapGb) {
           matchedTier = t;
           break;
         }
@@ -2309,73 +2284,62 @@
         matchedTier = tiers[tiers.length - 1];
       }
 
-      // 6. Latency Envelope Projection (docs/model.md Section 5)
+      const scaleOutRequired = (targetNodeCores > maxTierCores);
+      let scaleOutReason = "";
+      if (scaleOutRequired) {
+        const neededNodes = Math.ceil(coresBuffered / 32.0);
+        scaleOutReason = "Workload requires " + coresBuffered.toFixed(0) + " Cores (" + targetNodeCores.toFixed(0) + " Cores per node), exceeding standard 64 vCPU cloud VM instances. Consider expanding cluster to " + neededNodes + " nodes.";
+      }
+
+      // Memory Breakdown: Process Heap vs Linux Page Cache
+      const nodeHeapMbStr = nodeHeapMb >= 1024 ? (nodeHeapMb / 1024.0).toFixed(1) + " GB" : nodeHeapMb.toFixed(0) + " MB";
+      const pageCacheGb = Math.max(0, matchedTier.ramGb - nodeHeapGb);
+      const pageCacheStr = pageCacheGb >= 1.0 ? pageCacheGb.toFixed(1) + " GB" : (pageCacheGb * 1024).toFixed(0) + " MB";
+
+      // 6. Latency Envelope Projection (docs/model.md Section 5.2)
       let p50Us = 0;
       let p99Us = 0;
       let p999Us = 0;
       let latExplanation = "";
       let isSaturated = false;
 
-      if (isCore) {
-        if (rate <= 50000) {
-          p50Us = 0.30;
-          p99Us = 3.0;
-          p999Us = 15.0;
-          latExplanation = "Sub-microsecond in-memory routing floor with zero-allocation Go runtime steady state.";
-        } else if (rate <= 83700) {
-          p50Us = 0.45;
-          p99Us = 9.0;
-          p999Us = 5000.0;
-          latExplanation = "Elevated load approaching socket write lock contention; tail latency begins to expand.";
-        } else {
-          isSaturated = true;
-          p50Us = 5000.0;
-          p99Us = 25000.0;
-          p999Us = 1700000.0;
-          latExplanation = "Over-offered saturation knee breached! Output TCP buffers overflowing into heap buffer bloat.";
-        }
-      } else if (isFileR3) {
-        if (rate <= 7234) {
-          p50Us = 600.0 + (3800.0 / (1.0 + 0.0008 * rate));
-          p99Us = p50Us * 1.85;
-          p999Us = p50Us * 4.6;
-          latExplanation = "Synchronous File R=3 group commit amortization: latency decreases as batching increases up to 7.2k msgs/s.";
-        } else {
-          isSaturated = true;
-          p50Us = 15000.0;
-          p99Us = 45000.0;
-          p999Us = 180000.0;
-          latExplanation = "Single-stream fsync saturation knee breached (>7.2k msgs/s)! Requires " + partitionsNeeded + " partitioned streams across your " + nodes + " nodes.";
-        }
-      } else if (isMemR3) {
-        p50Us = 1560.0;
-        p99Us = 3300.0;
-        p999Us = 7400.0;
-        latExplanation = "Replicated memory Raft consensus network roundtrip without disk sync overhead.";
-      } else if (isFileR1) {
-        p50Us = 2130.0;
-        p99Us = 4100.0;
-        p999Us = 8800.0;
-        latExplanation = "Local disk fsync write latency without network Raft quorum roundtrips.";
+      if (rate <= 7234) {
+        p50Us = 600.0 + (3800.0 / (1.0 + 0.0008 * rate));
+        p99Us = p50Us * 1.85;
+        p999Us = p50Us * 4.6;
+        latExplanation = "Synchronous File R=3 group commit amortization: latency decreases as batching increases up to 7.2k msgs/s.";
+      } else {
+        isSaturated = true;
+        p50Us = 15000.0;
+        p99Us = 45000.0;
+        p999Us = 180000.0;
+        latExplanation = "Single-stream fsync saturation knee breached (>7.2k msgs/s)! Requires " + partitionsNeeded + " partitioned streams across your 3 nodes.";
       }
 
       // Storage Formatting Strings
       const storageNodeStr = perNodeStorageTB >= 1.0 ? perNodeStorageTB.toFixed(1) + " TB" : perNodeStorageGB.toFixed(0) + " GB";
-      const storageTotalStr = totalRetainedGB >= 1024.0 ? (totalRetainedGB / 1024.0).toFixed(1) + " TB" : totalRetainedGB.toFixed(0) + " GB";
+      const storageTotalStr = (totalRetainedGB / 1024.0) >= 1.0 ? (totalRetainedGB / 1024.0).toFixed(1) + " TB" : totalRetainedGB.toFixed(0) + " GB";
 
-      // Update DOM elements if present
+      // Update Hero Card DOM
       const elNodeShape = document.getElementById("hero-node-shape");
       if (elNodeShape) {
-        elNodeShape.textContent = nodes + "x Nodes: " + matchedTier.cores + " vCPU | " + matchedTier.ramGb + " GB RAM" + (isCore ? "" : " with " + storageNodeStr + " Disk / node") + " (" + family.name + ")";
+        elNodeShape.textContent = "3x Nodes: GKE " + matchedTier.gke + " (" + matchedTier.cores + " vCPU | " + matchedTier.ramGb + " GB RAM) with " + storageNodeStr + " SSD / node";
       }
 
       const elClusterTotal = document.getElementById("hero-cluster-total");
       if (elClusterTotal) {
-        elClusterTotal.textContent = "Cluster Total: " + (nodes * matchedTier.cores) + " vCPU | " + (nodes * matchedTier.ramGb) + " GB RAM" + (isCore ? "" : " | " + storageTotalStr + " Persistent Storage") + " across " + nodes + " instances";
+        elClusterTotal.textContent = "Total Cluster: " + (nodes * matchedTier.cores) + " vCPU | " + (nodes * matchedTier.ramGb) + " GB RAM | " + storageTotalStr + " Persistent SSD across 3 Nodes (R=3 Quorum)";
+      }
+
+      const elCloudMapping = document.getElementById("hero-cloud-mapping");
+      if (elCloudMapping) {
+        elCloudMapping.textContent = "Cross-Cloud Equivalents: AWS " + matchedTier.aws + " | Azure " + matchedTier.az;
       }
 
       const elTierTag = document.getElementById("hero-tier-tag");
-      if (elTierTag) elTierTag.textContent = family.name + " (" + family.ratio + ":1 RAM/CPU Ratio)";
+      if (elTierTag) {
+        elTierTag.textContent = family.primaryFamily + " (" + family.ratioName + ") - GKE Primary Reference";
+      }
 
       const elBadgeStatus = document.getElementById("hero-badge-status");
       const elPartAlert = document.getElementById("hero-partition-alert");
@@ -2405,7 +2369,7 @@
         }
       } else {
         if (elBadgeStatus) {
-          elBadgeStatus.textContent = showPartitionAlert ? "PARTITIONED CLUSTER SIZING" : "NOMINAL HA DEPLOYMENT";
+          elBadgeStatus.textContent = showPartitionAlert ? "STREAM PARTITIONING ADVISED" : "NOMINAL HA DEPLOYMENT";
           elBadgeStatus.style.background = showPartitionAlert ? "rgba(210,153,34,0.15)" : "var(--accent-bg)";
           elBadgeStatus.style.borderColor = showPartitionAlert ? "#d29922" : "var(--border-accent)";
           elBadgeStatus.style.color = showPartitionAlert ? "#e3b341" : "var(--accent)";
@@ -2424,22 +2388,14 @@
           elNetVal.textContent = "10 Gbps Interface";
         } else if (totalWireMbps <= 22000) {
           elNetVal.textContent = "25 Gbps Interface";
-        } else if (totalWireMbps <= 85000) {
-          elNetVal.textContent = "100 Gbps Interface";
         } else {
-          elNetVal.textContent = "Distributed 100G Fabric";
+          elNetVal.textContent = "100 Gbps Interface";
         }
       }
 
       const elStorageVal = document.getElementById("hero-storage-val");
       if (elStorageVal) {
-        if (isFileR3) {
-          elStorageVal.textContent = storageNodeStr + " / node (" + retentionHours + "h R=3)";
-        } else if (isFileR1) {
-          elStorageVal.textContent = storageNodeStr + " / node (" + retentionHours + "h R=1)";
-        } else {
-          elStorageVal.textContent = isMemR3 ? "In-Memory RAM (" + retentionHours + "h)" : "In-Memory Ephemeral";
-        }
+        elStorageVal.textContent = storageNodeStr + " SSD / node (" + retentionHours + "h R=3)";
       }
 
       const elHeroLat = document.getElementById("hero-latency-val");
@@ -2448,45 +2404,38 @@
         elHeroLat.textContent = (isSaturated ? ">" : "~") + p50Str + " (p50)" + (isSaturated ? " (Saturated)" : "");
       }
 
+      // Update 5 Metric Cards
       const elCpuCores = document.getElementById("metric-cpu-cores");
-      if (elCpuCores) elCpuCores.textContent = coresBuffered.toFixed(2) + " Cores";
+      if (elCpuCores) elCpuCores.textContent = matchedTier.cores + " vCPU / node";
 
       const elCpuSub = document.getElementById("metric-cpu-sub");
-      if (elCpuSub) elCpuSub.textContent = targetNodeCores.toFixed(2) + " vCPU per node across " + nodes + " nodes (" + cTotalPct.toFixed(0) + "% load)";
+      if (elCpuSub) elCpuSub.textContent = targetNodeCores.toFixed(2) + " vCPU req per node (" + coresBuffered.toFixed(2) + " cluster cores)";
 
       const elRamTotal = document.getElementById("metric-ram-total");
-      if (elRamTotal) elRamTotal.textContent = (mBuffered >= 1024 ? (mBuffered / 1024.0).toFixed(1) + " GB" : mBuffered.toFixed(0) + " MB");
+      if (elRamTotal) elRamTotal.textContent = matchedTier.ramGb + " GB / node";
 
       const elRamSub = document.getElementById("metric-ram-sub");
-      if (elRamSub) elRamSub.textContent = (targetNodeRamGb >= 1.0 ? targetNodeRamGb.toFixed(1) + " GB" : (targetNodeRamGb * 1024).toFixed(0) + " MB") + " heap per node (Page cache uses free node RAM)";
+      if (elRamSub) elRamSub.textContent = "NATS Heap: ~" + nodeHeapMbStr + " | Linux Page Cache: ~" + pageCacheStr;
 
       const elNetBw = document.getElementById("metric-net-bw");
       if (elNetBw) elNetBw.textContent = totalWireMBs.toFixed(2) + " MB/s";
 
       const elNetSub = document.getElementById("metric-net-sub");
-      if (elNetSub) elNetSub.textContent = (totalWireMbps / nodes).toFixed(0) + " Mbps wire per node (" + totalWireMbps.toFixed(0) + " Mbps total)";
+      if (elNetSub) elNetSub.textContent = "Ingress: " + ingressMBs.toFixed(1) + " MB/s | Egress: " + egressMBs.toFixed(1) + " MB/s | Repl: " + replMBs.toFixed(1) + " MB/s";
 
       const elDiskRate = document.getElementById("metric-disk-rate");
-      if (elDiskRate) elDiskRate.textContent = (isFileR3 || isFileR1) ? diskWriteMBs.toFixed(2) + " MB/s" : "0.0 MB/s (RAM)";
+      if (elDiskRate) elDiskRate.textContent = diskWriteMBs.toFixed(2) + " MB/s";
 
       const elDiskSub = document.getElementById("metric-disk-sub");
-      if (elDiskSub) elDiskSub.textContent = (isFileR3 || isFileR1) ? (diskWriteMBs / nodes).toFixed(1) + " MB/s write per node (" + formatNumber(diskIOPS) + " IOPS)" : "Zero disk block writes";
+      if (elDiskSub) elDiskSub.textContent = (diskWriteMBs / nodes).toFixed(1) + " MB/s write per node (" + formatNumber(diskIOPS) + " IOPS)";
 
       const elStorageVol = document.getElementById("metric-storage-vol");
-      const elStorageSub = document.getElementById("metric-storage-sub");
-      if (elStorageVol && elStorageSub) {
-        if (isCore) {
-          elStorageVol.textContent = "0 GB (Ephemeral)";
-          elStorageSub.textContent = "In-memory broadcast (no persistent storage)";
-        } else if (isMemR3) {
-          elStorageVol.textContent = (mBuffered / 1024.0).toFixed(1) + " GB RAM";
-          elStorageSub.textContent = (mBuffered / (nodes * 1024.0)).toFixed(1) + " GB RAM per node (" + retentionHours + "h backlog)";
-        } else {
-          elStorageVol.textContent = storageTotalStr;
-          elStorageSub.textContent = storageNodeStr + " per node (" + retentionHours + "h retention, R=" + replicaFactor + ")";
-        }
-      }
+      if (elStorageVol) elStorageVol.textContent = storageTotalStr + " Total";
 
+      const elStorageSub = document.getElementById("metric-storage-sub");
+      if (elStorageSub) elStorageSub.textContent = storageNodeStr + " SSD per node (" + retentionHours + "h retention, R=3)";
+
+      // Latency DOM
       const elLatP50 = document.getElementById("lat-p50");
       if (elLatP50) elLatP50.textContent = p50Us >= 1000 ? (p50Us / 1000.0).toFixed(2) + " ms" : p50Us.toFixed(2) + " us";
 
@@ -2499,24 +2448,40 @@
       const elLatExp = document.getElementById("lat-explanation");
       if (elLatExp) elLatExp.textContent = latExplanation;
 
-      // 7. Bottleneck Advisor Evaluation
-      // Guardrail 1: Core Socket
-      const bCore = document.getElementById("badge-guard-core");
-      const tCore = document.getElementById("text-guard-core");
-      if (bCore && tCore) {
-        if (!isCore || rate <= 50000) {
-          bCore.className = "status-pill status-ok"; bCore.textContent = "OK";
-          tCore.textContent = "Within safe routing zone (ceiling: 83.7k msgs/s).";
-        } else if (rate <= 80000) {
-          bCore.className = "status-pill status-warn"; bCore.textContent = "WARN";
-          tCore.textContent = "Approaching single-core socket write lock knee (" + formatNumber(rate) + " msgs/s). Tail latency will inflate.";
+      // 7. Guardrails
+      // Guardrail 1: Single-Stream Disk Append Barrier
+      const bDisk = document.getElementById("badge-guard-disk");
+      const tDisk = document.getElementById("text-guard-disk");
+      if (bDisk && tDisk) {
+        if (rate <= 4500) {
+          bDisk.className = "status-pill status-ok"; bDisk.textContent = "OK";
+          tDisk.textContent = "Optimal synchronous File R=3 fsync amortization zone (rate: " + formatNumber(rate) + " msgs/s).";
+        } else if (rate <= 6500) {
+          bDisk.className = "status-pill status-warn"; bDisk.textContent = "WARN";
+          tDisk.textContent = "Approaching synchronous File R=3 physical write barrier (" + formatNumber(rate) + " msgs/s).";
         } else {
-          bCore.className = "status-pill status-danger"; bCore.textContent = "CRITICAL";
-          tCore.textContent = "Offered rate exceeds 83.7k msgs/s socket barrier! Distribute publishers across multiple client connections.";
+          bDisk.className = "status-pill status-danger"; bDisk.textContent = "CRITICAL";
+          tDisk.textContent = "Offered rate (" + formatNumber(rate) + " msgs/s) exceeds single-stream fsync barrier (7,234 msgs/s)! Requires " + partitionsNeeded + " partitioned streams across your 3 nodes.";
         }
       }
 
-      // Guardrail 2: Wire Bandwidth
+      // Guardrail 2: Consumer ACK Consensus
+      const bAck = document.getElementById("badge-guard-ack");
+      const tAck = document.getElementById("text-guard-ack");
+      if (bAck && tAck) {
+        if (ackRate <= 8000) {
+          bAck.className = "status-pill status-ok"; bAck.textContent = "OK";
+          tAck.textContent = "Consumer ACK mutations within Raft commit capacity (" + formatNumber(ackRate) + " ACKs/s).";
+        } else if (ackRate <= 14000) {
+          bAck.className = "status-pill status-warn"; bAck.textContent = "WARN";
+          tAck.textContent = "Elevated ACK consensus write load (" + formatNumber(ackRate) + " ACKs/s).";
+        } else {
+          bAck.className = "status-pill status-danger"; bAck.textContent = "CRITICAL";
+          tAck.textContent = "Aggregate ACK load (" + formatNumber(ackRate) + " ACKs/s) exceeds Raft sequence commit barrier (15k ACKs/s)! Publisher rate will collapse by ~50%.";
+        }
+      }
+
+      // Guardrail 3: Wire Bandwidth
       const bNet = document.getElementById("badge-guard-net");
       const tNet = document.getElementById("text-guard-net");
       if (bNet && tNet) {
@@ -2532,35 +2497,19 @@
         }
       }
 
-      // Guardrail 3: JetStream Disk Append
-      const bDisk = document.getElementById("badge-guard-disk");
-      const tDisk = document.getElementById("text-guard-disk");
-      if (bDisk && tDisk) {
-        if (!isFileR3 || rate <= 4500) {
-          bDisk.className = "status-pill status-ok"; bDisk.textContent = "OK";
-          tDisk.textContent = isFileR3 ? "Optimal synchronous File R=3 fsync amortization zone." : "Non-blocking storage profile.";
-        } else if (rate <= 6500) {
-          bDisk.className = "status-pill status-warn"; bDisk.textContent = "WARN";
-          tDisk.textContent = "Approaching synchronous File R=3 physical write barrier (" + formatNumber(rate) + " msgs/s).";
+      // Guardrail 4: Persistent Disk IOPS & Throughput
+      const bIops = document.getElementById("badge-guard-iops");
+      const tIops = document.getElementById("text-guard-iops");
+      if (bIops && tIops) {
+        if (diskIOPS <= 3000) {
+          bIops.className = "status-pill status-ok"; bIops.textContent = "OK";
+          tIops.textContent = "Disk write IOPS (" + formatNumber(diskIOPS) + " IOPS) fits standard cloud SSD performance envelope.";
+        } else if (diskIOPS <= 6000) {
+          bIops.className = "status-pill status-warn"; bIops.textContent = "WARN";
+          tIops.textContent = "Elevated disk write rate (" + formatNumber(diskIOPS) + " IOPS). High-performance SSD recommended.";
         } else {
-          bDisk.className = "status-pill status-danger"; bDisk.textContent = "CRITICAL";
-          tDisk.textContent = "Offered rate (" + formatNumber(rate) + " msgs/s) exceeds single-stream fsync barrier (7,234 msgs/s)! Requires " + partitionsNeeded + " partitioned streams across your " + nodes + " nodes.";
-        }
-      }
-
-      // Guardrail 4: Consumer ACK Consensus
-      const bAck = document.getElementById("badge-guard-ack");
-      const tAck = document.getElementById("text-guard-ack");
-      if (bAck && tAck) {
-        if (!isJS || ackRate <= 8000) {
-          bAck.className = "status-pill status-ok"; bAck.textContent = "OK";
-          tAck.textContent = isJS ? "Consumer ACK mutations within Raft commit capacity (" + formatNumber(ackRate) + " ACKs/s)." : "Zero consensus ACK overhead.";
-        } else if (ackRate <= 14000) {
-          bAck.className = "status-pill status-warn"; bAck.textContent = "WARN";
-          tAck.textContent = "Elevated ACK consensus write load (" + formatNumber(ackRate) + " ACKs/s).";
-        } else {
-          bAck.className = "status-pill status-danger"; bAck.textContent = "CRITICAL";
-          tAck.textContent = "Aggregate ACK load (" + formatNumber(ackRate) + " ACKs/s) exceeds Raft sequence commit barrier (15k ACKs/s)! Publisher rate will collapse by ~50%.";
+          bIops.className = "status-pill status-danger"; bIops.textContent = "CRITICAL";
+          tIops.textContent = "High disk write pressure (" + formatNumber(diskIOPS) + " IOPS). Requires provisioned IOPS SSD (e.g. GCP Hyperdisk / AWS io2).";
         }
       }
     }
@@ -2573,41 +2522,40 @@
       const partMsgEl = document.getElementById("hero-partition-msg");
       const scaleMsgEl = document.getElementById("hero-scaleout-msg");
 
-      const bCore = document.getElementById("badge-guard-core");
-      const bNet = document.getElementById("badge-guard-net");
       const bDisk = document.getElementById("badge-guard-disk");
       const bAck = document.getElementById("badge-guard-ack");
+      const bNet = document.getElementById("badge-guard-net");
+      const bIops = document.getElementById("badge-guard-iops");
 
       const spec = {
-        title: "NATS Infrastructure Capacity Sizing Specification",
+        title: "NATS 3-Node JetStream Infrastructure Capacity Sizing Specification",
         timestamp: new Date().toISOString(),
+        deployment_architecture: "3-Node High-Availability Cluster with File Storage (Replication Factor R=3)",
         parameters: {
-          engine: document.getElementById("calc-engine") ? document.getElementById("calc-engine").value : "js-file-r3",
-          rate_msgs_sec: parseFloat(document.getElementById("calc-rate-num").value) || 0,
-          payload_bytes: parseFloat(document.getElementById("calc-payload-slider").value) || 0,
-          retention_hours: parseFloat(document.getElementById("calc-retention-slider").value) || 72,
-          pattern: document.getElementById("calc-pattern") ? document.getElementById("calc-pattern").value : "queue",
-          subscribers: parseFloat(document.getElementById("calc-subs-slider").value) || 0,
-          registered_subjects: parseFloat(document.getElementById("calc-subjects-slider").value) || 0,
-          streams: parseFloat(document.getElementById("calc-streams-slider").value) || 0,
-          consumers: parseFloat(document.getElementById("calc-consumers-slider").value) || 0,
-          headroom_buffer_pct: parseFloat(document.getElementById("calc-buffer-slider").value) || 0,
-          cluster_nodes: parseFloat(document.getElementById("calc-nodes").value) || 3,
+          rate_msgs_sec: parseFloat(document.getElementById("calc-rate-num") ? document.getElementById("calc-rate-num").value : document.getElementById("calc-rate-slider").value) || 0,
+          payload_bytes: parseFloat(document.getElementById("calc-payload-num") ? document.getElementById("calc-payload-num").value : document.getElementById("calc-payload-slider").value) || 0,
+          retention_hours: parseFloat(document.getElementById("calc-retention-num") ? document.getElementById("calc-retention-num").value : document.getElementById("calc-retention-slider").value) || 72,
+          registered_subjects: parseFloat(document.getElementById("calc-subjects-num") ? document.getElementById("calc-subjects-num").value : document.getElementById("calc-subjects-slider").value) || 0,
+          streams: parseFloat(document.getElementById("calc-streams-num") ? document.getElementById("calc-streams-num").value : document.getElementById("calc-streams-slider").value) || 0,
+          consumers: parseFloat(document.getElementById("calc-consumers-num") ? document.getElementById("calc-consumers-num").value : document.getElementById("calc-consumers-slider").value) || 0,
+          headroom_buffer_pct: parseFloat(document.getElementById("calc-buffer-num") ? document.getElementById("calc-buffer-num").value : document.getElementById("calc-buffer-slider").value) || 0,
+          cluster_nodes: 3,
           instance_family: familyName
         },
         recommendation: {
           architecture_status: statusText,
           node_shape: document.getElementById("hero-node-shape").textContent,
           cluster_total: document.getElementById("hero-cluster-total").textContent,
+          cloud_sku_mapping: document.getElementById("hero-cloud-mapping") ? document.getElementById("hero-cloud-mapping").textContent : "",
           network_tier: document.getElementById("hero-network-val").textContent,
           storage_profile: document.getElementById("hero-storage-val").textContent,
           projected_p50_latency: document.getElementById("hero-latency-val").textContent,
           stream_partitioning_advisory: (partMsgEl && partMsgEl.textContent) ? partMsgEl.textContent : "Single stream fits comfortably within fsync capacity.",
-          scale_out_advisory: (scaleMsgEl && scaleMsgEl.textContent) ? scaleMsgEl.textContent : "Selected cluster topology is optimal."
+          scale_out_advisory: (scaleMsgEl && scaleMsgEl.textContent) ? scaleMsgEl.textContent : "Selected 3-node cluster topology is optimal."
         },
         metrics: {
-          cpu_cores_buffered: document.getElementById("metric-cpu-cores").textContent,
-          cluster_ram_buffered: document.getElementById("metric-ram-total").textContent,
+          node_cpu_allocation: document.getElementById("metric-cpu-cores").textContent,
+          node_ram_allocation: document.getElementById("metric-ram-total").textContent,
           retained_storage_capacity: document.getElementById("metric-storage-vol") ? document.getElementById("metric-storage-vol").textContent : "N/A",
           storage_per_node: document.getElementById("metric-storage-sub") ? document.getElementById("metric-storage-sub").textContent : "N/A",
           wire_bandwidth: document.getElementById("metric-net-bw").textContent,
@@ -2619,10 +2567,10 @@
           p999: document.getElementById("lat-p999").textContent
         },
         guardrails: {
-          core_socket_status: bCore ? bCore.textContent : "OK",
-          network_bandwidth_status: bNet ? bNet.textContent : "OK",
           disk_write_status: bDisk ? bDisk.textContent : "OK",
-          consumer_ack_status: bAck ? bAck.textContent : "OK"
+          consumer_ack_status: bAck ? bAck.textContent : "OK",
+          network_bandwidth_status: bNet ? bNet.textContent : "OK",
+          disk_iops_status: bIops ? bIops.textContent : "OK"
         }
       };
 
@@ -2636,6 +2584,7 @@
     function copySizingMarkdown() {
       const shape = document.getElementById("hero-node-shape").textContent;
       const total = document.getElementById("hero-cluster-total").textContent;
+      const mapping = document.getElementById("hero-cloud-mapping") ? document.getElementById("hero-cloud-mapping").textContent : "";
       const badgeStatus = document.getElementById("hero-badge-status") ? document.getElementById("hero-badge-status").textContent : "NOMINAL";
       const partMsg = document.getElementById("hero-partition-msg");
       const scaleMsg = document.getElementById("hero-scaleout-msg");
@@ -2646,17 +2595,19 @@
       const net = document.getElementById("metric-net-bw").textContent;
       const disk = document.getElementById("metric-disk-rate").textContent;
       const lat = document.getElementById("hero-latency-val").textContent;
-      const buf = document.getElementById("calc-buffer-slider").value;
-      const retHours = document.getElementById("calc-retention-slider") ? document.getElementById("calc-retention-slider").value : "72";
+      const buf = document.getElementById("calc-buffer-num") ? document.getElementById("calc-buffer-num").value : document.getElementById("calc-buffer-slider").value;
+      const retHours = document.getElementById("calc-retention-num") ? document.getElementById("calc-retention-num").value : document.getElementById("calc-retention-slider").value;
       const familyEl = document.getElementById("calc-family");
       const familyName = familyEl ? familyEl.options[familyEl.selectedIndex].text : "General Purpose (1:4)";
 
-      let md = "### NATS Infrastructure Capacity Sizing Summary\n\n" +
+      let md = "### NATS 3-Node JetStream (File R=3) Sizing Specification\n\n" +
+        "* **Deployment Topology**: Fixed 3-Node High-Availability Cluster (File Storage R=3)\n" +
         "* **Architecture Status**: " + badgeStatus + "\n" +
-        "* **Machine Family & Ratio**: " + familyName + "\n" +
-        "* **Recommended Deployment**: " + shape + "\n" +
+        "* **FinOps Machine Family**: " + familyName + "\n" +
+        "* **Recommended Node SKU**: " + shape + "\n" +
+        "* **" + mapping + "**\n" +
         "* **Cluster Totals**: " + total + "\n" +
-        "* **Compute & Memory**: " + cpu + " | " + ram + " RAM\n" +
+        "* **Compute & Memory**: " + cpu + " | " + ram + "\n" +
         "* **Persistent Storage (" + retHours + "h Retention)**: " + storage + " (" + storageSub + ")\n" +
         "* **Network & Disk I/O**: Wire: " + net + " | Disk Writes: " + disk + "\n" +
         "* **Projected Latency**: " + lat + "\n" +
@@ -2695,6 +2646,9 @@
     // Auto-load embedded data
     window.addEventListener('DOMContentLoaded', () => {
       updateGeneratedCommand();
+      if (typeof calculateInfraCapacity === 'function') {
+        calculateInfraCapacity();
+      }
       if (window.BENCHMARK_DATA) {
         if (Array.isArray(window.BENCHMARK_DATA) || window.BENCHMARK_DATA.tests) {
           switchTab('comparison');
