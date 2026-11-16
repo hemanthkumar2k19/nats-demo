@@ -2,6 +2,15 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-11-16] Standardize Architecture Evaluation Matrix and Compact Limitations Table
+
+- **Change:**
+  - Expanded, prioritized, and compacted Section 1 ("Multi-Dimensional Comparison Matrix") in [docs/analysis.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/analysis.md) across Governance & Security, Reliability & Resilience, Developer Velocity, Observability & Ownership, and Platform Maintenance Effort.
+  - Formulated Option 1 as "Guided Standards + Native SDKs + Manual Coordination" to accurately reflect the developer guides and platform SRE coordination model.
+  - Re-structured Section 2 ("Limitations of Current Approach") into a compact, high-density tabular matrix arranged in priority order, with a dedicated column ("Tackling via Current Approach (Feasibility & Complexity)") evaluating how each limitation can be tackled purely within the current model (via NATS broker ACLs, SRE processes, Prometheus, and CI/CD), while explicitly identifying where enforcement is fragile, operationally heavy, or logically infeasible.
+- **Reason:** Provide an executive- and architecture-level evaluation showing what it genuinely takes to tackle each limitation within the current approach, highlighting where current mechanisms suffice versus where enforcement is logically infeasible without essay-style verbosity.
+- **Affected Area:** [docs/analysis.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/analysis.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-10-30] Refactor CreateConsumer to Accept JetStream Config and Modularize Messaging Package
 
 - **Change:**
