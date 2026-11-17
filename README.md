@@ -230,3 +230,43 @@ nats sub '$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>'
 ```
 
 For full evaluation notes, graceful/ungraceful crash results, and delivery semantic tests, see `services/report.md`.
+
+---
+
+## 7. Cluster Authorization & Verification (SBAC)
+
+The 3-node cluster supports Subject-Based Access Control (SBAC) testing using Docker Compose profiles.
+
+### 1. Start Authorization Cluster
+Always stop any running containers with `--remove-orphans` before switching profiles to avoid port collisions:
+```bash
+cd deploy/local-nats-cluster
+docker compose down --remove-orphans
+docker compose --profile authZ up -d
+```
+
+### 2. Built-in Accounts (`deploy/local-nats-cluster/auth/users.conf`)
+* **System Operator (`SYS` Account - `sys-admin` / `sys-password`)**: Standard, untweaked System Account privileges for cluster ping, server metrics, connection listings, and telemetry.
+* **Platform Administrator (`PLATFORM` Account - `platform-admin` / `platform-password`)**: Governed JetStream resource management (`$JS.API.STREAM.>`, `$JS.API.CONSUMER.>`, `$JS.API.ACCOUNT.>`); blocked from `$JS.API.ACCOUNT.PURGE`, message tampering, and sensitive business secrets.
+
+### 3. Verification Scripts
+
+#### A. Verify System Account (`SYS`)
+Executes cluster ping, varz, connz, server reports, and node inventory via `sys-admin` context:
+```bash
+./scripts/verify-sys-access.sh
+```
+
+#### B. Verify Platform/SRE Account (`PLATFORM`)
+Executes 12 allowed JetStream lifecycle operations (create, tune, pause, resume, purge, cluster step-down, delete) and asserts 4 blocked guardrails (account wipe, message tampering, secret payloads, and cross-account telemetry):
+```bash
+./scripts/verify-platform-access.sh
+```
+
+### 4. Switch Back to Baseline Cluster
+```bash
+cd deploy/local-nats-cluster
+docker compose down --remove-orphans
+docker compose --profile standard up -d
+```
+

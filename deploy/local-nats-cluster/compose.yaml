@@ -1,8 +1,15 @@
 services:
 
+  # ============================================================================
+  # Standard Cluster Profile (Unauthenticated - Baseline)
+  # Run via: docker compose up -d (default via .env COMPOSE_PROFILES=standard)
+  # ============================================================================
+
   nats-1:
     image: nats:latest
     container_name: nats-1
+    profiles:
+      - standard
 
     ports:
       - "4222:4222"
@@ -17,6 +24,8 @@ services:
   nats-2:
     image: nats:latest
     container_name: nats-2
+    profiles:
+      - standard
 
     ports:
       - "4223:4222"
@@ -31,6 +40,8 @@ services:
   nats-3:
     image: nats:latest
     container_name: nats-3
+    profiles:
+      - standard
 
     ports:
       - "4224:4222"
@@ -41,6 +52,67 @@ services:
       - ./data/nats-3:/data
 
     command: ["-c", "/etc/nats/nats.conf"]
+
+  # ============================================================================
+  # Authorization-Enabled Cluster Profile (Evaluates SBAC & Platform Guardrails)
+  # Run via: docker compose --profile authZ up -d
+  # ============================================================================
+
+  nats-1-auth:
+    image: nats:latest
+    container_name: nats-1-auth
+    profiles:
+      - authZ
+
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+    volumes:
+      - ./auth/nats-1.conf:/etc/nats/nats.conf:ro
+      - ./auth/users.conf:/etc/nats/users.conf:ro
+      - ./data/nats-1-auth:/data
+
+    command: ["-c", "/etc/nats/nats.conf"]
+
+  nats-2-auth:
+    image: nats:latest
+    container_name: nats-2-auth
+    profiles:
+      - authZ
+
+    ports:
+      - "4223:4222"
+      - "8223:8222"
+
+    volumes:
+      - ./auth/nats-2.conf:/etc/nats/nats.conf:ro
+      - ./auth/users.conf:/etc/nats/users.conf:ro
+      - ./data/nats-2-auth:/data
+
+    command: ["-c", "/etc/nats/nats.conf"]
+
+  nats-3-auth:
+    image: nats:latest
+    container_name: nats-3-auth
+    profiles:
+      - authZ
+
+    ports:
+      - "4224:4222"
+      - "8224:8222"
+
+    volumes:
+      - ./auth/nats-3.conf:/etc/nats/nats.conf:ro
+      - ./auth/users.conf:/etc/nats/users.conf:ro
+      - ./data/nats-3-auth:/data
+
+    command: ["-c", "/etc/nats/nats.conf"]
+
+  # ============================================================================
+  # Observability Stack
+  # Run via: docker compose --profile observability up -d
+  # ============================================================================
 
   nats-exporter:
     image: natsio/prometheus-nats-exporter:latest

@@ -7,8 +7,22 @@ import (
 	"services/config"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 )
+
+type NATSClient struct {
+	nc *nats.Conn
+	js jetstream.JetStream
+}
+
+func NewNATSClient(cfg *config.NATSClientConfig, clientNameOverride string) (*NATSClient, error)
+{	nc, err := ConnectAndDiscover(cfg, clientNameOverride)
+	if err !=nil{
+		return nil, fmt.Errorf("failed to create NATS Client")
+	}
+	return &NATSClient{}
+}
 
 // ConnectAndDiscover initializes a resilient connection to NATS using the centralized NATSClientConfig.
 // It accepts optional clientNameOverride strings to allow individual workers to identify themselves.

@@ -2,6 +2,90 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-11-17] Expand System and Platform Verification Suites with Full Lifecycle and Boundary Guardrails
+
+- **Change:**
+  - Added cluster node inventory check (`nats server list`) to [scripts/verify-sys-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-sys-access.sh) (5/5 checks).
+  - Expanded [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh) to 16 checks: added clustered stream leader stepdown (`nats stream cluster step-down`), consumer decommissioning (`nats consumer rm -f`), stream decommissioning (`nats stream rm -f`), and cross-account telemetry isolation assertion (`$SYS.REQ.SERVER.PING` blocked for Platform Admin).
+  - Updated [docs/platform-docs/security/permissions.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/permissions.md) documenting cross-account system telemetry restriction under Platform Administrator guardrails.
+- **Reason:** Guarantee complete operational coverage for System and Platform roles, proving both positive lifecycle capabilities and multi-account boundary isolation.
+- **Affected Area:** [scripts/verify-sys-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-sys-access.sh), [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh), [docs/platform-docs/security/permissions.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/permissions.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-11-17] Harden Profile Isolation and Refine Verification Assertions
+
+- **Change:**
+  - Fixed include path in [deploy/local-nats-cluster/auth/nats-1.conf](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/auth/nats-1.conf), `nats-2.conf`, and `nats-3.conf` from `include "/etc/nats/users.conf"` to `include "users.conf"`, resolving NATS parser directory doubling (`/etc/nats/etc/nats/users.conf`).
+  - Commented out default `COMPOSE_PROFILES=standard` in [deploy/local-nats-cluster/.env](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/.env) to guarantee that `--profile authZ` does not automatically merge `standard` and cause port collisions on port 4222.
+  - Added `-f` (force) flag to `nats stream edit DELIVERY --max-msgs 10000 -f` in [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh) to prevent failures from interactive terminal confirmation prompts in scripts.
+  - Aligned Test 12 subject in [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh) to `dev.secret.keys` to match the 3-token `"*.secret.>"` deny wildcard, switched to request-reply (`nats req ... --timeout 1s`), and refactored `run_denied` to directly assert broker permission violation strings in CLI output.
+  - Updated [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) with explicit instructions to stop active containers with `--remove-orphans` before switching profiles.
+- **Reason:** Prevent container port collisions between baseline and auth profiles, eliminate non-interactive CLI aborts, and ensure reliable verification of security guardrails.
+- **Affected Area:** [deploy/local-nats-cluster/auth/](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/auth/), [deploy/local-nats-cluster/.env](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/.env), [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-11-17] Split Authorization Architecture into SYS and PLATFORM Accounts with Automated Context Verification
+
+- **Change:**
+  - Split infrastructure administration in [deploy/local-nats-cluster/auth/users.conf](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/auth/users.conf) into two distinct accounts:
+    - `SYS` Account (`sys-admin` / `sys-password`): Designated System Account (`system_account: SYS`) with standard, untweaked system privileges for cluster monitoring, diagnostics, and server pings (`$SYS.REQ.SERVER.*`).
+    - `PLATFORM` Account (`platform-admin` / `platform-password`): Governed JetStream account (`jetstream: enabled`) with full lifecycle administration over `$JS.API.STREAM.>`, `$JS.API.CONSUMER.>`, `$JS.API.ACCOUNT.>`, and `$JS.API.INFO`, and explicit guardrails blocking `$JS.API.ACCOUNT.PURGE`, message tampering (`$JS.API.STREAM.MSG.DELETE.>`), and zero-trust payload access (`*.secret.>`).
+  - Removed temporary application users (`order-service`, `processing-worker`) from `users.conf` to focus cluster testing on infrastructure roles.
+  - Simplified Docker Compose profile in [deploy/local-nats-cluster/compose.yaml](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/compose.yaml) to strictly `profiles: ["authZ"]`.
+  - Created [scripts/verify-sys-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-sys-access.sh) validating server ping, JetStream reports, connection reports, and account reports.
+  - Updated [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh) to test 9 allowed JetStream lifecycle operations and 3 denied guardrails.
+  - Implemented automatic temporary context switching (`sys-admin-verify`, `platform-admin-verify`) with `trap` cleanup across both verification scripts.
+  - Updated [docs/platform-docs/security/permissions.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/permissions.md) and [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) to align with the two-account architecture.
+- **Reason:** Satisfy NATS 2.x System Account requirements where `$SYS.REQ.SERVER.*` queries require a designated `system_account`, decouple platform governance from broker-level telemetry, and eliminate manual CLI credential flags during test execution.
+- **Affected Area:** [deploy/local-nats-cluster/auth/users.conf](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/auth/users.conf), [deploy/local-nats-cluster/compose.yaml](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/compose.yaml), [scripts/verify-sys-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-sys-access.sh), [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh), [docs/platform-docs/security/permissions.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/permissions.md), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-11-17] De-duplicate Authorization Reference and Link to Permissions Guide
+
+- **Change:**
+  - Removed duplicated "JetStream Whitelisting" tables from [docs/platform-docs/security/authorization.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/authorization.md).
+  - Added a direct cross-reference link pointing to [docs/platform-docs/security/permissions.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/permissions.md) as the single source of truth for operational SBAC tables.
+- **Reason:** Eliminate redundant documentation and keep `authorization.md` focused on core authorization concepts while `permissions.md` governs operational role profiles.
+- **Affected Area:** [docs/platform-docs/security/authorization.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/authorization.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-11-17] Implement Profile-Based NATS Authorization Cluster and Platform Verification Suite
+
+- **Change:**
+  - Updated [deploy/local-nats-cluster/compose.yaml](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/compose.yaml) to use Docker Compose profiles, designating `profiles: ["standard"]` for the unauthenticated baseline cluster and adding `profiles: ["authz", "authZ"]` for the authenticated 3-node cluster (`nats-1-auth`, `nats-2-auth`, `nats-3-auth`).
+  - Created [deploy/local-nats-cluster/.env](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/.env) defaulting `COMPOSE_PROFILES=standard` to preserve seamless backward compatibility for baseline operations.
+  - Authored shared [deploy/local-nats-cluster/auth/users.conf](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/auth/users.conf) codifying exact Subject-Based Access Control (SBAC) permissions for `sre-admin`, `order-service`, and `processing-worker` per platform standards.
+  - Created [deploy/local-nats-cluster/auth/nats-1.conf](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/auth/nats-1.conf), `nats-2.conf`, and `nats-3.conf` with dedicated storage directories (`./data/nats-*-auth`) and inter-node cluster routes.
+  - Implemented automated verification script [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh) validating allowed administrative actions (telemetry, stream/consumer lifecycle) and blocked guardrails (`$JS.API.ACCOUNT.PURGE`, message tampering, zero-trust secrets).
+  - Documented authorization cluster operation and verification commands in a compact reference section in [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md#L236-L277).
+- **Reason:** Provide an isolated, reproducible authorization testing environment on the 3-node cluster without data or configuration pollution into baseline setups.
+- **Affected Area:** [deploy/local-nats-cluster/compose.yaml](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/compose.yaml), [deploy/local-nats-cluster/auth/](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/auth/), [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-11-17] Create Application and Platform Operational Permissions Standard Guide
+
+- **Change:**
+  - Authored [docs/platform-docs/security/permissions.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/permissions.md) establishing the concrete Subject-Based Access Control (SBAC) operational permission profiles for Application Teams and the Platform/SRE Team.
+  - Focused strictly on NATS and JetStream system/operational subjects (`$JS.API.>`, `$JS.ACK.>`, `$SYS.>`, and `_INBOX.>`), excluding domain business messaging subjects.
+  - Defined explicit Allow and Deny tables (`Subject`, `API`, `Reason`) for Application Teams: whitelisting pull fetches (`$JS.API.CONSUMER.MSG.NEXT`), acknowledgments (`$JS.ACK`), info checks, and inboxes (`_INBOX.>`), while blocking all administrative mutations.
+  - Defined explicit Allow and Deny tables for Platform/SRE Teams: granting full lifecycle administration over `$JS.API.STREAM.>`, `$JS.API.CONSUMER.>`, `$JS.API.ACCOUNT.>`, and `$SYS.>`, while establishing guardrail denies against uncoordinated account wipes (`$JS.API.ACCOUNT.PURGE`) and message tampering (`$JS.API.STREAM.MSG.DELETE.>`).
+- **Reason:** Provide an authoritative operational permissions guide defining exact infrastructure and JetStream system subject ACLs for developer client bindings and SRE platform governance.
+- **Affected Area:** [docs/platform-docs/security/permissions.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/permissions.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-11-17] Reconcile JetStream Whitelist and Deny Inventory with Official API Reference
+
+- **Change:**
+  - Audited all 32 JetStream API endpoints across Account, Stream, Consumer, and Meta namespaces from the official NATS documentation (`https://docs.nats.io/reference/jetstream/api/`).
+  - Updated [docs/platform-docs/security/authorization.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/authorization.md) with comprehensive Allow and Deny tables.
+  - Added data-plane read operations (`$JS.API.STREAM.MSG.GET.<stream>` and `$JS.API.DIRECT.GET.<stream>.>`) to the Allow whitelist for sequence-based lookups and replica Direct Get / KV queries.
+  - Hardened Deny rules to cover cluster consensus, topology management, and discovery endpoints (`$JS.API.STREAM.SNAPSHOT/RESTORE`, `$JS.API.STREAM.LIST/NAMES`, `$JS.API.CONSUMER.PAUSE`, `$JS.API.CONSUMER.LIST/NAMES`, `$JS.API.*.LEADER.STEPDOWN`, `$JS.API.*.PEER.>`, `$JS.API.ACCOUNT.PURGE`, `$JS.API.META.>`, and `$JS.API.SERVER.>`).
+- **Reason:** Guarantee complete parity with the official NATS JetStream API reference while enforcing strict SRE control-plane governance.
+- **Affected Area:** [docs/platform-docs/security/authorization.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/authorization.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-11-17] Complete NATS Authorization Reference in Shorthand Notation
+
+- **Change:**
+  - Completed [docs/platform-docs/security/authorization.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/authorization.md) covering all core NATS authorization concepts in concise shorthand notation.
+  - Distributed the initial monolithic configuration block into focused, contextual configuration snippets embedded directly under their respective sections (Publish Permissions, Subscribe Permissions, Request-Reply & Response Permissions, and Connection Limits).
+  - Detailed publish/subscribe allow and deny rules, deny precedence, wildcard semantics (`*`, `>`), request-reply inbox patterns, `allow_responses` (`max`, `expires`), resource quotas (`max_payload`, `max_subscriptions`), and multi-tenancy models (account isolation, decentralized JWTs, auth callout).
+- **Reason:** Provide an authoritative, quick-reference platform security standard with modular, easy-to-understand snippets for each authorization capability.
+- **Affected Area:** [docs/platform-docs/security/authorization.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/authorization.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-11-17] Refocus Limitations Table on Irreducible Structural Failures
 
 - **Change:**
