@@ -2,6 +2,15 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-11-17] Refocus Limitations Table on Irreducible Structural Failures
+
+- **Change:**
+  - Pruned soft/tool-addressable issues from Section 2 ("Summary Table of Limitations") in [docs/analysis.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/analysis.md), focusing strictly on 7 irreducible structural limitations of the current model.
+  - Re-structured the table into 4 focused columns: `Limitation`, `Why Current Setup Fails`, `Production Failure Mode & Risk`, and `Why It Cannot Be Reliably Solved in Current Model`.
+  - Articulated the exact reasons why each failure mode is either logically impossible to enforce at the broker level or leads to operational deadlocks, proving the necessity of a platform abstraction.
+- **Reason:** Provide undeniable, high-signal evidence for leadership and architects showing where the native SDK + guides model fundamentally fails and cannot be reliably mitigated by process or SRE configuration alone.
+- **Affected Area:** [docs/analysis.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/analysis.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-11-16] Standardize Architecture Evaluation Matrix and Compact Limitations Table
 
 - **Change:**
