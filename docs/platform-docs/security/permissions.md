@@ -1,29 +1,24 @@
 # Permissions
 
-Defines operational Subject-Based Access Control (SBAC) permission profiles for System Operators, Platform Administrators, and Application Teams for NATS and JetStream operations.
+Defines operational Subject-Based Access Control (SBAC) permission profiles across three user levels: System Operator Users, Platform Users, and Application Users for NATS and JetStream operations.
 
 ---
 
-## 1. System Operator Permissions (`SYS` Account)
+## 1. System Operator User Permissions
 
-The System Operator manages NATS cluster nodes, server processes, and server diagnostics. In NATS 2.x, server-level diagnostics (`$SYS.REQ.SERVER.*`, `$SYS.REQ.ACCOUNT.*`) are strictly handled by the designated System Account (`system_account: SYS`).
+The System Operator user manages NATS cluster nodes, server processes, and server diagnostics. By default, this user holds standard, untweaked system privileges with unrestricted access to:
 
-- **Account:** `SYS`
-- **Default Permissions:** Standard, untweaked system account privileges. No permission restrictions are applied, enabling full access to:
-  - `$SYS.REQ.SERVER.PING` - Server ping and latency monitoring.
-  - `$SYS.REQ.SERVER.STATZ` - Server metrics and JetStream cluster reports.
-  - `$SYS.REQ.SERVER.CONNZ` - Client connection listings and telemetry.
-  - `$SYS.REQ.ACCOUNT.STATZ` - Multi-tenant account resource reports.
-  - `$SYS.>` - Server event advisories, cluster consensus state, and system logging.
+- `$SYS.REQ.SERVER.PING` - Server ping and latency monitoring.
+- `$SYS.REQ.SERVER.STATZ` - Server metrics and JetStream cluster reports.
+- `$SYS.REQ.SERVER.CONNZ` - Client connection listings and telemetry.
+- `$SYS.REQ.ACCOUNT.STATZ` - Account resource reports.
+- `$SYS.>` - Server event advisories, cluster consensus state, and system logging.
 
 ---
 
-## 2. Platform Administrator Permissions (`PLATFORM` Account)
+## 2. Platform User Permissions
 
-The Platform/SRE Team manages messaging infrastructure, resource provisioning, capacity limits, and operational health for JetStream. They have full control over the JetStream administrative API with enterprise guardrails protecting audit trails and cluster stability.
-
-- **Account:** `PLATFORM`
-- **JetStream:** `enabled`
+The Platform user manages messaging infrastructure, resource provisioning, capacity limits, and operational health for JetStream. They have full control over the JetStream administrative control plane with enterprise guardrails protecting audit trails and stability.
 
 ### Allow
 
@@ -31,12 +26,13 @@ The Platform/SRE Team manages messaging infrastructure, resource provisioning, c
 |---|---|---|
 | `$JS.API.STREAM.>` | Stream Management (Publish) | Provision, update, purge, snapshot, restore, and decommission streams. |
 | `$JS.API.CONSUMER.>` | Consumer Management (Publish) | Provision, tune, pause, inspect, and decommission consumers. |
-| `$JS.API.ACCOUNT.>` | Account Administration (Publish) | Configure account JetStream storage limits, stream quotas, and tiers. |
-| `$JS.API.INFO` | Account Info (Publish) | Query account JetStream capacity utilization and resource counts. |
+| `$JS.API.ACCOUNT.>` | Account Administration (Publish) | Configure JetStream storage limits, stream quotas, and tiers. |
+| `$JS.API.INFO` | Account Info (Publish) | Query JetStream capacity utilization and resource counts. |
 | `$JS.API.*.LEADER.STEPDOWN.>` | Cluster Rebalance (Publish) | Manage leader election and stepdown during cluster maintenance. |
 | `$JS.API.*.PEER.>` / `.EVACUATE.>` | Replica Placement (Publish) | Evacuate, remove, or rebalance Raft peers across cluster nodes. |
 | `$JS.API.META.>` / `$JS.API.SERVER.>` | Cluster Meta (Publish) | Execute cluster meta-controller placement and consensus recovery. |
 | `_INBOX.>` | Reply Inbox (Publish/Subscribe) | Receive administrative CLI responses and health probe outputs. |
+| `orders.>`, `payments.>`, `delivery.>` | Domain Topic Validation (Publish) | Validate stream ingestion and consumer routing. |
 
 ### Deny
 
@@ -44,14 +40,14 @@ The Platform/SRE Team manages messaging infrastructure, resource provisioning, c
 |---|---|---|
 | `$JS.API.ACCOUNT.PURGE` | Indiscriminate Account Purge (Publish) | Block single-command account wiping; enforce stream-by-stream decommissioning. |
 | `$JS.API.STREAM.MSG.DELETE.>` | Message Tampering (Publish) | Protect audit log immutability; prevent point deletion of records. |
-| `*.secret.>` | Sensitive Business Payloads (Publish/Subscribe) | Enforce data-plane zero trust; operators manage brokers, not business payloads. |
-| `$SYS.>` | System Diagnostics & Telemetry (Publish/Subscribe) | Enforce account isolation; server ping, varz, and connz are reserved strictly for the SYS account. |
+| `*.secret.>` | Sensitive Business Payloads (Publish/Subscribe) | Enforce data-plane zero trust; operators manage pipes, not confidential payloads. |
+| `$SYS.>` | System Diagnostics & Telemetry (Publish/Subscribe) | Server ping, varz, and connz are reserved strictly for the System Operator role. |
 
 ---
 
-## 3. Application Team Permissions
+## 3. Application User Permissions
 
-Application clients operate strictly on the data plane using least privilege. They are granted access only to the operational JetStream system subjects required for SDK functionality and temporary inboxes, while all administrative and cluster management subjects are blocked.
+Application users operate strictly on the data plane using least privilege. They are granted access only to the operational JetStream system subjects required for SDK functionality, business topics, and temporary inboxes, while all administrative and cluster management subjects are blocked.
 
 ### Allow
 

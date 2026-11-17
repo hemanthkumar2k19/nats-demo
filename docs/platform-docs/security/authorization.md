@@ -58,7 +58,7 @@ permissions {
 
 > Note:
 - Any client performing JetStream publishing must be granted subscribe: ["_INBOX.>"]. Because under hood its request reply.
-- 
+
 ---
 
 ## Precedence & Rule Evaluation
@@ -87,14 +87,39 @@ Pattern matching syntax supported across both Publish and Subscribe rules.
 
 ## Request-Reply & Response Permissions
 
-Governs reply behavior for request-reply messaging patterns.
+In NATS request-reply, requesters generate dynamic reply inboxes under `_INBOX.>` and require `subscribe: ["_INBOX.>"]` to receive replies. Responders can be authorized to publish responses using one of two patterns:
+
+### 1. Broad INBOX Approach (Static Permission)
+
+Grants the responder permanent, account-wide publish rights to all reply inboxes. Standard for high-throughput internal microservices.
 
 ```conf
 permissions {
-  # Responder subscribes to incoming service requests
-  subscribe: ["orders.lookup"]
+  # Listen for incoming service requests
+  subscribe: {
+    allow: ["orders.lookup"]
+  }
+  # Broad static permission to publish to any reply inbox
+  publish: {
+    allow: ["_INBOX.>"]
+  }
+}
+```
 
-  # Dynamically permits replying without broad publish rights to all inboxes
+- Pros: Simple configuration; supports single, multi-part, and streaming responses without TTL expiration.
+- Trade-off: Lacks zero-trust isolation; allows publishing unsolicited messages to any active client inbox.
+
+### 2. Temporary Response Approach (`allow_responses`)
+
+The broker dynamically grants ephemeral, request-scoped publish permission strictly to the requester's specific reply inbox, avoiding broad publish rights.
+
+```conf
+permissions {
+  # Listen for incoming service requests
+  subscribe: {
+    allow: ["orders.lookup"]
+  }
+  # Dynamic, broker-managed reply authorization
   allow_responses: {
     max: 1
     expires: "30s"
@@ -102,18 +127,9 @@ permissions {
 }
 ```
 
-- Inboxes (`_INBOX.>`) - Requesters generate dynamic, temporary reply subjects under `_INBOX.>`.
-- Requester Requirement - Requesting clients must have `subscribe: ["_INBOX.>"]` to receive responses.
-- Replier Requirement - Service responders need permission to publish to the requester's reply inbox.
-- `allow_responses` - Grants dynamic, temporary permission to reply to requests without granting broad permanent publish access to all inboxes.
-- `max` (Response Count) - Limits the maximum number of responses permitted per request (e.g. `max: 1` prevents duplicate reply flooding).
-- `expires` (TTL) - Duration window in which the reply permission remains valid (e.g. `expires: "30s"`; default has no expiration).
-
-> Note:
-- Incase of multi-part responses or streaming progress updates, the messages are silently dropped if we configure `max:1`
-- `expires` should cover worst-case downstream latency plus network jitter
+- `max` (Response Count): Maximum replies allowed per request (e.g. `max: 1` enforces single-reply RPC; multi-part replies are dropped).
+- `expires` (TTL): Validity duration for the dynamic reply permission (e.g. `expires: "30s"`); must account for downstream processing latency and network jitter.
+- Trade-off: Strong least-privilege security, but requires explicit tuning of `max` and `expires` for streaming or multi-response workflows.
 
 ---
-
-For operational Subject-Based Access Control (SBAC) permission profiles for Application Teams and the Platform Team, see [Permissions](permissions.md).
 

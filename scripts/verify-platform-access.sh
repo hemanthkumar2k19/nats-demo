@@ -7,9 +7,9 @@
 set -euo pipefail
 
 SERVER="${NATS_SERVER:-nats://localhost:4222}"
-USER="platform-admin"
+USER="platform-user"
 PASSWORD="platform-password"
-CTX_NAME="platform-admin-verify"
+CTX_NAME="platform-user-verify"
 
 PASSED=0
 FAILED=0
@@ -63,12 +63,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Switch to dedicated platform-admin context
+# Switch to dedicated platform-user context
 nats context add "$CTX_NAME" --server "$SERVER" --user "$USER" --password "$PASSWORD" --select >/dev/null
 
 printf "\n==============================================================================\n"
 printf "  Platform/SRE Access Verification Catalog (Server: %s)\n" "$SERVER"
-printf "  Account: PLATFORM | User: %s\n" "$USER"
+printf "  Account: payment-system | User: %s\n" "$USER"
 printf "==============================================================================\n"
 
 # ------------------------------------------------------------------------------

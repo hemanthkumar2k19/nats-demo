@@ -2,6 +2,35 @@
 
 All notable changes to the NATS reference evaluation platform will be documented in this file.
 
+## [2026-11-17] Standardize on Platform User and Decouple Account Tenancy from Permissions Guide
+
+- **Change:**
+  - Renamed platform role in [deploy/local-nats-cluster/auth/users.conf](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/auth/users.conf) and [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh) from `platform-admin` to `platform-user` to avoid role naming ambiguity.
+  - Decoupled account and tenant-isolation architecture from [docs/platform-docs/security/permissions.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/permissions.md), focusing strictly on user-level Subject-Based Access Control (SBAC) permission profiles (System Operator Users, Platform Users, Application Users).
+  - Updated [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md) to reflect `platform-user` credentials and user-level profile documentation.
+- **Reason:** Enforce clear separation of concerns by keeping `permissions.md` focused purely on user authorization tables while leaving multi-tenancy account isolation for dedicated tenancy docs.
+- **Affected Area:** [deploy/local-nats-cluster/auth/users.conf](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/auth/users.conf), [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh), [docs/platform-docs/security/permissions.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/permissions.md), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-11-17] Adopt 1:1 Application-to-Tenant Architecture (payment-system Account)
+
+- **Change:**
+  - Refactored [deploy/local-nats-cluster/auth/users.conf](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/auth/users.conf) to implement a 1:1 Application-to-Tenant mapping under account `payment-system`.
+  - Configured two distinct roles within the `payment-system` tenant boundary:
+    - **Platform User (`platform-admin` / `platform-password`)**: JetStream control plane administrator for `payment-system` streams, consumers, and cluster consensus, with guardrails blocking account wipes and audit tampering.
+    - **App User (`app-user` / `app-password`)**: Data plane producer/consumer microservice permissions (`orders.>`, `payments.>`, pull fetches, acks) with all administrative mutation APIs blocked.
+  - Updated [docs/platform-docs/security/permissions.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/permissions.md), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), and [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh) to reflect `payment-system` account naming and role isolation.
+- **Reason:** Establish canonical NATS multi-tenancy where accounts represent application/domain boundaries, eliminating cross-tenant blast radius while keeping domain control-plane and data-plane users co-located.
+- **Affected Area:** [deploy/local-nats-cluster/auth/users.conf](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/deploy/local-nats-cluster/auth/users.conf), [docs/platform-docs/security/permissions.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/permissions.md), [README.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/README.md), [scripts/verify-platform-access.sh](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/scripts/verify-platform-access.sh), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
+## [2026-11-17] Structure Request-Reply Permissions into Broad INBOX and Temporary Response Patterns
+
+- **Change:**
+  - Compacted the "Request-Reply & Response Permissions" section in [docs/platform-docs/security/authorization.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/authorization.md) into two clear, distinct patterns:
+    1. **Broad INBOX Approach (Static Permission):** Explains permanent, account-wide `_INBOX.>` publish rights (`publish: { allow: ["_INBOX.>"] }`) with explicit code snippet, pros, and trade-offs.
+    2. **Temporary Response Approach (`allow_responses`):** Explains dynamic, broker-managed reply permissions scoped strictly to the requester's reply inbox (`allow_responses: { max: 1, expires: "30s" }`), detailing `max` and `expires` parameters, pros, and trade-offs.
+- **Reason:** Provide concise, side-by-side comparison of the two NATS request-reply authorization patterns with dedicated configuration examples for each.
+- **Affected Area:** [docs/platform-docs/security/authorization.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/platform-docs/security/authorization.md), [docs/CHANGELOG.md](file:///Users/mulukahemanthkumar/Documents/dev/poc/NATS/demo-1/docs/CHANGELOG.md)
+
 ## [2026-11-17] Expand System and Platform Verification Suites with Full Lifecycle and Boundary Guardrails
 
 - **Change:**

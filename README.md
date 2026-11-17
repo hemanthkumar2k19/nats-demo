@@ -247,7 +247,9 @@ docker compose --profile authZ up -d
 
 ### 2. Built-in Accounts (`deploy/local-nats-cluster/auth/users.conf`)
 * **System Operator (`SYS` Account - `sys-admin` / `sys-password`)**: Standard, untweaked System Account privileges for cluster ping, server metrics, connection listings, and telemetry.
-* **Platform Administrator (`PLATFORM` Account - `platform-admin` / `platform-password`)**: Governed JetStream resource management (`$JS.API.STREAM.>`, `$JS.API.CONSUMER.>`, `$JS.API.ACCOUNT.>`); blocked from `$JS.API.ACCOUNT.PURGE`, message tampering, and sensitive business secrets.
+* **Application Tenant (`payment-system` Account)**:
+  * **Platform User (`platform-user` / `platform-password`)**: Governed JetStream control-plane resource management (`$JS.API.STREAM.>`, `$JS.API.CONSUMER.>`, `$JS.API.ACCOUNT.>`); blocked from `$JS.API.ACCOUNT.PURGE`, message tampering, and sensitive business secrets.
+  * **Application Microservices (`app-user` / `app-password`)**: Data-plane producer/consumer access (`orders.>`, `payments.>`, pull fetches, acks); blocked from all administrative mutation APIs.
 
 ### 3. Verification Scripts
 
@@ -257,7 +259,7 @@ Executes cluster ping, varz, connz, server reports, and node inventory via `sys-
 ./scripts/verify-sys-access.sh
 ```
 
-#### B. Verify Platform/SRE Account (`PLATFORM`)
+#### B. Verify Platform User (`payment-system`)
 Executes 12 allowed JetStream lifecycle operations (create, tune, pause, resume, purge, cluster step-down, delete) and asserts 4 blocked guardrails (account wipe, message tampering, secret payloads, and cross-account telemetry):
 ```bash
 ./scripts/verify-platform-access.sh
