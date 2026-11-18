@@ -54,20 +54,20 @@ func DeleteConsumer(ctx context.Context, js jetstream.JetStream, cr *model.Creat
 	return err
 }
 
-// [TODO: USER_IMPLEMENT]
 // GetConsumer retrieves a reference to an existing consumer on the given stream.
-// Logic to be implemented by user.
 func GetConsumer(ctx context.Context, js jetstream.JetStream, stream, consumer string) (jetstream.Consumer, error) {
-	// Dummy stub: User to implement logic using js.Consumer(ctx, stream, consumer)
-	return nil, nil
+	if js == nil {
+		return nil, fmt.Errorf("jetstream context is nil")
+	}
+	return js.Consumer(ctx, stream, consumer)
 }
 
-// [TODO: USER_IMPLEMENT]
 // Consume binds a message handler loop to a JetStream consumer and returns its ConsumeContext.
-// Logic to be implemented by user.
 func Consume(consumer jetstream.Consumer, handler func(msg jetstream.Msg), opts ...jetstream.PullConsumeOpt) (jetstream.ConsumeContext, error) {
-	// Dummy stub: User to implement logic using consumer.Consume(handler, opts...)
-	return nil, nil
+	if consumer == nil {
+		return nil, fmt.Errorf("consumer is nil")
+	}
+	return consumer.Consume(handler, opts...)
 }
 
 // ProcessBusinessMessage simulates and applies domain business effects for a reprocessed message.
@@ -207,6 +207,7 @@ func processEphemeralConsumer(
 			lastSeq = seq
 			lastTime = &t
 			count++
+			msgCount++
 
 			dataStr := string(msg.Data())
 

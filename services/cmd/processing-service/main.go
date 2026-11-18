@@ -42,14 +42,9 @@ func main() {
 	}
 
 	// 2. Connect to NATS Server
-	nc, err := natsclient.ConnectAndDiscover(&cfg.NATS, Client)
+	client, err := natsclient.NewNATSClient(&cfg.NATS, Client)
 	if err != nil {
 		log.Fatal().Err(err).Str("client", Client).Msg("Failed to initialize NATS Client")
-	}
-
-	js, err := natsclient.NewJSClient(nc)
-	if err != nil {
-		log.Fatal().Err(err).Str("client", Client).Msg("Failed to initialize JetStream")
 	}
 
 	// 3. Setup context and WaitGroup for worker lifecycle
@@ -59,7 +54,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	// 4. Start processors independently
-	sub, err := startAtMostOnce(nc, &wg)
+	sub, err := startAtMostOnce(client.Conn(), &wg)
 	if err != nil {
 		log.Fatal().
 			Err(err).
@@ -68,9 +63,9 @@ func main() {
 			Msg("Failed to start at-most-once processor")
 	}
 
-	cc1, err := startAtLeastOnce(ctx, js, &wg)
+	cc1, err := startAtLeastOnce(ctx, client.JetStream(), &wg)
 	if err != nil {
-		messaging.GracefulShutdown(Client, nc, &wg, 5*time.Second, []*nats.Subscription{sub})
+		messaging.GracefulShutdown(Client, client, &wg, 5*time.Second, []*nats.Subscription{sub})
 		log.Fatal().
 			Err(err).
 			Str("client", Client).
@@ -79,9 +74,9 @@ func main() {
 			Msg("Failed to start at-least-once processor")
 	}
 
-	cc2, err := startExactlyOnce(ctx, js, &wg)
+	cc2, err := startExactlyOnce(ctx, client.JetStream(), &wg)
 	if err != nil {
-		messaging.GracefulShutdown(Client, nc, &wg, 5*time.Second, []*nats.Subscription{sub}, cc1)
+		messaging.GracefulShutdown(Client, client, &wg, 5*time.Second, []*nats.Subscription{sub}, cc1)
 		log.Fatal().
 			Err(err).
 			Str("client", Client).
@@ -107,7 +102,7 @@ func main() {
 		Msg("Received shutdown signal. Initiating graceful shutdown...")
 
 	// 6. Graceful shutdown of consumer, subscription, and NATS connection
-	messaging.GracefulShutdown(Client, nc, &wg, 5*time.Second, []*nats.Subscription{sub}, cc1, cc2)
+	messaging.GracefulShutdown(Client, client, &wg, 5*time.Second, []*nats.Subscription{sub}, cc1, cc2)
 }
 
 // startAtMostOnce subscribes to Sub1 using Core NATS (at-most-once delivery).

@@ -36,24 +36,17 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to load environment configuration")
 	}
 
-	// 2. Connect to NATS Server
-	nc, err := natsclient.ConnectAndDiscover(&cfg.NATS, DLQWorkerID)
+	// 2. Connect to NATS Server & JetStream
+	client, err := natsclient.NewNATSClient(&cfg.NATS, DLQWorkerID)
 	if err != nil {
 		log.Fatal().Err(err).Str("worker", DLQWorkerID).Msg("Failed to connect to NATS")
-	}
-	defer nc.Close()
-
-	// 3. Initialize JetStream Context
-	js, err := natsclient.NewJSClient(nc)
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize JetStream context")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 4. Ensure dlq_stream exists
-	_, err = messaging.CreateStream(ctx, js, model.CreateStreamRequest{
+	// 3. Ensure dlq_stream exists
+	_, err = messaging.CreateStream(ctx, client.JetStream(), model.CreateStreamRequest{
 		Name:        DLQStreamName,
 		Description: "Dead Letter Queue stream capturing MaxDeliveries advisories",
 		Subjects:    []string{DLQAdvisorySub},
@@ -64,8 +57,8 @@ func main() {
 		log.Fatal().Err(err).Str("stream", DLQStreamName).Msg("Failed to ensure dlq_stream exists")
 	}
 
-	// 5. Create Durable Pull Consumer on dlq_stream
-	consumer, err := messaging.CreateConsumer(ctx, js, DLQStreamName, jetstream.ConsumerConfig{
+	// 4. Create Durable Pull Consumer on dlq_stream
+	consumer, err := messaging.CreateConsumer(ctx, client.JetStream(), DLQStreamName, jetstream.ConsumerConfig{
 		Durable:       DLQConsumer,
 		Name:          DLQConsumer,
 		Description:   "Dedicated worker consumer for dead-lettered job advisories",
@@ -83,9 +76,9 @@ func main() {
 		Str("consumer", DLQConsumer).
 		Msg("DLQ Worker ready and consuming dead-lettered advisories")
 
-	// 6. Start Consuming Advisory Events
+	// 5. Start Consuming Advisory Events
 	consumeCtx, err := messaging.Consume(consumer, func(msg jetstream.Msg) {
-		handleDLQAdvisory(ctx, js, msg)
+		handleDLQAdvisory(ctx, client.JetStream(), msg)
 	}, jetstream.PullMaxMessages(10))
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to start DLQ consumer pull loop")
@@ -104,7 +97,7 @@ func main() {
 		Str("signal", sig.String()).
 		Msg("Received shutdown signal. Stopping DLQ Worker gracefully...")
 
-	messaging.GracefulShutdown(DLQWorkerID, nc, nil, 5*time.Second, nil, consumeCtx)
+	messaging.GracefulShutdown(DLQWorkerID, client, nil, 5*time.Second, nil, consumeCtx)
 }
 
 // handleDLQAdvisory parses the NATS server advisory, fetches the original message payload from the source stream,

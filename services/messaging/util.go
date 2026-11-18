@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"services/natsclient"
+
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
@@ -112,47 +114,6 @@ func serializeData(data any) ([]byte, error) {
 		return []byte(v), nil
 	default:
 		return json.Marshal(v)
-	}
-}
-
-func OrderHandler(msg *nats.Msg) {
-	log.Info().
-		Str("subject", msg.Subject).
-		Any("headers", toMap(msg.Header)).
-		Str("payload", string(msg.Data)).
-		Msg("Received order!")
-
-	log.Info().
-		Str("subject", msg.Subject).
-		Any("headers", toMap(msg.Header)).
-		Str("payload", string(msg.Data)).
-		Msg("Processing order...")
-
-	time.Sleep(time.Second * 3)
-
-	log.Info().
-		Str("subject", msg.Subject).
-		Any("headers", toMap(msg.Header)).
-		Str("payload", string(msg.Data)).
-		Msg("Order processed successfully")
-}
-
-func ReplyHandler(msg *nats.Msg) {
-
-	// Verify requester provided a reply subject
-	if len(msg.Reply) == 0 {
-		log.Error().Msg("Error: received message without reply subject")
-		return
-	}
-
-	// Structured response with headers using msg.RespondMsg
-	replyMsg := nats.NewMsg(msg.Reply)
-	replyMsg.Data = []byte(`{"valid": true, "reason": "Order approved"}`)
-	replyMsg.Header.Set("Status-Code", "200")
-	replyMsg.Header.Set("Content-Type", "application/json")
-
-	if err := msg.RespondMsg(replyMsg); err != nil {
-		log.Error().Msg("Failed to send structured response")
 	}
 }
 
@@ -270,8 +231,8 @@ func AcknowledgeMessage(ctx context.Context, msg jetstream.Msg, clientName, cons
 }
 
 // GracefulShutdown performs a unified graceful shutdown across JetStream consumers, Core NATS subscriptions,
-// waits for active goroutines, and drains the connection.
-func GracefulShutdown(clientName string, nc *nats.Conn, wg *sync.WaitGroup, timeout time.Duration, subs []*nats.Subscription, ccs ...jetstream.ConsumeContext) {
+// waits for active goroutines, and drains the connection using the unified NATSClient.
+func GracefulShutdown(clientName string, client *natsclient.NATSClient, wg *sync.WaitGroup, timeout time.Duration, subs []*nats.Subscription, ccs ...jetstream.ConsumeContext) {
 	// 1. Stop JetStream consume context fetch loops
 	for _, cc := range ccs {
 		if cc != nil {
@@ -315,9 +276,9 @@ func GracefulShutdown(clientName string, nc *nats.Conn, wg *sync.WaitGroup, time
 		}
 	}
 
-	// 4. Drain and close NATS connection
-	if nc != nil {
-		if err := nc.Drain(); err != nil {
+	// 4. Drain and close NATS connection via unified client
+	if client != nil {
+		if err := client.Drain(); err != nil {
 			log.Error().Err(err).Str("client", clientName).Msg("Error during NATS connection drain")
 		} else {
 			log.Info().Str("client", clientName).Msg("NATS connection successfully drained and closed")

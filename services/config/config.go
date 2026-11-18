@@ -5,7 +5,6 @@ import (
 
 	"github.com/caarlos0/env/v10"
 	"github.com/joho/godotenv"
-	"github.com/rs/zerolog/log"
 )
 
 // Config holds runtime configuration variables.
@@ -21,11 +20,8 @@ type Config struct {
 
 // Load loads configuration from a local .env file (if present) and the environment.
 func Load() (*Config, error) {
-	// Load environment variables from .env file if it exists.
-	err := godotenv.Load()
-	if err != nil {
-		log.Warn().Msgf("No .env file found: %v\n", err)
-	}
+	// Attempt loading from local or services directory .env
+	_ = godotenv.Load(".env", "services/.env", "../services/.env")
 
 	var cfg Config
 	if err := env.Parse(&cfg); err != nil {

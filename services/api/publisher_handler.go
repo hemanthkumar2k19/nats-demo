@@ -42,6 +42,12 @@ func (h *PublisherHandler) PublishHandler(c *gin.Context) {
 		}
 		msg.Headers["Nats-Msg-Id"] = httpMsgID
 	}
+	if simAction := c.GetHeader("X-Simulation-Action"); simAction != "" {
+		if msg.Headers == nil {
+			msg.Headers = make(map[string]any)
+		}
+		msg.Headers["X-Simulation-Action"] = simAction
+	}
 
 	resp, err := h.pubService.Publish(c.Request.Context(), &msg)
 	if err != nil {
@@ -70,6 +76,12 @@ func (h *PublisherHandler) JSPublishHandler(c *gin.Context) {
 			msg.Headers = make(map[string]any)
 		}
 		msg.Headers["Nats-Msg-Id"] = httpMsgID
+	}
+	if simAction := c.GetHeader("X-Simulation-Action"); simAction != "" {
+		if msg.Headers == nil {
+			msg.Headers = make(map[string]any)
+		}
+		msg.Headers["X-Simulation-Action"] = simAction
 	}
 
 	resp, err := h.pubService.JSPublish(c.Request.Context(), &msg)

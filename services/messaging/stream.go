@@ -89,10 +89,14 @@ func GetStreamSequenceBounds(ctx context.Context, js jetstream.JetStream, stream
 	}, nil
 }
 
-// [TODO: USER_IMPLEMENT]
 // GetStreamMsg retrieves a raw stored message from a stream by its sequence number.
-// Logic to be implemented by user.
-func GetStreamMsg(ctx context.Context, js jetstream.JetStream, stream string, seq uint64) (*jetstream.RawStreamMsg, error) {
-	// Dummy stub: User to implement logic using js.GetMsg(ctx, stream, seq)
-	return nil, nil
+func GetStreamMsg(ctx context.Context, js jetstream.JetStream, streamName string, seq uint64) (*jetstream.RawStreamMsg, error) {
+	if js == nil {
+		return nil, fmt.Errorf("jetstream context is nil")
+	}
+	stream, err := js.Stream(ctx, streamName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stream %s: %w", streamName, err)
+	}
+	return stream.GetMsg(ctx, seq)
 }

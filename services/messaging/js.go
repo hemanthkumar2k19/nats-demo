@@ -82,6 +82,8 @@ func JSPublishAsync(ctx context.Context, js jetstream.JetStream, msg *model.Mess
 	}
 
 	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	case ack := <-future.Ok():
 		log.Info().
 			Str("subject", msg.Subject).
@@ -107,11 +109,12 @@ func JSPublishAsyncPending(js jetstream.JetStream) map[string]any {
 	}
 }
 
-// Publish N Messages with distinct, consistent order numbers for concurrency testing
+// Publish N Messages concurrently with distinct, consistent order numbers for concurrency testing
 func JSPublishN(ctx context.Context, js jetstream.JetStream, messages []model.Message) error {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	orderBatch := r.Intn(9000) + 1000
 
+	futures := make([]jetstream.PubAckFuture, 0, len(messages))
 	for i := range messages {
 		msg := &messages[i]
 		orderID := fmt.Sprintf("ORD-%d-%02d", orderBatch, i+1)
@@ -122,10 +125,42 @@ func JSPublishN(ctx context.Context, js jetstream.JetStream, messages []model.Me
 			msg.Data = fmt.Sprintf("Order %s: %v", orderID, msg.Data)
 		}
 
-		_, err := JSPublishAsync(ctx, js, msg)
+		header := toNatsHeader(msg.Headers)
+		dataBytes, err := serializeData(msg.Data)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to serialize message data: %w", err)
+		}
+
+		natsMsg := &nats.Msg{
+			Subject: msg.Subject,
+			Header:  header,
+			Data:    dataBytes,
+		}
+
+		var opts []jetstream.PublishOpt
+		if header != nil {
+			if msgID := header.Get(nats.MsgIdHdr); msgID != "" {
+				opts = append(opts, jetstream.WithMsgID(msgID))
+			}
+		}
+
+		future, err := js.PublishMsgAsync(natsMsg, opts...)
+		if err != nil {
+			return fmt.Errorf("failed to publish async message: %w", err)
+		}
+		futures = append(futures, future)
+	}
+
+	for _, f := range futures {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-f.Ok():
+		case err := <-f.Err():
+			return fmt.Errorf("batch async publish failed: %w", err)
 		}
 	}
+
+	log.Info().Int("count", len(messages)).Msg("Successfully published message batch concurrently to JetStream")
 	return nil
 }

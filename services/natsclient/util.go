@@ -2,13 +2,14 @@ package natsclient
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/rs/zerolog/log"
 )
 
 // GetRTT returns the round-trip time between the client and the connected NATS server.
+// For callers with an initialized *NATSClient, prefer calling client.GetRTT() directly.
 func GetRTT(nc *nats.Conn) (time.Duration, error) {
 	if nc == nil {
 		return 0, fmt.Errorf("nats connection is nil")
@@ -16,42 +17,42 @@ func GetRTT(nc *nats.Conn) (time.Duration, error) {
 	return nc.RTT()
 }
 
+// PrintConnectionDetails logs diagnostic connection, topology, and statistics metadata using Zerolog.
 func PrintConnectionDetails(nc *nats.Conn) {
 	if nc == nil {
-		log.Println("[NATS] Connection is nil")
+		log.Warn().Msg("NATS connection is nil")
 		return
 	}
 
-	log.Println("=== NATS Connection Health & Status ===")
-	log.Printf("  Status:               %v", nc.Status())
-	log.Printf("  Is Connected:         %t", nc.IsConnected())
-	log.Printf("  Is Reconnecting:      %t", nc.IsReconnecting())
-	log.Printf("  Is Draining:          %t", nc.IsDraining())
-	log.Printf("  Is Closed:            %t", nc.IsClosed())
+	lastErr := "none"
 	if err := nc.LastError(); err != nil {
-		log.Printf("  Last Error:           %v", err)
-	} else {
-		log.Printf("  Last Error:           None")
+		lastErr = err.Error()
 	}
 
-	log.Println("=== NATS Server & Topology Metadata ===")
-	log.Printf("  Connected URL:        %s", nc.ConnectedUrl())
-	log.Printf("  Connected IP/Addr:    %s", nc.ConnectedAddr())
-	log.Printf("  Server ID:            %s", nc.ConnectedServerId())
-	log.Printf("  Server Name:          %s", nc.ConnectedServerName())
-	log.Printf("  Server Version:       %s", nc.ConnectedServerVersion())
-	log.Printf("  Cluster Name:         %s", nc.ConnectedClusterName())
 	jsEnabled, _ := nc.ConnectedServerJetStream()
-	log.Printf("  JetStream Enabled:    %t", jsEnabled)
-	log.Printf("  Max Payload (Bytes):  %d", nc.MaxPayload())
-	log.Printf("  Discovered Servers:   %v", nc.DiscoveredServers())
-	log.Printf("  Known Servers Pool:   %v", nc.Servers())
-
 	stats := nc.Stats()
-	log.Println("=== NATS Connection Statistics ===")
-	log.Printf("  In Messages:          %d", stats.InMsgs)
-	log.Printf("  Out Messages:         %d", stats.OutMsgs)
-	log.Printf("  In Bytes:             %d", stats.InBytes)
-	log.Printf("  Out Bytes:            %d", stats.OutBytes)
-	log.Printf("  Reconnect Count:      %d", stats.Reconnects)
+
+	log.Info().
+		Str("status", nc.Status().String()).
+		Bool("connected", nc.IsConnected()).
+		Bool("reconnecting", nc.IsReconnecting()).
+		Bool("draining", nc.IsDraining()).
+		Bool("closed", nc.IsClosed()).
+		Str("last_error", lastErr).
+		Str("connected_url", nc.ConnectedUrl()).
+		Str("connected_addr", nc.ConnectedAddr()).
+		Str("server_id", nc.ConnectedServerId()).
+		Str("server_name", nc.ConnectedServerName()).
+		Str("server_version", nc.ConnectedServerVersion()).
+		Str("cluster_name", nc.ConnectedClusterName()).
+		Bool("jetstream_enabled", jsEnabled).
+		Int64("max_payload_bytes", nc.MaxPayload()).
+		Strs("discovered_servers", nc.DiscoveredServers()).
+		Strs("servers_pool", nc.Servers()).
+		Uint64("in_msgs", stats.InMsgs).
+		Uint64("out_msgs", stats.OutMsgs).
+		Uint64("in_bytes", stats.InBytes).
+		Uint64("out_bytes", stats.OutBytes).
+		Uint64("reconnect_count", stats.Reconnects).
+		Msg("NATS Connection Status & Topology Metadata")
 }

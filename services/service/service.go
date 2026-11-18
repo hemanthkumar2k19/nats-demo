@@ -12,9 +12,7 @@ import (
 	"services/model"
 	"services/natsclient"
 
-	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/rs/zerolog/log"
 )
 
 var shortIDCounter uint64 = uint64(time.Now().Unix()%9000) + 1000
@@ -107,19 +105,13 @@ func attachDataID(data any, shortID string, subject string) any {
 
 // Service manages publishing and subscription operations over NATS.
 type Service struct {
-	nc *nats.Conn
-	js jetstream.JetStream
+	client *natsclient.NATSClient
 }
 
-// NewService creates a new Service instance.
-func NewService(nc *nats.Conn) *Service {
-	js, err := natsclient.NewJSClient(nc)
-	if err != nil {
-		log.Warn().Err(err).Msg("JetStream context creation warning")
-	}
+// NewService creates a new Service instance backed by the unified NATSClient.
+func NewService(client *natsclient.NATSClient) *Service {
 	return &Service{
-		nc: nc,
-		js: js,
+		client: client,
 	}
 }
 
@@ -127,7 +119,7 @@ func NewService(nc *nats.Conn) *Service {
 func (s *Service) Publish(ctx context.Context, msg *model.Message) (*model.PublishResponse, error) {
 	PrepareMessage(msg)
 
-	if err := messaging.PublishMsg(s.nc, msg); err != nil {
+	if err := messaging.PublishMsg(s.client.Conn(), msg); err != nil {
 		return nil, err
 	}
 
@@ -147,17 +139,9 @@ func (s *Service) Publish(ctx context.Context, msg *model.Message) (*model.Publi
 
 // JSPublish publishes a message to JetStream synchronously after enriching headers and data with a runtime unique ID.
 func (s *Service) JSPublish(ctx context.Context, msg *model.Message) (*model.PublishResponse, error) {
-	if s.js == nil {
-		var err error
-		s.js, err = natsclient.NewJSClient(s.nc)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
-		}
-	}
-
 	PrepareMessage(msg)
 
-	ack, err := messaging.JSPublishMsg(ctx, s.js, msg)
+	ack, err := messaging.JSPublishMsg(ctx, s.client.JetStream(), msg)
 	if err != nil {
 		return nil, err
 	}
@@ -181,27 +165,11 @@ func (s *Service) JSPublish(ctx context.Context, msg *model.Message) (*model.Pub
 
 // JSPublishBatch publishes multiple messages to JetStream asynchronously using JSPublishN.
 func (s *Service) JSPublishBatch(ctx context.Context, messages []model.Message) error {
-	if s.js == nil {
-		var err error
-		s.js, err = natsclient.NewJSClient(s.nc)
-		if err != nil {
-			return fmt.Errorf("failed to initialize JetStream context: %w", err)
-		}
-	}
-
-	return messaging.JSPublishN(ctx, s.js, messages)
+	return messaging.JSPublishN(ctx, s.client.JetStream(), messages)
 }
 
 // CreateConsumer creates or retrieves a JetStream consumer and returns its metadata.
 func (s *Service) CreateConsumer(ctx context.Context, cr *model.CreateConsumerRequest) (*jetstream.ConsumerInfo, error) {
-	if s.js == nil {
-		var err error
-		s.js, err = natsclient.NewJSClient(s.nc)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
-		}
-	}
-
 	cfg := jetstream.ConsumerConfig{
 		Durable:        cr.ConsumerName,
 		FilterSubjects: cr.FilterSubjects,
@@ -212,7 +180,7 @@ func (s *Service) CreateConsumer(ctx context.Context, cr *model.CreateConsumerRe
 		cfg.DeliverSubject = cr.DeliverSubject
 	}
 
-	consumer, err := messaging.CreateConsumer(ctx, s.js, cr.StreamName, cfg)
+	consumer, err := messaging.CreateConsumer(ctx, s.client.JetStream(), cr.StreamName, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
@@ -227,15 +195,7 @@ func (s *Service) CreateConsumer(ctx context.Context, cr *model.CreateConsumerRe
 
 // DeleteConsumer deletes a JetStream consumer.
 func (s *Service) DeleteConsumer(ctx context.Context, cr *model.CreateConsumerRequest) error {
-	if s.js == nil {
-		var err error
-		s.js, err = natsclient.NewJSClient(s.nc)
-		if err != nil {
-			return fmt.Errorf("failed to initialize JetStream context: %w", err)
-		}
-	}
-
-	if err := messaging.DeleteConsumer(ctx, s.js, cr); err != nil {
+	if err := messaging.DeleteConsumer(ctx, s.client.JetStream(), cr); err != nil {
 		return fmt.Errorf("failed to delete consumer: %w", err)
 	}
 
@@ -244,27 +204,11 @@ func (s *Service) DeleteConsumer(ctx context.Context, cr *model.CreateConsumerRe
 
 // GetStreamSequenceBounds retrieves available boundary sequences and timestamps for a stream to guide replay requests.
 func (s *Service) GetStreamSequenceBounds(ctx context.Context, streamName string) (*model.StreamSequencesResponse, error) {
-	if s.js == nil {
-		var err error
-		s.js, err = natsclient.NewJSClient(s.nc)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
-		}
-	}
-
-	return messaging.GetStreamSequenceBounds(ctx, s.js, streamName)
+	return messaging.GetStreamSequenceBounds(ctx, s.client.JetStream(), streamName)
 }
 
 // ReplayMessages replays stream messages by sequence range or time range for historical audit without applying business effects.
 func (s *Service) ReplayMessages(ctx context.Context, req *model.ReplayRequest) (*model.ReplayResponse, error) {
-	if s.js == nil {
-		var err error
-		s.js, err = natsclient.NewJSClient(s.nc)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
-		}
-	}
-
 	rangeParams := messaging.RangeParams{
 		Type:          messaging.RangeBySequence,
 		StartSequence: req.StartSequence,
@@ -284,7 +228,7 @@ func (s *Service) ReplayMessages(ctx context.Context, req *model.ReplayRequest) 
 
 	summary, err := messaging.ReplayMessages(
 		ctx,
-		s.js,
+		s.client.JetStream(),
 		req.StreamName,
 		req.FilterSubjects,
 		rangeParams,
@@ -318,14 +262,6 @@ func (s *Service) ReplayMessages(ctx context.Context, req *model.ReplayRequest) 
 
 // ReprocessMessages fetches messages within a sequence or time range and executes domain business processing logic for each message.
 func (s *Service) ReprocessMessages(ctx context.Context, req *model.ReprocessRequest) (*model.ReprocessResponse, error) {
-	if s.js == nil {
-		var err error
-		s.js, err = natsclient.NewJSClient(s.nc)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize JetStream context: %w", err)
-		}
-	}
-
 	rangeParams := messaging.RangeParams{
 		Type:          messaging.RangeBySequence,
 		StartSequence: req.StartSequence,
@@ -346,7 +282,7 @@ func (s *Service) ReprocessMessages(ctx context.Context, req *model.ReprocessReq
 	startTime := time.Now()
 	summary, err := messaging.ReprocessMessages(
 		ctx,
-		s.js,
+		s.client.JetStream(),
 		req.StreamName,
 		req.FilterSubjects,
 		rangeParams,

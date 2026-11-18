@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -47,14 +48,9 @@ func main() {
 	}
 
 	// 3. Connect to NATS Server
-	nc, err := natsclient.ConnectAndDiscover(&cfg.NATS, workerID)
+	client, err := natsclient.NewNATSClient(&cfg.NATS, workerID)
 	if err != nil {
 		log.Fatal().Err(err).Str("worker_id", workerID).Msg("Failed to initialize NATS Client")
-	}
-
-	js, err := natsclient.NewJSClient(nc)
-	if err != nil {
-		log.Fatal().Err(err).Str("worker_id", workerID).Msg("Failed to initialize JetStream")
 	}
 
 	// 4. Setup context and WaitGroup for worker lifecycle
@@ -64,7 +60,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	// 5. Start JetStream push consumer worker
-	sub, err := StartWorker(ctx, nc, js, &wg, workerID)
+	sub, err := StartWorker(ctx, client.Conn(), client.JetStream(), &wg, workerID)
 	if err != nil {
 		log.Fatal().
 			Err(err).
@@ -93,14 +89,16 @@ func main() {
 		Msg("Received shutdown signal. Initiating graceful shutdown...")
 
 	// 7. Graceful shutdown of push subscription and NATS connection
-	messaging.GracefulShutdown(workerID, nc, &wg, 5*time.Second, []*nats.Subscription{sub})
+	messaging.GracefulShutdown(workerID, client, &wg, 5*time.Second, []*nats.Subscription{sub})
 }
 
 // StartWorker verifies the push consumer in JetStream and subscribes to its DeliverSubject with QueueGroup.
 func StartWorker(ctx context.Context, nc *nats.Conn, js jetstream.JetStream, wg *sync.WaitGroup, workerID string) (*nats.Subscription, error) {
-	// Verify consumer exists in JetStream via messaging utility
+	// Verify consumer exists in JetStream via messaging utility.
+	// In JetStream v2 API, js.Consumer() returns jetstream.ErrNotPullConsumer when
+	// the consumer has a DeliverSubject (i.e. is a push consumer), confirming its existence.
 	consumer, err := messaging.GetConsumer(ctx, js, StreamName, ConsumerName)
-	if err != nil {
+	if err != nil && !errors.Is(err, jetstream.ErrNotPullConsumer) {
 		return nil, err
 	}
 
@@ -114,6 +112,14 @@ func StartWorker(ctx context.Context, nc *nats.Conn, js jetstream.JetStream, wg 
 			targetSubject = info.Config.DeliverSubject
 		}
 	}
+
+	log.Info().
+		Str("worker_id", workerID).
+		Str("stream", StreamName).
+		Str("consumer", ConsumerName).
+		Str("deliverSubject", targetSubject).
+		Str("queueGroup", QueueGroup).
+		Msg("Verified push consumer in JetStream")
 
 	// QueueSubscribe via messaging package distributes pushed messages across competing workers in QueueGroup
 	sub, err := messaging.QueueSubscribe(nc, targetSubject, QueueGroup, func(msg *nats.Msg) {

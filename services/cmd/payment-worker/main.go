@@ -44,14 +44,9 @@ func main() {
 	}
 
 	// 3. Connect to NATS Server
-	nc, err := natsclient.ConnectAndDiscover(&cfg.NATS, workerID)
+	client, err := natsclient.NewNATSClient(&cfg.NATS, workerID)
 	if err != nil {
 		log.Fatal().Err(err).Str("worker_id", workerID).Msg("Failed to initialize NATS Client")
-	}
-
-	js, err := natsclient.NewJSClient(nc)
-	if err != nil {
-		log.Fatal().Err(err).Str("worker_id", workerID).Msg("Failed to initialize JetStream")
 	}
 
 	// 4. Setup context and WaitGroup for worker lifecycle
@@ -61,7 +56,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	// 5. Start JetStream consumer worker
-	cc, err := StartWorker(ctx, js, &wg, workerID)
+	cc, err := StartWorker(ctx, client.JetStream(), &wg, workerID)
 	if err != nil {
 		log.Fatal().
 			Err(err).
@@ -87,7 +82,7 @@ func main() {
 		Msg("Received shutdown signal. Initiating graceful shutdown...")
 
 	// 7. Graceful shutdown of consumer and NATS connection
-	messaging.GracefulShutdown(workerID, nc, &wg, 5*time.Second, nil, cc)
+	messaging.GracefulShutdown(workerID, client, &wg, 5*time.Second, nil, cc)
 }
 
 // StartWorker binds to the configured JetStream consumer and begins asynchronous message processing.
