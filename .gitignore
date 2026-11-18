@@ -30,3 +30,23 @@ Thumbs.db
 # Temporary files
 *.tmp
 backlog.md
+
+
+# Private keys
+*.key
+*.pem
+
+# Certificate Signing Requests
+*.csr
+
+# Generated certificates
+*.crt
+*.cer
+*.cert
+
+# CA generated files
+*.srl
+
+# Private key backups
+*.key.backup
+*.key.bak
