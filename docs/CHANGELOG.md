@@ -4,18 +4,115 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [Unreleased] - 2026-11-19
+
+### Added
+- **Topology-Driven Sizing & Traffic Peak Multiplier Engine (`docs/infra_calculator/infra_calc.html`)**:
+  - Reordered input cards to place **Core NATS (In-Memory Ephemeral)** at the top, preceding **JetStream**, reflecting natural messaging taxonomy.
+  - Upgraded Core NATS with Average Ingress Rate (`x_core_avg`) and Core Peak Multiplier (`k_peak_core`) with one-click presets (`[1.5x Normal]`, `[2.0x Standard]`, `[3.0x Burst]`) and manual float inputs, automatically deriving `x_core_peak`.
+  - Upgraded JetStream with Traffic Peak Multipliers (`k_peak_js`) with presets (`[2.0x Banking]`, `[3.0x E-Commerce]`, `[5.0x Retail Peak]`, `[10.0x Flash Sale]`) and Peak Payload Multipliers (`k_payload_peak`), deriving `x_js_peak` and `payload_peak`.
+  - Introduced the **Application Topology Card** taking publishing services, consuming services, and K8s pod replicas to mathematically derive total microservice pods and peak client sockets (`n_conn_peak`).
+  - Derived peak durable consumers (`n_consumer_peak = n_stream * c_js`) directly from active streams and downstream consumer groups per stream.
+  - Enhanced bidirectional YAML synchronization and updated documentation (`notes.md`, `example.md`).
+- **Sizing Intuition Paradoxes and Architecture Defense Notes (`docs/infra_calculator/notes.md`)**:
+  - Added Section 3 resolving counter-intuitive sizing ratios (1 vCPU, ~300 MB RAM, ~830 GB Disk) for architecture reviews and technical discussions.
+  - Documented physical reasons why Go process memory footprint is low (~300 MB) without missing variables, contrasting user-space heap vs. direct append-only `.blk` disk persistence.
+  - Articulated the distinction between process resident RSS and host VM RAM, showing how cloud VM packaging (1:2 and 1:4 ratios) naturally supplies 2 GB to 4 GB of RAM where spare memory is passively utilized by the Linux kernel as Page Cache for zero-disk consumer reads.
+  - Detailed the physical mechanics behind high persistent disk capacity (time accumulator over 72 hours accumulating 518.4 million messages) and why the 30% Headroom buffer (829.4 GB provisioned) is mandatory to prevent ext4/xfs fragmentation, absorb rollover padding, and handle asynchronous retention cleanup.
+  - Included a compact architecture review objection and rebuttal cheat sheet table.
+- **Ultra-Compact Workload Estimation Cheat Sheet (`docs/infra_calculator/example.md`)**:
+  - Authored a high-density, 46-line rough note cheat sheet mapping Business TPS to the 18 NATS capacity parameters with exactly 1 line per parameter.
+  - Provided concise, practical estimation formulas and sample values for an e-commerce workload (1,000 Avg TPS, 3,000 Peak TPS, 40 pods, 24h retention).
+  - Summarized the resulting sizing deliverables at a glance: 2 vCPU, ~350 MB Go process RAM (>3.6 GB Page Cache), and ~270 GB persistent disk per node.
+- **Persistent Disk Model Integration into Calculator (`docs/infra_calculator/infra_calc.html`)**:
+  - Expanded the calculator UI to size Compute (vCPU), Memory (RAM), and Storage (Persistent Disk) across all input, dashboard, breakdown, and YAML views.
+  - Added workload controls for `x_js_avg` (average ingress rate), `payload_avg` (average payload size), `header` (message headers), `retention_hours` (retention time window `t`), and `s_proto` (block framing overhead `S_PROTO`).
+  - Added **Hero Card 3 (Provisioned Disk)** displaying recommended provisioned disk volume per node (GB/TB), raw volume, 30% Headroom, and cluster total ($R=3$).
+  - Implemented the **Per-Node Persistent Disk Breakdown Table** itemizing effective stored message size, sequential peak write bandwidth (Node & Cluster), raw volume, provisioned volume targeting $\le 70\%$ ext4/xfs utilization, storage controller specs ($\ge 3,000$ IOPS baseline), and zero live consumer read IOPS.
+  - Updated both editable Input YAML and read-only Output Provisioning YAML specifications with full persistent disk metrics and bidirectional live sync.
+- **Interactive Dual YAML Export & Live Two-Way Editing (`docs/infra_calculator/infra_calc.html`)**:
+  - Implemented segmented view toggle controls across Inputs (`Form View` vs `YAML Config`) and Outputs (`Dashboard View` vs `Provisioning YAML`).
+  - Added editable workload YAML configuration with real-time bidirectional synchronization: editing YAML values dynamically parses and updates form sliders, number controls, and derived provisioning models in real-time.
+  - Added exportable read-only Provisioning YAML specification detailing computed vCPU, Memory (Go Process RSS), cloud VM tier pairing (1:2 and 1:4 ratios), component breakdowns, and operational guardrail statuses.
+  - Implemented one-click clipboard copy buttons with visual "Copied!" feedback badges for both input and output YAML specifications.
+- **Persistent Disk Storage Capacity Planning & Sizing Model (`docs/infra_calculator/disk.md`)**:
+  - Authored the comprehensive Persistent Disk estimation model for the fixed 3-node JetStream cluster ($R=3$, File Store, HAProxy L4).
+  - Audited all 16 workload input variables and 7 system constants with physical layer inclusion/exclusion justifications, demonstrating why consumer fan-out (`c_js`) is strictly excluded from storage volume (write-once semantics).
+  - Deduced the mathematical storage volume formulation ($D_{\text{node}} = x_{\text{js\_avg}} \cdot S_{\text{avg}} \cdot (t \cdot 3,600)$) with 30% Headroom for filesystem safety ($D_{\text{provisioned}} = D_{\text{node}} / 0.70$) and cluster total ($3 \times D_{\text{node}}$).
+  - Formalized the physical rationale for the 30% storage headroom buffer: preventing ext4/xfs fragmentation, absorbing 8 MB/16 MB segment roll-over padding, covering Linux 5% root block reservation, and buffering retention deletion batch delay.
+  - Sized sustained peak write bandwidth ($\text{BW}_{\text{write, node}} = x_{\text{js\_peak}} \cdot S_{\text{peak}}$), cluster replicated write throughput, and physical write IOPS requirements ($\ge 3,000$ IOPS baseline), while explaining fsync group commit amortization under load.
+  - Reaffirmed the Zero-Disk Read Replay Principle: live streaming consumers read directly from memory pages held in spare host RAM (Linux OS Page Cache), generating zero physical disk read IOPS.
+- **Operational Boundaries & Physical Sizing Guardrails (`docs/infra_calculator/guardrails.md`)**:
+  - Authored a centralized reference cataloging all 9 physical saturation knees, hardware ceilings, and architectural limitations across Compute, Consensus, Memory, Storage, Network, and Multi-Raft density.
+  - Formatted each guardrail with its physical mechanism, empirical benchmark observation, behavioral symptom, and mitigation sizing rule.
+  - Decoupled guardrails from `docs/infra_calculator/cpu.md` and `docs/infra_calculator/memory.md`, establishing clean modular separation of concerns.
+- **Mathematical & Systems Engineering Principles Reference (`docs/infra_calculator/method.md`)**:
+  - Consolidated all 8 foundational mathematical and systems engineering principles across CPU, Memory, Disk, and Network into a dedicated, centralized reference document.
+  - Included formal definitions, mathematical proofs, and a dedicated `Applied In:` application scope section for each principle: OFAT Controlled Isolation, Superposition Principle, Conservative Upper Secant Envelope, Differential Slope Extraction, Two-Tier Memory Architecture, Mechanical Sympathy, USE Method, and M/M/1 Queueing Headroom.
+  - Streamlined Section 3 in `docs/infra_calculator/cpu.md` and `docs/infra_calculator/memory.md` to reference this central document, eliminating documentation duplication.
+- **Memory (RAM) Capacity Planning and Sizing Model (`docs/infra_calculator/memory.md`)**:
+  - Authored a comprehensive memory sizing model establishing the two-tier physical memory architecture: Go Process Heap (RSS) and Linux OS Page Cache ($M_{\text{cache}}$), explaining why clubbing them into a unified Memory tier prevents real-time consumer disk read IOPS thrashing.
+  - Audited all 16 workload input variables and 8 system constants with exhaustive inclusion/exclusion rationales and physical layer justifications.
+  - Deduced the Go Process Heap formulation from empirical benchmark coefficients: base floor ($128\text{ MB}$), sublist prefix trie ($\beta_{\text{subj}} = 313\text{ B/subj/node}$), Multi-Raft streams ($\beta_{\text{stream}} = 234\text{ KiB/stream/node}$), durable consumers ($\beta_{\text{consumer}} = 7.29\text{ MB/consumer/node}$), and TCP socket buffers ($\beta_{\text{conn}} = 64\text{ KiB/conn}$).
+  - Established the Linux OS Page Cache working set formula ($M_{\text{cache}} = x_{\text{js\_avg}} \times S_{\text{avg}} \times W$) for the 2-minute temporal window ($W = 120\text{ s}$), proving why consumer fan-out does not duplicate kernel page cache buffers.
+  - Established 4 operational boundaries & non-linear guardrails: cold read disk thrashing (lag $>120\text{s}$), large payload socket buffer amplification ($>8\text{ KiB}$), in-memory stream traps, and ephemeral UUID subject memory leaks.
+- **Dedicated CPU Capacity Sizing Calculator UI (`docs/infra_calculator/infra_calc.html`)**:
+  - Built a clean, self-contained interactive calculator UI dedicated strictly to empirical CPU sizing on the fixed 3-node cluster ($R=3$, HAProxy L4).
+  - Displays the Recommended Rounded CPU (whole vCPU) per node and cluster total, with exact provisioned mCPU, raw demand, and 70% target utilization metrics.
+  - Implemented real-time dual controls (range sliders + direct numeric inputs with explicit unit labels) across JetStream workload (`x_js_peak`, `c_js`), Core NATS (`x_core_peak`, `c_core`), sockets (`n_conn_peak`), and streams (`n_stream`), with an uncollapsed standard card for model constants (`BATCH`, `HEADROOM`, `mCPU_base`).
+  - Added an empirical superposition breakdown table and dynamic non-linear guardrail badges (7,000 msgs/s disk fsync ceiling and 10,000 ACKs/s consumer wall).
+- **Capacity Planning Notes & Architectural Rationale (`docs/infra_calculator/notes.md`)**:
+  - Authored a compact, high-density technical note establishing why Subject Cardinality does not impact routing latency or CPU due to NATS prefix trie $O(K)$ algorithmic invariance and ~313 B/node heap cost.
+  - Documented why JetStream physical sizing is governed almost exclusively by data velocity ($\text{Throughput} \times \text{Payload Size}$) across storage volume, disk IOPS, network bandwidth, and Page Cache working set, noting the only two exceptions (`MaxMsgsPerSubject` KV buckets and unbounded ephemeral UUIDs).
+- **Capacity Sizing Framework Executive Overview (`docs/infra_calculator/overview.md`)**:
+  - Authored an architect-grade systems engineering overview framed around solving capacity planning in the absence of target production hardware through local baseline profiling and mathematical extrapolation.
+  - Defined the Systems Engineering Principle separating Software-Intrinsic Mechanics (in-memory routing, trie lookups, Raft consensus) from Physical Hardware Ceilings (cloud VM, Persistent Disk IOPS, 10G NIC).
+  - Established the 5 proofs of estimation certainty without target infrastructure: deterministic algorithmic complexity (O(1)/O(K)), physical memory model (Go heap vs Linux OS Page Cache for zero-disk replay), normalized hardware units (core-cycles and bytes), kernel mechanical sympathy (epoll batching and fsync group commits), and 30% headroom absorbing cloud virtualization variance.
+  - Formulated the hardware sizing deliverables summary around the three true cloud provisioning knobs (Compute, unified Memory, Persistent Disk Storage) using plain-English systems descriptions, standardized storage terminology to cloud-agnostic Persistent Disk, un-clubbed running prose into clean bulleted structures, and kept the document strictly self-contained by removing external cross-document references.
+
+### Changed
+- **Interactive Calculator Compute & Memory Integration (`docs/infra_calculator/infra_calc.html`)**:
+  - Expanded the standalone calculator UI to size both Compute (CPU) and Memory (RAM) simultaneously.
+  - Added workload input controls for `n_consumer_peak` (durable consumers), `n_subj` (registered subjects), `payload_peak` (message payload in bytes), and `ram_base` (baseline Go RSS floor in MB).
+  - Implemented dual hero recommendation cards for Provisioned Compute (vCPU per node & cluster total) and Provisioned Memory (MB/GB Go Process RSS per node & cluster total).
+  - Added the empirical Go Process Resident Memory breakdown table itemizing baseline floor (128 MB), sublist tries (313 B/node), Multi-Raft streams (234 KiB/node), durable consumer progress (7.29 MB/node), and TCP socket buffers (64 KiB/node).
+  - Built a Cloud VM Packaging and Linux Page Cache analysis card, evaluating standard 1:2 (Compute-Optimized) and 1:4 (General-Purpose) cloud VM tiers and displaying the real-time zero-disk replay cache duration based on spare host RAM and incoming write velocity.
+  - Added non-linear guardrail badges for Large Payload Socket Buffer Amplification (>8 KiB) and Page Cache Cushion.
+- **Elimination of Artificial Page Cache Window ($W = 120\text{ s}$) Across Framework**:
+  - Completely purged the non-configurable Page Cache Window parameter ($W = 120\text{ s}$) and synthetic formula ($M_{\text{cache}} = x \times S \times W$) from all framework documentation (`operations.md`, `cpu.md`, `memory.md`, `method.md`, `guardrails.md`, `overview.md`, `notes.md`) and UI (`infra_calc.html`).
+  - Reframed Memory sizing strictly as deterministic Go Process Resident Memory ($\text{RAM}_{\text{process}}$) covering runtime structures, sublist tries, stream state, consumer cursors, and socket buffers, sized with 30% Headroom for Go GC: $\text{RAM}_{\text{provisioned}} = \text{RAM}_{\text{process}} / 0.70$.
+  - Grounded Linux Page Cache as an automatic, passive operational benefit of standard cloud VM compute profiles (1:2 and 1:4 vCPU:RAM packaging ratios), where spare host RAM (3.5 GB to 7.5 GB on a 2 vCPU instance) naturally caches 45+ minutes of recent ingress data with zero disk read IOPS.
+  - Reduced the true System Constants count from 8 to 7 across the framework.
+  - Re-anchored Guardrail 4 (Cold Read Disk Thrashing) threshold to backlog volume exceeding available spare host RAM rather than an arbitrary 120-second time boundary.
+- **CPU Sizing Model & Methodology Refinements (`docs/infra_calculator/cpu.md`)**:
+  - Added Section 3.5 (Differential Slope Method), formally documenting how taking rate deltas between benchmark steps mathematically eliminates containerization and hypervisor overhead ($C_{\text{overhead}}$) to isolate software-intrinsic NATS Go runtime execution costs.
+  - Clarified Section 2.C to document that the empirical $\alpha_{\text{ack}}$ coefficient ($0.0330\text{ mCPU}$) encapsulates the entire end-to-end consumer lifecycle (outbound TCP push delivery plus inbound Raft explicit ACK state commit).
+  - Standardized storage terminology to cloud-agnostic Persistent Disk across Section 1.1 and Section 4 Guardrail 2.
+- **Operational Baseline & Sizing Invariants Streamlining (`docs/infra_calculator/operations.md`)**:
+  - Streamlined document into a high-density, compact reference format (~85 lines vs 140 lines) without loss of technical signals or parameters.
+  - Removed default values from Section 3.1 (Workload Inputs), reflecting their nature as purely dynamic user-provided variables rather than system defaults.
+  - Added explicit `Configurability` classification across Section 2.2 (Heartbeats & Keepalives) and Section 3.2 (System Constants), distinguishing parameters fixed by NATS Code or Model Standards from those tunable via Server, Client SDK, or Consumer configs.
+  - Standardized storage terminology from NVMe SSD to cloud-agnostic Persistent Disk across all operational descriptions.
+  - Paired Average and Peak dimensions in Workload Inputs into consolidated, readable rows.
+  - Structured Section 4 (Derived System Invariants) and Section 5 (Ignored Operations) into direct, authoritative reference tables with exact mathematical formulas and exclusion rationales.
+
 ## [Unreleased] - 2026-11-16
 
 ### Added
 - **Operation-First Capacity Evaluation Model (`docs/operations.md`)**:
   - Established a dedicated operational inventory model for NATS JetStream capacity evaluation, decoupling message operations, cluster keepalives, and notation into clean reference tables.
-  - Standardized Section 2.2 Heartbeats and Keepalives using symbolic notation (`t_raft`, `t_route`, `t_ping`, `t_hb`), decoupling mechanism flows from tuning constants.
+  - Standardized Section 2.2 Heartbeats and Keepalives using uppercase symbolic notation (`T_RAFT`, `T_ROUTE`, `T_PING`, `T_HB`), decoupling mechanism flows from tuning constants.
   - Refined Section 2.1 Core NATS Write flow to isolate memory ingress from read delivery.
   - Adopted lowercase `n_` prefix convention for resource cardinality symbols (`n_conn`, `n_subj`, `n_stream`, `n_consumer`).
-  - Categorized Monitoring/Telemetry (Prometheus scrapes, K8s probes, $SYS advisories) and Subscription Interest Gossip as Priority 2 (P2) background operations, explicitly isolating them from core capacity sizing formulas.
-  - Defined decoupled notation distinguishing JetStream stateful disk persistence (`x_js`, `c_js`, `y_js`, `batch`) from Core NATS ephemeral routing (`x_core`, `c_core`, `y_core`), payload specs, and storage/cache windows.
-  - Formatted Section 4 (Parameters) into user workload inputs (`n_conn`, message size, write rates, fan-out, retention, resource counts) and Section 4.2 consolidated constants (`batch`, `w`, `headroom`, `S_proto`, `t_raft`, `t_route`, `t_ping`, `t_hb`) with tuning scope.
-  - Consolidated Section 5 (System Invariants) establishing deterministic mathematical relations: Read Throughput ($y = x \times c$), Batch Request Rate ($y / \text{batch}$), Wire Message Size, $R=3$ Replication, 70% Target Utilization ($1 - \text{headroom}$), and Page Cache working set RAM.
+  - Standardized uppercase naming convention for all system constants (`BATCH`, `W`, `HEADROOM`, `S_PROTO`, `T_RAFT`, `T_ROUTE`, `T_PING`, `T_HB`) to visually separate fixed defaults from workload variables.
+  - Relocated Monitoring/Telemetry and Subscription Interest Gossip into dedicated Section 5 (Ignored Operations), documenting four explicit reasons why they are excluded from core capacity formulas (negligible CPU, zero disk, steady-state silence, headroom absorption).
+  - Eliminated the redundant Notation section, directly defining all symbols in Section 3 (Parameters: User Inputs & System Constants) and Section 4 (System Invariants).
+  - Formatted Section 3 (Parameters) with Average and Peak dimensions across dynamic workload inputs (`n_conn_avg`/`n_conn_peak`, `payload_avg`/`payload_peak`, `x_core_avg`/`x_core_peak`, `x_js_avg`/`x_js_peak`, `n_consumer_avg`/`n_consumer_peak`), aligning baseline sizing for Kubernetes requests and storage volume with peak ceilings for limits and network bandwidth.
+  - Consolidated Section 4 (System Invariants) establishing deterministic mathematical relations: Read Throughput ($y = x \times c$), Batch Request Rate ($y / \text{BATCH}$), Average & Peak Effective Message Sizes ($S_{\text{avg}}$, $S_{\text{peak}}$), $R=3$ Replication, 70% Target Utilization ($1 - \text{HEADROOM}$), and Page Cache working set RAM.
+- **Mathematical Sizing Derivations (`docs/infra_calculator/cpu.md`)**:
+  - Authored CPU Capacity Planning model structured into: Section 1 Impact of Variables & Constants (exhaustive audit across all 16 workload variables and 8 system constants explaining CPU inclusion/exclusion), Section 2 Deduction of Mathematical Model (empirical slopes from benchmark suites and complete superposition formula), and Section 3 Engineering Methodologies Used (OFAT, Superposition, USE Method, M/M/1 Queueing Headroom).
+  - Cross-validated empirical slopes against all 7 canonical benchmark suites (`core-ladder`, `payload-scaling`, `jetstream-ladder`, `jetstream-guarantees`, `subject-cardinality`, `stream-scaling`, `consumer-fanout`), aligning observed data points with exact measured container telemetry. Streamlined Section 2 and Section 4 to summarize the empirical observations and their direct impact on modeling cleanly, removing noisy file path references.
+  - Added Section 4 Operational Boundaries & Non-Linear Guardrails, establishing explicit physical operating ceilings where linear superposition ends: single-stream ACK amplification wall (<= 10k ACKs/s), single-stream disk fsync write ceiling (<= 7k msgs/s), 1 Gbps physical NIC bandwidth wall, and stream leader vs follower CPU asymmetry.
 
 ## [Unreleased] - 2026-11-13
 

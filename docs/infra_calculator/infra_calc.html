@@ -1,0 +1,2260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NATS JetStream Compute, Memory &amp; Disk Capacity Sizing Calculator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #0d1117;
+      --bg-card: #161b22;
+      --bg-card-sub: #1c2128;
+      --bg-input: #0d1117;
+      --border: #30363d;
+      --border-accent: rgba(88, 166, 255, 0.3);
+      --text: #e6edf3;
+      --text-sec: #8b949e;
+      --text-dim: #6e7681;
+      --accent: #58a6ff;
+      --accent-dim: rgba(88, 166, 255, 0.15);
+      --green: #3fb950;
+      --green-bg: rgba(63, 185, 80, 0.15);
+      --amber: #d29922;
+      --amber-bg: rgba(210, 153, 34, 0.15);
+      --red: #f85149;
+      --red-bg: rgba(248, 81, 73, 0.15);
+      --radius: 8px;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1260px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    header {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header-title h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    .header-title p {
+      color: var(--text-sec);
+      font-size: 0.85rem;
+      margin-top: 4px;
+    }
+
+    .badge-cluster {
+      background: var(--accent-dim);
+      color: var(--accent);
+      border: 1px solid var(--border-accent);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      font-family: 'Fira Code', monospace;
+    }
+
+    /* Main Grid Layout */
+    .calc-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    @media (max-width: 980px) {
+      .calc-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Column Header & View Toggles */
+    .col-header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .view-toggle-group {
+      display: inline-flex;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 3px;
+    }
+
+    .view-toggle-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-sec);
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+
+    .view-toggle-btn:hover {
+      color: var(--text);
+    }
+
+    .view-toggle-btn.active {
+      background: var(--border);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .yaml-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s ease;
+    }
+
+    .action-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .action-btn svg {
+      vertical-align: middle;
+    }
+
+    .copy-badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      font-family: 'Fira Code', monospace;
+      color: var(--green);
+      background: var(--green-bg);
+      border: 1px solid rgba(63, 185, 80, 0.3);
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    /* YAML Textareas */
+    .yaml-textarea {
+      width: 100%;
+      height: 680px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: #7ee787;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      padding: 14px;
+      resize: vertical;
+      tab-size: 2;
+      white-space: pre;
+    }
+
+    .yaml-textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .yaml-textarea[readonly] {
+      color: #a5d6ff;
+      background: #090d13;
+      cursor: text;
+    }
+
+    .yaml-help-text {
+      font-size: 0.75rem;
+      color: var(--text-sec);
+      margin-bottom: 12px;
+    }
+
+    .yaml-error-msg {
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--red);
+      font-family: 'Fira Code', monospace;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+
+    .card-title span.tag {
+      font-size: 0.75rem;
+      color: var(--text-sec);
+      font-weight: 400;
+    }
+
+    /* Form Inputs */
+    .input-group {
+      margin-bottom: 18px;
+    }
+
+    .input-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .input-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .input-label {
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .input-symbol {
+      font-family: 'Fira Code', monospace;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      margin-left: 6px;
+    }
+
+    .slider-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    input[type="number"] {
+      width: 95px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      padding: 5px 8px;
+      font-size: 0.85rem;
+      font-family: 'Fira Code', monospace;
+      text-align: right;
+    }
+
+    input[type="number"]:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .input-unit {
+      font-size: 0.75rem;
+      color: var(--text-sec);
+      font-family: 'Fira Code', monospace;
+      min-width: 65px;
+      text-align: left;
+    }
+
+    .input-hint {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* Multiplier Preset Buttons */
+    .preset-btn-group {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .preset-pill {
+      background: var(--bg-card-sub);
+      border: 1px solid var(--border);
+      color: var(--text-sec);
+      border-radius: 12px;
+      padding: 3px 10px;
+      font-size: 0.72rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+
+    .preset-pill:hover {
+      background: var(--border);
+      color: var(--text);
+      border-color: var(--text-dim);
+    }
+
+    .preset-pill.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+      border-color: var(--border-accent);
+      font-weight: 600;
+    }
+
+    /* Derived Output Badges in Form */
+    .derived-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(88, 166, 255, 0.1);
+      border: 1px solid rgba(88, 166, 255, 0.25);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 0.75rem;
+      color: var(--accent);
+      font-family: 'Fira Code', monospace;
+      font-weight: 600;
+    }
+
+    .derived-badge-green {
+      background: rgba(63, 185, 80, 0.1);
+      border-color: rgba(63, 185, 80, 0.25);
+      color: var(--green);
+    }
+
+    .derived-badge-amber {
+      background: rgba(210, 153, 34, 0.1);
+      border-color: rgba(210, 153, 34, 0.25);
+      color: var(--amber);
+    }
+
+    /* 2-Column Grid for Microservices Topology */
+    .topology-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    @media (max-width: 600px) {
+      .topology-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .topology-col {
+      background: var(--bg-card-sub);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+
+    .topology-col-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .topology-col-badge {
+      font-family: 'Fira Code', monospace;
+      font-size: 0.7rem;
+      color: var(--accent);
+      background: var(--accent-dim);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .topology-summary-box {
+      background: var(--bg-card-sub);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+      font-size: 0.8rem;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    /* Hero Section (3-Column Grid) */
+    .hero-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 800px) {
+      .hero-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .hero-card {
+      background: linear-gradient(135deg, rgba(88, 166, 255, 0.08) 0%, rgba(22, 27, 34, 1) 100%);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius);
+      padding: 18px 14px;
+      text-align: center;
+    }
+
+    .hero-card.hero-ram {
+      background: linear-gradient(135deg, rgba(63, 185, 80, 0.08) 0%, rgba(22, 27, 34, 1) 100%);
+      border-color: rgba(63, 185, 80, 0.3);
+    }
+
+    .hero-card.hero-disk {
+      background: linear-gradient(135deg, rgba(210, 153, 34, 0.08) 0%, rgba(22, 27, 34, 1) 100%);
+      border-color: rgba(210, 153, 34, 0.3);
+    }
+
+    .hero-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    .hero-card.hero-ram .hero-label {
+      color: var(--green);
+    }
+
+    .hero-card.hero-disk .hero-label {
+      color: var(--amber);
+    }
+
+    .hero-value {
+      font-size: 2.1rem;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+
+    .hero-value span.unit {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text-sec);
+      margin-left: 3px;
+    }
+
+    .hero-sub {
+      color: var(--text-sec);
+      font-size: 0.75rem;
+      margin-top: 6px;
+    }
+
+    .hero-stats-row {
+      display: flex;
+      justify-content: space-around;
+      border-top: 1px solid var(--border);
+      margin-top: 12px;
+      padding-top: 10px;
+      gap: 6px;
+    }
+
+    .hero-stat {
+      text-align: center;
+    }
+
+    .hero-stat-label {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .hero-stat-value {
+      font-size: 0.82rem;
+      font-weight: 600;
+      font-family: 'Fira Code', monospace;
+      color: var(--text);
+      margin-top: 2px;
+    }
+
+    /* Breakdown Table */
+    .breakdown-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+
+    .breakdown-table th {
+      text-align: left;
+      padding: 8px 10px;
+      color: var(--text-dim);
+      font-weight: 500;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .breakdown-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid rgba(48, 54, 61, 0.4);
+      color: var(--text-sec);
+    }
+
+    .breakdown-table td.component {
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .breakdown-table td.val {
+      text-align: right;
+      font-family: 'Fira Code', monospace;
+      color: var(--text);
+    }
+
+    .breakdown-table tr.total-row td {
+      border-top: 1px solid var(--border);
+      border-bottom: none;
+      font-weight: 600;
+      color: var(--accent);
+      padding-top: 10px;
+    }
+
+    .breakdown-table tr.total-row-ram td {
+      border-top: 1px solid var(--border);
+      border-bottom: none;
+      font-weight: 600;
+      color: var(--green);
+      padding-top: 10px;
+    }
+
+    .breakdown-table tr.total-row-disk td {
+      border-top: 1px solid var(--border);
+      border-bottom: none;
+      font-weight: 600;
+      color: var(--amber);
+      padding-top: 10px;
+    }
+
+    /* Cloud VM Packaging Box */
+    .vm-packaging-box {
+      background: var(--bg-card-sub);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+      font-size: 0.8rem;
+    }
+
+    .vm-tiers-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 10px;
+      margin-bottom: 12px;
+    }
+
+    .vm-tier-item {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px;
+    }
+
+    .vm-tier-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+
+    .vm-tier-detail {
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text);
+      font-family: 'Fira Code', monospace;
+    }
+
+    .vm-tier-sub {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      margin-top: 3px;
+    }
+
+    .cache-explainer {
+      font-size: 0.75rem;
+      color: var(--text-sec);
+      line-height: 1.45;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+    }
+
+    /* Guardrails Card */
+    .guardrail-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 12px;
+      background: var(--bg-card-sub);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 10px;
+      font-size: 0.82rem;
+    }
+
+    .guardrail-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .guardrail-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .guardrail-title {
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .guardrail-desc {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+    }
+
+    .status-badge {
+      font-family: 'Fira Code', monospace;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .status-pass {
+      background: var(--green-bg);
+      color: var(--green);
+      border: 1px solid rgba(63, 185, 80, 0.3);
+    }
+
+    .status-warn {
+      background: var(--amber-bg);
+      color: var(--amber);
+      border: 1px solid rgba(210, 153, 34, 0.3);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="header-title">
+        <h1>NATS JetStream Compute, Memory &amp; Disk Capacity Sizing Calculator</h1>
+        <p>Empirical CPU, Memory &amp; Persistent Disk Sizing Model &bull; Fixed 3-Node Cluster (R=3, Replicated File Store, HAProxy L4)</p>
+      </div>
+      <div class="badge-cluster">Fixed R=3 Cluster</div>
+    </header>
+
+    <div class="calc-layout">
+      <!-- Left Column: Inputs -->
+      <div class="inputs-col">
+
+        <!-- Column Header with View Toggle -->
+        <div class="col-header-bar">
+          <div class="view-toggle-group">
+            <button type="button" id="btn_input_form" class="view-toggle-btn active">Form View</button>
+            <button type="button" id="btn_input_yaml" class="view-toggle-btn">YAML Config</button>
+          </div>
+          <div id="input_yaml_actions" class="yaml-actions" style="display: none;">
+            <button type="button" id="btn_copy_input_yaml" class="action-btn" title="Copy YAML to clipboard">
+              <svg class="icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path>
+                <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path>
+              </svg>
+              <span>Copy YAML</span>
+            </button>
+            <span id="input_yaml_badge" class="copy-badge" style="display: none;">Copied!</span>
+          </div>
+        </div>
+
+        <!-- Editable YAML Container (Hidden by default) -->
+        <div id="input_yaml_container" class="card" style="display: none;">
+          <div class="card-title">
+            Editable Workload Configuration
+            <span class="tag">Live Two-Way Sync</span>
+          </div>
+          <p class="yaml-help-text">Edit numeric values below to dynamically update the calculator inputs and derived provisioning specs in real-time:</p>
+          <textarea id="input_yaml_text" class="yaml-textarea" spellcheck="false"></textarea>
+          <div id="input_yaml_error" class="yaml-error-msg" style="display: none;"></div>
+        </div>
+
+        <!-- Form Cards Container (Default view) -->
+        <div id="input_form_container">
+        
+          <!-- Card 1: Core NATS Workload (Ephemeral In-Memory) [Moved to Top] -->
+          <div class="card">
+            <div class="card-title">
+              Core NATS Workload
+              <span class="tag">Ephemeral In-Memory</span>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="x_core_avg">Average Ingress Rate <span class="input-symbol">x_core_avg</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="x_core_avg_range" min="0" max="100000" step="500" value="2500">
+                <input type="number" id="x_core_avg" min="0" max="500000" step="500" value="2500">
+                <span class="input-unit">msgs/s</span>
+              </div>
+              <div class="input-hint">Steady-state in-memory pub/sub ingress rate (zero disk, no Raft)</div>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="k_peak_core">Traffic Peak Multiplier <span class="input-symbol">k_peak_core</span></label>
+                <span class="derived-badge">Peak Ingress: <strong id="val_core_peak_derived">5,000</strong> msgs/s</span>
+              </div>
+              <div class="preset-btn-group" id="core_preset_group">
+                <button type="button" class="preset-pill" data-target="k_peak_core" data-val="1.5">1.5x Normal</button>
+                <button type="button" class="preset-pill active" data-target="k_peak_core" data-val="2.0">2.0x Standard</button>
+                <button type="button" class="preset-pill" data-target="k_peak_core" data-val="3.0">3.0x Burst</button>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="k_peak_core_range" min="1.0" max="10.0" step="0.1" value="2.0">
+                <input type="number" id="k_peak_core" min="1.0" max="20.0" step="0.1" value="2.0">
+                <span class="input-unit">x</span>
+              </div>
+              <div class="input-hint">Peak-to-average burst ratio sizing ephemeral routing CPU demand</div>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="c_core">Subscriber Fan-Out <span class="input-symbol">c_core</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="c_core_range" min="0" max="20" step="1" value="2">
+                <input type="number" id="c_core" min="0" max="100" step="1" value="2">
+                <span class="input-unit">subs</span>
+              </div>
+              <div class="input-hint">Broadcast delivery multiplier across active ephemeral subscribers</div>
+            </div>
+          </div>
+
+          <!-- Card 2: JetStream Ingress, Message Sizing & Retention -->
+          <div class="card">
+            <div class="card-title">
+              JetStream Ingress, Message Sizing &amp; Retention
+              <span class="tag">Primary Compute &amp; Disk Drivers</span>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="x_js_avg">Average Ingress Rate <span class="input-symbol">x_js_avg</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="x_js_avg_range" min="0" max="20000" step="100" value="2000">
+                <input type="number" id="x_js_avg" min="0" max="50000" step="100" value="2000">
+                <span class="input-unit">msgs/s</span>
+              </div>
+              <div class="input-hint">Steady-state ingress rate sizing cumulative persistent disk storage volume</div>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="k_peak_js">Traffic Peak Multiplier <span class="input-symbol">k_peak_js</span></label>
+                <span class="derived-badge">Peak Ingress: <strong id="val_js_peak_derived">6,000</strong> msgs/s</span>
+              </div>
+              <div class="preset-btn-group" id="js_preset_group">
+                <button type="button" class="preset-pill" data-target="k_peak_js" data-val="2.0">2.0x Banking</button>
+                <button type="button" class="preset-pill active" data-target="k_peak_js" data-val="3.0">3.0x E-Commerce</button>
+                <button type="button" class="preset-pill" data-target="k_peak_js" data-val="5.0">5.0x Retail Peak</button>
+                <button type="button" class="preset-pill" data-target="k_peak_js" data-val="10.0">10.0x Flash Sale</button>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="k_peak_js_range" min="1.0" max="10.0" step="0.1" value="3.0">
+                <input type="number" id="k_peak_js" min="1.0" max="20.0" step="0.1" value="3.0">
+                <span class="input-unit">x</span>
+              </div>
+              <div class="input-hint">Peak multiplier derived from business traffic patterns (x_js_peak = x_js_avg &times; k_peak)</div>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="payload_avg">Average Message Payload <span class="input-symbol">payload_avg</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="payload_avg_range" min="64" max="16384" step="64" value="1024">
+                <input type="number" id="payload_avg" min="64" max="65536" step="64" value="1024">
+                <span class="input-unit">bytes</span>
+              </div>
+              <div class="input-hint">Average message payload stored sequentially on disk</div>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="k_payload_peak">Peak Payload Multiplier <span class="input-symbol">k_payload_peak</span></label>
+                <span class="derived-badge">Peak Payload: <strong id="val_payload_peak_derived">1,536</strong> B</span>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="k_payload_peak_range" min="1.0" max="4.0" step="0.1" value="1.5">
+                <input type="number" id="k_payload_peak" min="1.0" max="8.0" step="0.1" value="1.5">
+                <span class="input-unit">x</span>
+              </div>
+              <div class="input-hint">Sizes peak socket read buffers (&le;8 KiB compact) &amp; burst write bandwidth</div>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="header">Message Headers <span class="input-symbol">header</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="header_range" min="0" max="2048" step="16" value="64">
+                <input type="number" id="header" min="0" max="8192" step="16" value="64">
+                <span class="input-unit">bytes</span>
+              </div>
+              <div class="input-hint">Tracing headers &amp; metadata stored with each message record</div>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="retention_hours">Message Retention Window <span class="input-symbol">t</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="retention_hours_range" min="1" max="168" step="1" value="72">
+                <input type="number" id="retention_hours" min="1" max="720" step="1" value="72">
+                <span class="input-unit">hours</span>
+              </div>
+              <div class="input-hint">Persistent disk retention time before segment block deletion (e.g. 72h = 3 days)</div>
+            </div>
+          </div>
+
+          <!-- Card 3: Application Topology & Client Sockets -->
+          <div class="card">
+            <div class="card-title">
+              Application Topology &amp; Client Sockets
+              <span class="tag">K8s Microservices &amp; TCP Sockets</span>
+            </div>
+
+            <div class="topology-grid">
+              <div class="topology-col">
+                <div class="topology-col-title">
+                  Publishing Microservices
+                  <span class="topology-col-badge"><span id="val_pub_pods">15</span> Pods</span>
+                </div>
+                <div style="margin-bottom: 10px;">
+                  <label class="input-label" style="font-size: 0.75rem;">Distinct Services</label>
+                  <input type="number" id="n_pub_services" min="1" max="100" step="1" value="5" style="width: 100%; margin-top: 4px;">
+                </div>
+                <div>
+                  <label class="input-label" style="font-size: 0.75rem;">K8s Replicas / Svc</label>
+                  <input type="number" id="pub_replicas" min="1" max="50" step="1" value="3" style="width: 100%; margin-top: 4px;">
+                </div>
+              </div>
+
+              <div class="topology-col">
+                <div class="topology-col-title">
+                  Consuming Microservices
+                  <span class="topology-col-badge"><span id="val_sub_pods">30</span> Pods</span>
+                </div>
+                <div style="margin-bottom: 10px;">
+                  <label class="input-label" style="font-size: 0.75rem;">Distinct Services</label>
+                  <input type="number" id="n_sub_services" min="1" max="100" step="1" value="10" style="width: 100%; margin-top: 4px;">
+                </div>
+                <div>
+                  <label class="input-label" style="font-size: 0.75rem;">K8s Replicas / Svc</label>
+                  <input type="number" id="sub_replicas" min="1" max="50" step="1" value="3" style="width: 100%; margin-top: 4px;">
+                </div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px;">
+              <div>
+                <label class="input-label" for="conn_per_pod" style="font-size: 0.75rem;">Sockets per Pod <span class="input-symbol">conn_pod</span></label>
+                <input type="number" id="conn_per_pod" min="1" max="5" step="1" value="1" style="width: 100%; margin-top: 4px;">
+                <div class="input-hint">NATS SDK multiplexed TCP socket (default: 1)</div>
+              </div>
+              <div>
+                <label class="input-label" for="n_conn_admin" style="font-size: 0.75rem;">Admin Sockets <span class="input-symbol">conn_admin</span></label>
+                <input type="number" id="n_conn_admin" min="0" max="50" step="1" value="5" style="width: 100%; margin-top: 4px;">
+                <div class="input-hint">Ingress &amp; Prometheus monitoring (default: 5)</div>
+              </div>
+            </div>
+
+            <div class="topology-summary-box">
+              <span style="color: var(--text-sec);">Total Active Pods: <strong id="val_total_pods" style="color: var(--text);">45</strong></span>
+              <span class="derived-badge derived-badge-green">Derived Client Sockets: <strong id="val_conn_derived">50</strong> conns</span>
+            </div>
+          </div>
+
+          <!-- Card 4: Streams & Consumer Group Taxonomy -->
+          <div class="card">
+            <div class="card-title">
+              Streams &amp; Consumer Group Taxonomy
+              <span class="tag">Multi-Raft &amp; Go Heap State</span>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="n_stream">Active Raft Streams <span class="input-symbol">n_stream</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="n_stream_range" min="1" max="50" step="1" value="5">
+                <input type="number" id="n_stream" min="1" max="200" step="1" value="5">
+                <span class="input-unit">streams</span>
+              </div>
+              <div class="input-hint">Active JetStream streams maintaining independent Raft consensus leases (~234 KiB/node)</div>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="c_js">Consuming Groups per Stream <span class="input-symbol">c_js</span></label>
+                <span class="derived-badge derived-badge-amber">Peak Consumers: <strong id="val_consumer_derived">10</strong></span>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="c_js_range" min="1" max="20" step="1" value="2">
+                <input type="number" id="c_js" min="1" max="50" step="1" value="2">
+                <span class="input-unit">groups</span>
+              </div>
+              <div class="input-hint">Downstream consuming service groups per stream (derived n_consumer_peak = streams &times; groups)</div>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="n_subj">Registered Subjects <span class="input-symbol">n_subj</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="range" id="n_subj_range" min="10" max="10000" step="50" value="1000">
+                <input type="number" id="n_subj" min="1" max="50000" step="50" value="1000">
+                <span class="input-unit">subjects</span>
+              </div>
+              <div class="input-hint">Subject hierarchy cardinality in sublist prefix trie (~313 B/node; O(K) lookup)</div>
+            </div>
+          </div>
+
+          <!-- System Constants & Tuning -->
+          <div class="card">
+            <div class="card-title">
+              System Constants &amp; Model Standards
+              <span class="tag">Model Standards</span>
+            </div>
+
+            <div class="input-group">
+              <div class="input-label-row">
+                <label class="input-label" for="batch_size">Pull Batch Size <span class="input-symbol">BATCH</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="number" id="batch_size" min="1" max="5000" step="50" value="500" style="width: 120px;">
+                <span class="input-unit">msgs</span>
+              </div>
+              <div class="input-hint">Batch fetch size amortizing control-plane RPC overhead (default: 500)</div>
+            </div>
+
+            <div class="input-group" style="margin-top: 14px;">
+              <div class="input-label-row">
+                <label class="input-label" for="headroom">Headroom Buffer (%) <span class="input-symbol">HEADROOM</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="number" id="headroom" min="10" max="50" step="5" value="30" style="width: 120px;">
+                <span class="input-unit">%</span>
+              </div>
+              <div class="input-hint">Targets 70% peak sustained utilization (1 - HEADROOM) for N-1 safety, GC &amp; disk</div>
+            </div>
+
+            <div class="input-group" style="margin-top: 14px;">
+              <div class="input-label-row">
+                <label class="input-label" for="mcpu_base">Cluster CPU Baseline Overhead <span class="input-symbol">mCPU_base</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="number" id="mcpu_base" min="10" max="200" step="10" value="50" style="width: 120px;">
+                <span class="input-unit">mCPU</span>
+              </div>
+              <div class="input-hint">Idle node floor covering cluster routes (T_ROUTE = 2s) &amp; background timers</div>
+            </div>
+
+            <div class="input-group" style="margin-top: 14px;">
+              <div class="input-label-row">
+                <label class="input-label" for="ram_base">Baseline Process RAM Floor <span class="input-symbol">RAM_base</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="number" id="ram_base" min="32" max="512" step="16" value="128" style="width: 120px;">
+                <span class="input-unit">MB</span>
+              </div>
+              <div class="input-hint">Startup Go runtime RSS allocator, mcache/mcentral pools &amp; ring buffers (default: 128 MB)</div>
+            </div>
+
+            <div class="input-group" style="margin-top: 14px;">
+              <div class="input-label-row">
+                <label class="input-label" for="s_proto">Protocol &amp; Block Record Framing <span class="input-symbol">S_PROTO</span></label>
+              </div>
+              <div class="slider-row">
+                <input type="number" id="s_proto" min="8" max="128" step="4" value="32" style="width: 120px;">
+                <span class="input-unit">bytes</span>
+              </div>
+              <div class="input-hint">Wire and block record framing overhead per stored message (default: 32 bytes)</div>
+            </div>
+          </div>
+
+        </div> <!-- /#input_form_container -->
+
+      </div>
+
+      <!-- Right Column: Outputs -->
+      <div class="outputs-col">
+
+        <!-- Column Header with View Toggle -->
+        <div class="col-header-bar">
+          <div class="view-toggle-group">
+            <button type="button" id="btn_output_dashboard" class="view-toggle-btn active">Dashboard View</button>
+            <button type="button" id="btn_output_yaml" class="view-toggle-btn">Provisioning YAML</button>
+          </div>
+          <div id="output_yaml_actions" class="yaml-actions" style="display: none;">
+            <button type="button" id="btn_copy_output_yaml" class="action-btn" title="Copy YAML to clipboard">
+              <svg class="icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                <path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path>
+                <path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path>
+              </svg>
+              <span>Copy YAML</span>
+            </button>
+            <span id="output_yaml_badge" class="copy-badge" style="display: none;">Copied!</span>
+          </div>
+        </div>
+
+        <!-- Read-Only Output YAML Container (Hidden by default) -->
+        <div id="output_yaml_container" class="card" style="display: none;">
+          <div class="card-title">
+            Exported Provisioning Specification (YAML)
+            <span class="tag">Read-Only</span>
+          </div>
+          <p class="yaml-help-text">Derived cluster capacity, sizing deliverables, VM packaging, and operational boundaries:</p>
+          <textarea id="output_yaml_text" class="yaml-textarea" readonly spellcheck="false"></textarea>
+        </div>
+
+        <!-- Dashboard Cards Container (Default view) -->
+        <div id="output_dashboard_container">
+
+          <!-- Hero Sizing Cards Grid (3 Cards: Compute, Memory, Storage) -->
+          <div class="hero-grid">
+            
+            <!-- Hero Card: CPU -->
+            <div class="hero-card">
+              <div class="hero-label">Provisioned Compute</div>
+              <div class="hero-value">
+                <span id="rounded_vcpu">1</span><span class="unit">vCPU</span>
+              </div>
+              <div class="hero-sub" id="hero_subtitle_cpu">Per Node &bull; 306 mCPU</div>
+
+              <div class="hero-stats-row">
+                <div class="hero-stat">
+                  <div class="hero-stat-label">Raw Demand</div>
+                  <div class="hero-stat-value" id="stat_raw_mcpu">214 mCPU</div>
+                </div>
+                <div class="hero-stat">
+                  <div class="hero-stat-label">Cluster (R=3)</div>
+                  <div class="hero-stat-value" id="stat_cluster_cpu">3 vCPU</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Hero Card: RAM -->
+            <div class="hero-card hero-ram">
+              <div class="hero-label">Provisioned RAM</div>
+              <div class="hero-value">
+                <span id="rounded_ram">295</span><span class="unit">MB</span>
+              </div>
+              <div class="hero-sub" id="hero_subtitle_ram">Per Node &bull; 0.29 GB</div>
+
+              <div class="hero-stats-row">
+                <div class="hero-stat">
+                  <div class="hero-stat-label">Process RSS</div>
+                  <div class="hero-stat-value" id="stat_raw_ram">207 MB</div>
+                </div>
+                <div class="hero-stat">
+                  <div class="hero-stat-label">Cluster (R=3)</div>
+                  <div class="hero-stat-value" id="stat_cluster_ram">886 MB</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Hero Card: Persistent Disk -->
+            <div class="hero-card hero-disk">
+              <div class="hero-label">Provisioned Disk</div>
+              <div class="hero-value">
+                <span id="rounded_disk">207</span><span class="unit">GB</span>
+              </div>
+              <div class="hero-sub" id="hero_subtitle_disk">Per Node &bull; 193 GiB</div>
+
+              <div class="hero-stats-row">
+                <div class="hero-stat">
+                  <div class="hero-stat-label">Raw Volume</div>
+                  <div class="hero-stat-value" id="stat_raw_disk">145 GB</div>
+                </div>
+                <div class="hero-stat">
+                  <div class="hero-stat-label">Cluster (R=3)</div>
+                  <div class="hero-stat-value" id="stat_cluster_disk">622 GB</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- CPU Breakdown Table -->
+          <div class="card">
+            <div class="card-title">
+              Per-Node CPU Breakdown
+              <span class="tag">Empirical Superposition</span>
+            </div>
+
+            <table class="breakdown-table">
+              <thead>
+                <tr>
+                  <th>Execution Component</th>
+                  <th>Formula / Scope</th>
+                  <th style="text-align: right;">Demand</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="component">Idle Baseline Overhead</td>
+                  <td>Fixed cluster route floor (T_ROUTE=2s)</td>
+                  <td class="val" id="row_base">50.0 mCPU</td>
+                </tr>
+                <tr>
+                  <td class="component">JetStream Write Consensus</td>
+                  <td>0.0320 mCPU &times; x_js_peak</td>
+                  <td class="val" id="row_js_write">80.0 mCPU</td>
+                </tr>
+                <tr>
+                  <td class="component">Consumer Delivery &amp; ACK</td>
+                  <td>0.0330 mCPU &times; y_js_peak</td>
+                  <td class="val" id="row_ack">82.5 mCPU</td>
+                </tr>
+                <tr>
+                  <td class="component">Pull Consumer Batching</td>
+                  <td>0.0011 mCPU &times; (y_js / BATCH)</td>
+                  <td class="val" id="row_batch">0.0 mCPU</td>
+                </tr>
+                <tr>
+                  <td class="component">Core NATS Routing</td>
+                  <td>0.0005&times;x_core + 0.0006&times;y_core</td>
+                  <td class="val" id="row_core">0.0 mCPU</td>
+                </tr>
+                <tr>
+                  <td class="component">Raft Stream Leases</td>
+                  <td>0.6600 mCPU &times; n_stream</td>
+                  <td class="val" id="row_stream">0.7 mCPU</td>
+                </tr>
+                <tr>
+                  <td class="component">Client Sockets (epoll)</td>
+                  <td>0.0100 mCPU &times; (n_conn / 3)</td>
+                  <td class="val" id="row_conn">0.8 mCPU</td>
+                </tr>
+                <tr class="total-row">
+                  <td class="component">Total Raw Peak Demand</td>
+                  <td>Sum of execution components</td>
+                  <td class="val" id="row_total_raw">214.0 mCPU</td>
+                </tr>
+                <tr style="color: var(--accent);">
+                  <td class="component">With 30% Headroom Buffer</td>
+                  <td>Raw &divide; 0.70 (N-1 Failover Safety)</td>
+                  <td class="val" id="row_total_prov">305.7 mCPU</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Memory Breakdown Table -->
+          <div class="card">
+            <div class="card-title">
+              Per-Node Memory (RAM) Breakdown
+              <span class="tag">Go Process Resident Memory (RSS)</span>
+            </div>
+
+            <table class="breakdown-table">
+              <thead>
+                <tr>
+                  <th>Memory Allocation Component</th>
+                  <th>Physical Structure / Sizing Rate</th>
+                  <th style="text-align: right;">Resident RAM</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="component">Baseline Process Floor</td>
+                  <td>Go runtime allocator, spans, ring buffers (RAM_base)</td>
+                  <td class="val" id="row_ram_base">128.0 MB</td>
+                </tr>
+                <tr>
+                  <td class="component">Sublist Prefix Trie</td>
+                  <td>313 B &times; n_subj (Token trie nodes &amp; sub slices)</td>
+                  <td class="val" id="row_ram_subj">0.3 MB</td>
+                </tr>
+                <tr>
+                  <td class="component">Multi-Raft Stream Descriptors</td>
+                  <td>234 KiB &times; n_stream (Log index pointers &amp; leases)</td>
+                  <td class="val" id="row_ram_stream">0.2 MB</td>
+                </tr>
+                <tr>
+                  <td class="component">Durable Consumer Progress</td>
+                  <td>7.29 MB &times; n_consumer_peak (Sequence maps &amp; ACK bitsets)</td>
+                  <td class="val" id="row_ram_consumer">72.9 MB</td>
+                </tr>
+                <tr>
+                  <td class="component">Client TCP Sockets</td>
+                  <td>64 KiB &times; (n_conn / 3) (SO_RCVBUF &amp; read framing)</td>
+                  <td class="val" id="row_ram_conn">5.2 MB</td>
+                </tr>
+                <tr class="total-row-ram">
+                  <td class="component">Total Raw Process RAM</td>
+                  <td>Sum of Go resident memory allocations</td>
+                  <td class="val" id="row_ram_total_raw">206.7 MB</td>
+                </tr>
+                <tr style="color: var(--green);">
+                  <td class="component">Provisioned with 30% Headroom</td>
+                  <td>Raw &divide; 0.70 (Absorbs Go GC Spikes &amp; Failover)</td>
+                  <td class="val" id="row_ram_total_prov">295.2 MB</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Persistent Disk Storage Breakdown Table -->
+          <div class="card">
+            <div class="card-title">
+              Per-Node Persistent Disk Storage Breakdown
+              <span class="tag">File Storage (R=3 Replicated Volume)</span>
+            </div>
+
+            <table class="breakdown-table">
+              <thead>
+                <tr>
+                  <th>Storage &amp; I/O Metric</th>
+                  <th>Formula / Operational Description</th>
+                  <th style="text-align: right;">Sizing Deliverable</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="component">Effective Message Record Size</td>
+                  <td>payload_avg + header + S_PROTO</td>
+                  <td class="val" id="row_disk_msg_size">1,120 bytes</td>
+                </tr>
+                <tr>
+                  <td class="component">Peak Write Bandwidth (Per Node)</td>
+                  <td>x_js_peak &times; S_peak (Sequential append throughput)</td>
+                  <td class="val" id="row_disk_peak_bw">2.80 MB/s</td>
+                </tr>
+                <tr>
+                  <td class="component">Cluster Replicated Write Bandwidth</td>
+                  <td>3 &times; BW_write_node (R=3 Quorum appends)</td>
+                  <td class="val" id="row_disk_cluster_bw">8.40 MB/s</td>
+                </tr>
+                <tr>
+                  <td class="component">Raw Cumulative Storage per Node</td>
+                  <td>x_js_avg &times; S_avg &times; (t &times; 3,600s)</td>
+                  <td class="val" id="row_disk_raw">145.2 GB</td>
+                </tr>
+                <tr class="total-row-disk">
+                  <td class="component">Provisioned Storage with 30% Headroom</td>
+                  <td>Raw &divide; 0.70 (Targets &le; 70% ext4/xfs capacity)</td>
+                  <td class="val" id="row_disk_prov">207.4 GB</td>
+                </tr>
+                <tr style="color: var(--amber);">
+                  <td class="component">Cluster Total Replicated Storage</td>
+                  <td>3 &times; Provisioned Volume per Node (R=3)</td>
+                  <td class="val" id="row_disk_cluster_total">622.1 GB</td>
+                </tr>
+                <tr>
+                  <td class="component">Recommended Disk Controller Spec</td>
+                  <td>Cloud GP3 / PD-SSD Persistent Volume Baseline</td>
+                  <td class="val" style="color: var(--text);">&ge; 3,000 IOPS, &ge; 125 MB/s</td>
+                </tr>
+                <tr>
+                  <td class="component">Live Streaming Read IOPS</td>
+                  <td>Zero-Disk Read Replay (Served 100% from OS Page Cache)</td>
+                  <td class="val" style="color: var(--green); font-weight: 600;">0 IOPS</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Cloud VM Packaging & Linux Page Cache -->
+          <div class="card">
+            <div class="card-title">
+              Cloud VM Packaging &amp; Linux Page Cache
+              <span class="tag">Zero-Disk Read Replay Context</span>
+            </div>
+
+            <div class="vm-packaging-box">
+              <div style="font-weight: 500; color: var(--text);">
+                Standard Cloud VM Memory Bundling for Sized Compute (<span id="vm_vcpu_label" style="font-family: 'Fira Code', monospace; color: var(--accent);">1 vCPU</span>)
+              </div>
+
+              <div class="vm-tiers-grid">
+                <div class="vm-tier-item">
+                  <div class="vm-tier-title">Compute-Optimized (1:2 Ratio)</div>
+                  <div class="vm-tier-detail" id="vm_opt_detail">2 GB RAM</div>
+                  <div class="vm-tier-sub">Spare Host RAM: <span id="vm_opt_spare" style="color: var(--green); font-weight: 600;">1.7 GB</span></div>
+                </div>
+                <div class="vm-tier-item">
+                  <div class="vm-tier-title">General-Purpose (1:4 Ratio)</div>
+                  <div class="vm-tier-detail" id="vm_gen_detail">4 GB RAM</div>
+                  <div class="vm-tier-sub">Spare Host RAM: <span id="vm_gen_spare" style="color: var(--green); font-weight: 600;">3.7 GB</span></div>
+                </div>
+              </div>
+
+              <div class="cache-explainer" id="cache_explainer_text">
+                The NATS Go process occupies ~295 MB of resident RAM. Standard cloud VM packaging passively provides 1.7 GB to 3.7 GB of spare host RAM, which the Linux kernel automatically utilizes as Page Cache. At current peak ingress (2.80 MB/s), this cushions over 22 minutes of recent messages in memory, guaranteeing zero physical disk read IOPS for live streaming consumers.
+              </div>
+            </div>
+          </div>
+
+          <!-- Physical Operational Guardrails -->
+          <div class="card">
+            <div class="card-title">
+              Operational Ceilings &amp; Guardrails
+              <span class="tag">Non-Linear Limits</span>
+            </div>
+
+            <div class="guardrail-item">
+              <div class="guardrail-info">
+                <div class="guardrail-title">Disk Fsync Write Ceiling</div>
+                <div class="guardrail-desc">Max 7,000 msgs/s per stream before physical disk sync queue saturation</div>
+              </div>
+              <div id="badge_fsync" class="status-badge status-pass">PASS</div>
+            </div>
+
+            <div class="guardrail-item">
+              <div class="guardrail-info">
+                <div class="guardrail-title">Consumer ACK Channel Wall</div>
+                <div class="guardrail-desc">Max 10,000 ACKs/s per stream before Raft progress commit saturation</div>
+              </div>
+              <div id="badge_ack" class="status-badge status-pass">PASS</div>
+            </div>
+
+            <div class="guardrail-item">
+              <div class="guardrail-info">
+                <div class="guardrail-title">Large Payload Socket Buffer Inflation</div>
+                <div class="guardrail-desc">Message payloads &gt; 8 KiB trigger Linux TCP auto-tuning buffer expansion</div>
+              </div>
+              <div id="badge_payload" class="status-badge status-pass">PASS</div>
+            </div>
+
+            <div class="guardrail-item">
+              <div class="guardrail-info">
+                <div class="guardrail-title">Page Cache Zero-Disk Replay Cushion</div>
+                <div class="guardrail-desc">Spare host memory cushion holding incoming message velocity before disk reads</div>
+              </div>
+              <div id="badge_cushion" class="status-badge status-pass">PASS</div>
+            </div>
+          </div>
+
+        </div> <!-- /#output_dashboard_container -->
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Empirical CPU coefficients from docs/infra_calculator/cpu.md
+    const ALPHA_JS_WRITE = 0.0320; // mCPU per write msg/s
+    const ALPHA_ACK      = 0.0330; // mCPU per consumer ACK/s (deliv + ACK)
+    const ALPHA_BATCH    = 0.0011; // mCPU per batch fetch RPC
+    const ALPHA_CORE_PUB = 0.0005; // mCPU per core pub msg/s
+    const ALPHA_CORE_SUB = 0.0006; // mCPU per core delivery msg/s
+    const ALPHA_STREAM   = 0.6600; // mCPU per active stream
+    const ALPHA_CONN     = 0.0100; // mCPU per client socket
+
+    // Empirical Memory coefficients from docs/infra_calculator/memory.md
+    const BETA_SUBJ_BYTES     = 313.33; // bytes per subject per node (940 B cluster-wide)
+    const BETA_STREAM_KIB     = 234.00; // KiB per stream per node (702 KiB cluster-wide)
+    const BETA_CONSUMER_MB    = 7.293;  // MB per consumer per node (21.88 MB cluster-wide)
+    const BETA_CONN_KIB       = 64.00;  // KiB per client socket (SO_RCVBUF + descriptor)
+
+    // Form elements
+    const inputs = {
+      // Core NATS
+      x_core_avg: document.getElementById('x_core_avg'),
+      x_core_avg_range: document.getElementById('x_core_avg_range'),
+      k_peak_core: document.getElementById('k_peak_core'),
+      k_peak_core_range: document.getElementById('k_peak_core_range'),
+      c_core: document.getElementById('c_core'),
+      c_core_range: document.getElementById('c_core_range'),
+
+      // JetStream
+      x_js_avg: document.getElementById('x_js_avg'),
+      x_js_avg_range: document.getElementById('x_js_avg_range'),
+      k_peak_js: document.getElementById('k_peak_js'),
+      k_peak_js_range: document.getElementById('k_peak_js_range'),
+      payload_avg: document.getElementById('payload_avg'),
+      payload_avg_range: document.getElementById('payload_avg_range'),
+      k_payload_peak: document.getElementById('k_payload_peak'),
+      k_payload_peak_range: document.getElementById('k_payload_peak_range'),
+      header: document.getElementById('header'),
+      header_range: document.getElementById('header_range'),
+      retention_hours: document.getElementById('retention_hours'),
+      retention_hours_range: document.getElementById('retention_hours_range'),
+
+      // Application Topology & Client Sockets
+      n_pub_services: document.getElementById('n_pub_services'),
+      pub_replicas: document.getElementById('pub_replicas'),
+      n_sub_services: document.getElementById('n_sub_services'),
+      sub_replicas: document.getElementById('sub_replicas'),
+      conn_per_pod: document.getElementById('conn_per_pod'),
+      n_conn_admin: document.getElementById('n_conn_admin'),
+
+      // Streams & Consumers
+      n_stream: document.getElementById('n_stream'),
+      n_stream_range: document.getElementById('n_stream_range'),
+      c_js: document.getElementById('c_js'),
+      c_js_range: document.getElementById('c_js_range'),
+      n_subj: document.getElementById('n_subj'),
+      n_subj_range: document.getElementById('n_subj_range'),
+
+      // System Constants
+      batch_size: document.getElementById('batch_size'),
+      headroom: document.getElementById('headroom'),
+      mcpu_base: document.getElementById('mcpu_base'),
+      ram_base: document.getElementById('ram_base'),
+      s_proto: document.getElementById('s_proto')
+    };
+
+    // Output elements
+    const outputs = {
+      // In-Form Derived Badges
+      val_core_peak_derived: document.getElementById('val_core_peak_derived'),
+      val_js_peak_derived: document.getElementById('val_js_peak_derived'),
+      val_payload_peak_derived: document.getElementById('val_payload_peak_derived'),
+      val_pub_pods: document.getElementById('val_pub_pods'),
+      val_sub_pods: document.getElementById('val_sub_pods'),
+      val_total_pods: document.getElementById('val_total_pods'),
+      val_conn_derived: document.getElementById('val_conn_derived'),
+      val_consumer_derived: document.getElementById('val_consumer_derived'),
+
+      rounded_vcpu: document.getElementById('rounded_vcpu'),
+      hero_subtitle_cpu: document.getElementById('hero_subtitle_cpu'),
+      stat_raw_mcpu: document.getElementById('stat_raw_mcpu'),
+      stat_cluster_cpu: document.getElementById('stat_cluster_cpu'),
+
+      rounded_ram: document.getElementById('rounded_ram'),
+      hero_subtitle_ram: document.getElementById('hero_subtitle_ram'),
+      stat_raw_ram: document.getElementById('stat_raw_ram'),
+      stat_cluster_ram: document.getElementById('stat_cluster_ram'),
+
+      rounded_disk: document.getElementById('rounded_disk'),
+      hero_subtitle_disk: document.getElementById('hero_subtitle_disk'),
+      stat_raw_disk: document.getElementById('stat_raw_disk'),
+      stat_cluster_disk: document.getElementById('stat_cluster_disk'),
+
+      row_base: document.getElementById('row_base'),
+      row_js_write: document.getElementById('row_js_write'),
+      row_ack: document.getElementById('row_ack'),
+      row_batch: document.getElementById('row_batch'),
+      row_core: document.getElementById('row_core'),
+      row_stream: document.getElementById('row_stream'),
+      row_conn: document.getElementById('row_conn'),
+      row_total_raw: document.getElementById('row_total_raw'),
+      row_total_prov: document.getElementById('row_total_prov'),
+
+      row_ram_base: document.getElementById('row_ram_base'),
+      row_ram_subj: document.getElementById('row_ram_subj'),
+      row_ram_stream: document.getElementById('row_ram_stream'),
+      row_ram_consumer: document.getElementById('row_ram_consumer'),
+      row_ram_conn: document.getElementById('row_ram_conn'),
+      row_ram_total_raw: document.getElementById('row_ram_total_raw'),
+      row_ram_total_prov: document.getElementById('row_ram_total_prov'),
+
+      row_disk_msg_size: document.getElementById('row_disk_msg_size'),
+      row_disk_peak_bw: document.getElementById('row_disk_peak_bw'),
+      row_disk_cluster_bw: document.getElementById('row_disk_cluster_bw'),
+      row_disk_raw: document.getElementById('row_disk_raw'),
+      row_disk_prov: document.getElementById('row_disk_prov'),
+      row_disk_cluster_total: document.getElementById('row_disk_cluster_total'),
+
+      vm_vcpu_label: document.getElementById('vm_vcpu_label'),
+      vm_opt_detail: document.getElementById('vm_opt_detail'),
+      vm_opt_spare: document.getElementById('vm_opt_spare'),
+      vm_gen_detail: document.getElementById('vm_gen_detail'),
+      vm_gen_spare: document.getElementById('vm_gen_spare'),
+      cache_explainer_text: document.getElementById('cache_explainer_text'),
+
+      badge_fsync: document.getElementById('badge_fsync'),
+      badge_ack: document.getElementById('badge_ack'),
+      badge_payload: document.getElementById('badge_payload'),
+      badge_cushion: document.getElementById('badge_cushion')
+    };
+
+    // Toggle and YAML Elements
+    const toggleEls = {
+      btn_input_form: document.getElementById('btn_input_form'),
+      btn_input_yaml: document.getElementById('btn_input_yaml'),
+      input_form_container: document.getElementById('input_form_container'),
+      input_yaml_container: document.getElementById('input_yaml_container'),
+      input_yaml_actions: document.getElementById('input_yaml_actions'),
+      input_yaml_text: document.getElementById('input_yaml_text'),
+      input_yaml_error: document.getElementById('input_yaml_error'),
+      btn_copy_input_yaml: document.getElementById('btn_copy_input_yaml'),
+      input_yaml_badge: document.getElementById('input_yaml_badge'),
+
+      btn_output_dashboard: document.getElementById('btn_output_dashboard'),
+      btn_output_yaml: document.getElementById('btn_output_yaml'),
+      output_dashboard_container: document.getElementById('output_dashboard_container'),
+      output_yaml_container: document.getElementById('output_yaml_container'),
+      output_yaml_actions: document.getElementById('output_yaml_actions'),
+      output_yaml_text: document.getElementById('output_yaml_text'),
+      btn_copy_output_yaml: document.getElementById('btn_copy_output_yaml'),
+      output_yaml_badge: document.getElementById('output_yaml_badge')
+    };
+
+    // Sync sliders and direct numeric inputs
+    function bindPair(numInput, rangeInput, onSync) {
+      if (!numInput || !rangeInput) return;
+      numInput.addEventListener('input', () => {
+        rangeInput.value = numInput.value;
+        if (onSync) onSync(parseFloat(numInput.value));
+        calculate();
+      });
+      rangeInput.addEventListener('input', () => {
+        numInput.value = rangeInput.value;
+        if (onSync) onSync(parseFloat(rangeInput.value));
+        calculate();
+      });
+    }
+
+    // Preset Pill Button Setup
+    function setupPresetPills(groupId, numInput, rangeInput) {
+      const container = document.getElementById(groupId);
+      if (!container) return;
+      const pills = container.querySelectorAll('.preset-pill');
+      pills.forEach(pill => {
+        pill.addEventListener('click', () => {
+          pills.forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+          const val = parseFloat(pill.getAttribute('data-val'));
+          numInput.value = val;
+          if (rangeInput) rangeInput.value = val;
+          calculate();
+        });
+      });
+    }
+
+    function syncPillsOnManualInput(groupId, val) {
+      const container = document.getElementById(groupId);
+      if (!container) return;
+      const pills = container.querySelectorAll('.preset-pill');
+      pills.forEach(p => {
+        if (Math.abs(parseFloat(p.getAttribute('data-val')) - val) < 0.01) {
+          p.classList.add('active');
+        } else {
+          p.classList.remove('active');
+        }
+      });
+    }
+
+    setupPresetPills('core_preset_group', inputs.k_peak_core, inputs.k_peak_core_range);
+    setupPresetPills('js_preset_group', inputs.k_peak_js, inputs.k_peak_js_range);
+
+    bindPair(inputs.x_core_avg, inputs.x_core_avg_range);
+    bindPair(inputs.k_peak_core, inputs.k_peak_core_range, (v) => syncPillsOnManualInput('core_preset_group', v));
+    bindPair(inputs.c_core, inputs.c_core_range);
+
+    bindPair(inputs.x_js_avg, inputs.x_js_avg_range);
+    bindPair(inputs.k_peak_js, inputs.k_peak_js_range, (v) => syncPillsOnManualInput('js_preset_group', v));
+    bindPair(inputs.payload_avg, inputs.payload_avg_range);
+    bindPair(inputs.k_payload_peak, inputs.k_payload_peak_range);
+    bindPair(inputs.header, inputs.header_range);
+    bindPair(inputs.retention_hours, inputs.retention_hours_range);
+
+    inputs.n_pub_services.addEventListener('input', () => calculate());
+    inputs.pub_replicas.addEventListener('input', () => calculate());
+    inputs.n_sub_services.addEventListener('input', () => calculate());
+    inputs.sub_replicas.addEventListener('input', () => calculate());
+    inputs.conn_per_pod.addEventListener('input', () => calculate());
+    inputs.n_conn_admin.addEventListener('input', () => calculate());
+
+    bindPair(inputs.n_stream, inputs.n_stream_range);
+    bindPair(inputs.c_js, inputs.c_js_range);
+    bindPair(inputs.n_subj, inputs.n_subj_range);
+
+    inputs.batch_size.addEventListener('input', () => calculate());
+    inputs.headroom.addEventListener('input', () => calculate());
+    inputs.mcpu_base.addEventListener('input', () => calculate());
+    inputs.ram_base.addEventListener('input', () => calculate());
+    inputs.s_proto.addEventListener('input', () => calculate());
+
+    // State for latest calculation outputs
+    let latestCalcState = null;
+
+    function calculate(skipInputYAMLUpdate = false) {
+      // 1. Parse Base Inputs & Multipliers
+      const x_core_avg = Math.max(0, parseFloat(inputs.x_core_avg.value) || 0);
+      const k_peak_core = Math.max(1.0, parseFloat(inputs.k_peak_core.value) || 2.0);
+      const x_core = Math.round(x_core_avg * k_peak_core);
+      const c_core = Math.max(0, parseFloat(inputs.c_core.value) || 0);
+      const y_core = x_core * c_core;
+
+      const x_js_avg = Math.max(0, parseFloat(inputs.x_js_avg.value) || 0);
+      const k_peak_js = Math.max(1.0, parseFloat(inputs.k_peak_js.value) || 3.0);
+      const x_js = Math.round(x_js_avg * k_peak_js);
+
+      const payload_avg = Math.max(64, parseFloat(inputs.payload_avg.value) || 1024);
+      const k_payload_peak = Math.max(1.0, parseFloat(inputs.k_payload_peak.value) || 1.5);
+      const payload_peak = Math.round(payload_avg * k_payload_peak);
+
+      const header_bytes = Math.max(0, parseFloat(inputs.header.value) || 0);
+      const s_proto_bytes = Math.max(8, parseFloat(inputs.s_proto.value) || 32);
+      const retention_h = Math.max(0.1, parseFloat(inputs.retention_hours.value) || 24);
+
+      // Topology
+      const n_pub_svc = Math.max(1, parseInt(inputs.n_pub_services.value) || 5);
+      const pub_rep = Math.max(1, parseInt(inputs.pub_replicas.value) || 3);
+      const n_sub_svc = Math.max(1, parseInt(inputs.n_sub_services.value) || 10);
+      const sub_rep = Math.max(1, parseInt(inputs.sub_replicas.value) || 3);
+      const conn_pod = Math.max(1, parseInt(inputs.conn_per_pod.value) || 1);
+      const conn_admin = Math.max(0, parseInt(inputs.n_conn_admin.value) || 5);
+
+      const pub_pods = n_pub_svc * pub_rep;
+      const sub_pods = n_sub_svc * sub_rep;
+      const total_pods = pub_pods + sub_pods;
+      const n_conn = (total_pods * conn_pod) + conn_admin;
+
+      // Streams & Consumers
+      const n_stream = Math.max(1, parseFloat(inputs.n_stream.value) || 1);
+      const c_js = Math.max(1, parseFloat(inputs.c_js.value) || 1);
+      const n_consumer = n_stream * c_js;
+      const y_js = x_js * c_js;
+
+      const n_subj = Math.max(1, parseFloat(inputs.n_subj.value) || 1);
+
+      // Constants
+      const batch = Math.max(1, parseFloat(inputs.batch_size.value) || 500);
+      const headroomPct = Math.min(60, Math.max(10, parseFloat(inputs.headroom.value) || 30));
+      const targetUtil = (100 - headroomPct) / 100;
+      const mcpu_base = Math.max(0, parseFloat(inputs.mcpu_base.value) || 50);
+      const ram_base = Math.max(16, parseFloat(inputs.ram_base.value) || 128);
+
+      // Update In-Form Derived Badges
+      if (outputs.val_core_peak_derived) outputs.val_core_peak_derived.textContent = x_core.toLocaleString();
+      if (outputs.val_js_peak_derived) outputs.val_js_peak_derived.textContent = x_js.toLocaleString();
+      if (outputs.val_payload_peak_derived) outputs.val_payload_peak_derived.textContent = payload_peak.toLocaleString();
+      if (outputs.val_pub_pods) outputs.val_pub_pods.textContent = pub_pods;
+      if (outputs.val_sub_pods) outputs.val_sub_pods.textContent = sub_pods;
+      if (outputs.val_total_pods) outputs.val_total_pods.textContent = total_pods;
+      if (outputs.val_conn_derived) outputs.val_conn_derived.textContent = n_conn;
+      if (outputs.val_consumer_derived) outputs.val_consumer_derived.textContent = n_consumer;
+
+      // ==========================================
+      // 2. CPU SIZING (mCPU)
+      // ==========================================
+      const mcpu_js_write = ALPHA_JS_WRITE * x_js;
+      const mcpu_ack = ALPHA_ACK * y_js;
+      const r_batch = y_js / batch;
+      const mcpu_batch = ALPHA_BATCH * r_batch;
+
+      const mcpu_core = (ALPHA_CORE_PUB * x_core) + (ALPHA_CORE_SUB * y_core);
+      const mcpu_stream = ALPHA_STREAM * n_stream;
+      const mcpu_conn = ALPHA_CONN * (n_conn / 3);
+
+      const total_raw_mcpu = mcpu_base + mcpu_js_write + mcpu_ack + mcpu_batch + mcpu_core + mcpu_stream + mcpu_conn;
+      const total_prov_mcpu = total_raw_mcpu / targetUtil;
+      const prov_vcpu_float = total_prov_mcpu / 1000;
+      const rounded_vcpu = Math.max(1, Math.ceil(prov_vcpu_float));
+      const cluster_total_vcpu = rounded_vcpu * 3;
+
+      // ==========================================
+      // 3. MEMORY SIZING (RAM in MB)
+      // ==========================================
+      const ram_subj = (BETA_SUBJ_BYTES / (1024 * 1024)) * n_subj;
+      const ram_stream = (BETA_STREAM_KIB / 1024) * n_stream;
+      const ram_consumer = BETA_CONSUMER_MB * n_consumer;
+      const ram_conn = (BETA_CONN_KIB / 1024) * (n_conn / 3);
+
+      const total_raw_ram = ram_base + ram_subj + ram_stream + ram_consumer + ram_conn;
+      const total_prov_ram = total_raw_ram / targetUtil;
+      const cluster_total_ram = total_prov_ram * 3;
+
+      // ==========================================
+      // 4. PERSISTENT DISK SIZING (Storage & I/O)
+      // ==========================================
+      const s_msg_avg = payload_avg + header_bytes + s_proto_bytes;
+      const s_msg_peak = payload_peak + header_bytes + s_proto_bytes;
+
+      const raw_disk_node_bytes = x_js_avg * s_msg_avg * (retention_h * 3600);
+      const prov_disk_node_bytes = raw_disk_node_bytes / targetUtil;
+      const cluster_disk_bytes = prov_disk_node_bytes * 3;
+
+      const raw_disk_node_gb = raw_disk_node_bytes / 1e9;
+      const raw_disk_node_gib = raw_disk_node_bytes / (1024 * 1024 * 1024);
+      const prov_disk_node_gb = prov_disk_node_bytes / 1e9;
+      const prov_disk_node_gib = prov_disk_node_bytes / (1024 * 1024 * 1024);
+      const cluster_disk_gb = cluster_disk_bytes / 1e9;
+      const cluster_disk_gib = cluster_disk_bytes / (1024 * 1024 * 1024);
+
+      const rounded_disk_gb = Math.max(10, Math.ceil(prov_disk_node_gb));
+
+      const write_bw_node_mb = (x_js * s_msg_peak) / (1024 * 1024);
+      const write_bw_cluster_mb = write_bw_node_mb * 3;
+
+      // ==========================================
+      // 5. CLOUD VM PACKAGING & PAGE CACHE CONTEXT
+      // ==========================================
+      const vm_ram_opt_mb = rounded_vcpu * 2048; // 1:2 ratio (Compute-Optimized)
+      const vm_ram_gen_mb = rounded_vcpu * 4096; // 1:4 ratio (General-Purpose)
+      const spare_ram_opt_mb = Math.max(0, vm_ram_opt_mb - total_prov_ram);
+      const spare_ram_gen_mb = Math.max(0, vm_ram_gen_mb - total_prov_ram);
+
+      let cache_duration_min = 0;
+      if (write_bw_node_mb > 0) {
+        cache_duration_min = (spare_ram_gen_mb / write_bw_node_mb) / 60;
+      }
+
+      // ==========================================
+      // 6. UPDATE DOM OUTPUTS
+      // ==========================================
+      // Hero CPU
+      outputs.rounded_vcpu.textContent = rounded_vcpu;
+      outputs.hero_subtitle_cpu.textContent = `Per Node \u2022 ${Math.round(total_prov_mcpu)} mCPU`;
+      outputs.stat_raw_mcpu.textContent = `${Math.round(total_raw_mcpu)} mCPU`;
+      outputs.stat_cluster_cpu.textContent = `${cluster_total_vcpu} vCPU`;
+
+      // Hero RAM
+      outputs.rounded_ram.textContent = Math.round(total_prov_ram);
+      outputs.hero_subtitle_ram.textContent = `Per Node \u2022 ${(total_prov_ram / 1024).toFixed(2)} GB`;
+      outputs.stat_raw_ram.textContent = `${Math.round(total_raw_ram)} MB`;
+      outputs.stat_cluster_ram.textContent = cluster_total_ram >= 1024 ? `${(cluster_total_ram / 1024).toFixed(2)} GB` : `${Math.round(cluster_total_ram)} MB`;
+
+      // Hero Disk
+      outputs.rounded_disk.textContent = rounded_disk_gb >= 1000 ? `${(rounded_disk_gb / 1000).toFixed(1)} TB` : rounded_disk_gb;
+      outputs.hero_subtitle_disk.textContent = `Per Node \u2022 ${prov_disk_node_gib.toFixed(1)} GiB`;
+      outputs.stat_raw_disk.textContent = `${raw_disk_node_gb.toFixed(1)} GB`;
+      outputs.stat_cluster_disk.textContent = cluster_disk_gb >= 1000 ? `${(cluster_disk_gb / 1000).toFixed(2)} TB` : `${Math.round(cluster_disk_gb)} GB`;
+
+      // CPU Breakdown Table
+      outputs.row_base.textContent = `${mcpu_base.toFixed(1)} mCPU`;
+      outputs.row_js_write.textContent = `${mcpu_js_write.toFixed(1)} mCPU`;
+      outputs.row_ack.textContent = `${mcpu_ack.toFixed(1)} mCPU`;
+      outputs.row_batch.textContent = `${mcpu_batch.toFixed(1)} mCPU`;
+      outputs.row_core.textContent = `${mcpu_core.toFixed(1)} mCPU`;
+      outputs.row_stream.textContent = `${mcpu_stream.toFixed(1)} mCPU`;
+      outputs.row_conn.textContent = `${mcpu_conn.toFixed(1)} mCPU`;
+      outputs.row_total_raw.textContent = `${total_raw_mcpu.toFixed(1)} mCPU`;
+      outputs.row_total_prov.textContent = `${total_prov_mcpu.toFixed(1)} mCPU`;
+
+      // Memory Breakdown Table
+      outputs.row_ram_base.textContent = `${ram_base.toFixed(1)} MB`;
+      outputs.row_ram_subj.textContent = `${ram_subj.toFixed(1)} MB`;
+      outputs.row_ram_stream.textContent = `${ram_stream.toFixed(1)} MB`;
+      outputs.row_ram_consumer.textContent = `${ram_consumer.toFixed(1)} MB`;
+      outputs.row_ram_conn.textContent = `${ram_conn.toFixed(1)} MB`;
+      outputs.row_ram_total_raw.textContent = `${total_raw_ram.toFixed(1)} MB`;
+      outputs.row_ram_total_prov.textContent = `${total_prov_ram.toFixed(1)} MB`;
+
+      // Persistent Disk Breakdown Table
+      outputs.row_disk_msg_size.textContent = `${s_msg_avg} bytes (${payload_avg}B + ${header_bytes}B + ${s_proto_bytes}B)`;
+      outputs.row_disk_peak_bw.textContent = `${write_bw_node_mb.toFixed(2)} MB/s (${(write_bw_node_mb * 8).toFixed(1)} Mbps)`;
+      outputs.row_disk_cluster_bw.textContent = `${write_bw_cluster_mb.toFixed(2)} MB/s (${(write_bw_cluster_mb * 8).toFixed(1)} Mbps)`;
+      outputs.row_disk_raw.textContent = `${raw_disk_node_gb.toFixed(1)} GB (${raw_disk_node_gib.toFixed(1)} GiB)`;
+      outputs.row_disk_prov.textContent = `${prov_disk_node_gb.toFixed(1)} GB (${prov_disk_node_gib.toFixed(1)} GiB)`;
+      outputs.row_disk_cluster_total.textContent = `${cluster_disk_gb.toFixed(1)} GB (${cluster_disk_gib.toFixed(1)} GiB)`;
+
+      // VM Packaging
+      outputs.vm_vcpu_label.textContent = `${rounded_vcpu} vCPU`;
+      outputs.vm_opt_detail.textContent = `${(vm_ram_opt_mb / 1024).toFixed(0)} GB RAM`;
+      outputs.vm_opt_spare.textContent = `${(spare_ram_opt_mb / 1024).toFixed(1)} GB`;
+      outputs.vm_gen_detail.textContent = `${(vm_ram_gen_mb / 1024).toFixed(0)} GB RAM`;
+      outputs.vm_gen_spare.textContent = `${(spare_ram_gen_mb / 1024).toFixed(1)} GB`;
+
+      let durationLabel = '';
+      if (write_bw_node_mb === 0) {
+        durationLabel = 'infinite (idle ingress)';
+      } else if (cache_duration_min >= 60) {
+        durationLabel = `over ${(cache_duration_min / 60).toFixed(1)} hours`;
+      } else {
+        durationLabel = `over ${Math.round(cache_duration_min)} minutes`;
+      }
+
+      outputs.cache_explainer_text.innerHTML = `The NATS Go process occupies ~${Math.round(total_prov_ram)} MB of resident RAM. Standard cloud VM packaging passively provides ${(spare_ram_opt_mb / 1024).toFixed(1)} GB to ${(spare_ram_gen_mb / 1024).toFixed(1)} GB of spare host RAM, which the Linux kernel automatically utilizes as Page Cache. At current peak ingress (${write_bw_node_mb.toFixed(2)} MB/s), this cushions <strong>${durationLabel}</strong> of recent messages in memory, guaranteeing zero physical disk read IOPS for live streaming consumers.`;
+
+      // ==========================================
+      // 7. GUARDRAIL CHECKS
+      // ==========================================
+      const ratePerStream = x_js / n_stream;
+      const badgeFsyncPass = ratePerStream <= 7000;
+      outputs.badge_fsync.textContent = `${badgeFsyncPass ? 'PASS' : 'WARN'} (${Math.round(ratePerStream).toLocaleString()} msgs/s/stream)`;
+      outputs.badge_fsync.className = `status-badge ${badgeFsyncPass ? 'status-pass' : 'status-warn'}`;
+
+      const acksPerStream = y_js / n_stream;
+      const badgeAckPass = acksPerStream <= 10000;
+      outputs.badge_ack.textContent = `${badgeAckPass ? 'PASS' : 'WARN'} (${Math.round(acksPerStream).toLocaleString()} ACKs/s/stream)`;
+      outputs.badge_ack.className = `status-badge ${badgeAckPass ? 'status-pass' : 'status-warn'}`;
+
+      const badgePayloadPass = payload_peak <= 8192;
+      outputs.badge_payload.textContent = `${badgePayloadPass ? 'PASS' : 'WARN'} (${(payload_peak / 1024).toFixed(1)} KiB ${badgePayloadPass ? '<=' : '>'} 8 KiB)`;
+      outputs.badge_payload.className = `status-badge ${badgePayloadPass ? 'status-pass' : 'status-warn'}`;
+
+      const badgeCushionPass = !(write_bw_node_mb > 0 && cache_duration_min < 5);
+      outputs.badge_cushion.textContent = `${badgeCushionPass ? 'PASS' : 'WARN'} (${durationLabel})`;
+      outputs.badge_cushion.className = `status-badge ${badgeCushionPass ? 'status-pass' : 'status-warn'}`;
+
+      // Save latest state for YAML generation
+      latestCalcState = {
+        inputs: {
+          x_core_avg: x_core_avg,
+          k_peak_core: k_peak_core,
+          x_core_peak: x_core,
+          c_core: c_core,
+
+          x_js_avg: x_js_avg,
+          k_peak_js: k_peak_js,
+          x_js_peak: x_js,
+          c_js: c_js,
+          payload_avg: payload_avg,
+          k_payload_peak: k_payload_peak,
+          payload_peak: payload_peak,
+          header: header_bytes,
+          retention_hours: retention_h,
+
+          n_pub_services: n_pub_svc,
+          pub_replicas: pub_rep,
+          n_sub_services: n_sub_svc,
+          sub_replicas: sub_rep,
+          conn_per_pod: conn_pod,
+          n_conn_admin: conn_admin,
+          total_pods: total_pods,
+          n_conn_peak: n_conn,
+
+          n_stream: n_stream,
+          n_consumer_peak: n_consumer,
+          n_subj: n_subj,
+
+          batch_size: batch,
+          headroom: headroomPct,
+          mcpu_base: mcpu_base,
+          ram_base: ram_base,
+          s_proto: s_proto_bytes
+        },
+        compute: {
+          rounded_vcpu: rounded_vcpu,
+          exact_prov_vcpu: prov_vcpu_float,
+          exact_prov_mcpu: total_prov_mcpu,
+          raw_mcpu: total_raw_mcpu,
+          target_util_pct: Math.round(targetUtil * 100),
+          cluster_total_vcpu: cluster_total_vcpu
+        },
+        memory: {
+          rounded_prov_ram_mb: Math.round(total_prov_ram),
+          exact_prov_ram_gb: total_prov_ram / 1024,
+          raw_process_ram_mb: total_raw_ram,
+          headroom_pct: Math.round(headroomPct),
+          cluster_total_ram_mb: cluster_total_ram
+        },
+        disk: {
+          s_msg_avg: s_msg_avg,
+          s_msg_peak: s_msg_peak,
+          raw_gb: raw_disk_node_gb,
+          raw_gib: raw_disk_node_gib,
+          prov_gb: prov_disk_node_gb,
+          prov_gib: prov_disk_node_gib,
+          cluster_gb: cluster_disk_gb,
+          cluster_gib: cluster_disk_gib,
+          write_bw_node_mb: write_bw_node_mb,
+          write_bw_cluster_mb: write_bw_cluster_mb
+        },
+        vm: {
+          opt_ram_gb: vm_ram_opt_mb / 1024,
+          opt_spare_gb: spare_ram_opt_mb / 1024,
+          gen_ram_gb: vm_ram_gen_mb / 1024,
+          gen_spare_gb: spare_ram_gen_mb / 1024,
+          write_mb_s: write_bw_node_mb,
+          cushion_label: durationLabel
+        },
+        breakdowns: {
+          cpu: {
+            base: mcpu_base,
+            js_write: mcpu_js_write,
+            ack: mcpu_ack,
+            batch: mcpu_batch,
+            core: mcpu_core,
+            stream: mcpu_stream,
+            conn: mcpu_conn,
+            total_raw: total_raw_mcpu,
+            total_prov: total_prov_mcpu
+          },
+          memory: {
+            base: ram_base,
+            subj: ram_subj,
+            stream: ram_stream,
+            consumer: ram_consumer,
+            conn: ram_conn,
+            total_raw: total_raw_ram,
+            total_prov: total_prov_ram
+          }
+        },
+        guardrails: {
+          fsync: { pass: badgeFsyncPass, val: ratePerStream },
+          ack: { pass: badgeAckPass, val: acksPerStream },
+          payload: { pass: badgePayloadPass, val: payload_peak },
+          cushion: { pass: badgeCushionPass, val: durationLabel }
+        }
+      };
+
+      // Update YAML views
+      if (!skipInputYAMLUpdate && document.activeElement !== toggleEls.input_yaml_text) {
+        toggleEls.input_yaml_text.value = generateInputYAML();
+      }
+      toggleEls.output_yaml_text.value = generateOutputYAML();
+    }
+
+    // ==========================================
+    // YAML SERIALIZATION & PARSING
+    // ==========================================
+    function generateInputYAML() {
+      const s = latestCalcState ? latestCalcState.inputs : {
+        x_core_avg: 2500, k_peak_core: 2.0, x_core_peak: 5000, c_core: 2,
+        x_js_avg: 2000, k_peak_js: 3.0, x_js_peak: 6000, c_js: 2,
+        payload_avg: 1024, k_payload_peak: 1.5, payload_peak: 1536,
+        header: 64, retention_hours: 72,
+        n_pub_services: 5, pub_replicas: 3, n_sub_services: 10, sub_replicas: 3,
+        conn_per_pod: 1, n_conn_admin: 5, total_pods: 45, n_conn_peak: 50,
+        n_stream: 5, n_consumer_peak: 10, n_subj: 1000,
+        batch_size: 500, headroom: 30, mcpu_base: 50, ram_base: 128, s_proto: 32
+      };
+
+      return `# NATS JetStream Capacity Calculator - Workload Configuration
+# Edit numeric values below to dynamically update sizing models and recommendations
+
+cluster:
+  nodes: 3
+  replication_factor: 3
+  storage_type: file
+
+workload:
+  core_nats:
+    x_core_avg: ${s.x_core_avg}          # msgs/s (steady-state in-memory ingress)
+    peak_multiplier: ${s.k_peak_core}        # x (core peak multiplier)
+    x_core_peak: ${s.x_core_peak}          # msgs/s (derived peak ephemeral ingress)
+    c_core: ${s.c_core}               # subscribers (broadcast fan-out)
+
+  jetstream:
+    x_js_avg: ${s.x_js_avg}           # msgs/s (steady-state average ingress rate)
+    peak_multiplier: ${s.k_peak_js}        # x (traffic peak multiplier)
+    x_js_peak: ${s.x_js_peak}          # msgs/s (derived peak persistent ingress rate)
+    c_js: ${s.c_js}                  # consumers per stream (egress delivery multiplier)
+    payload_avg: ${s.payload_avg}       # bytes (average message payload size)
+    payload_peak_multiplier: ${s.k_payload_peak} # x (burst payload multiplier)
+    payload_peak: ${s.payload_peak}      # bytes (derived peak message payload size)
+    header: ${s.header}                # bytes (tracing headers & metadata)
+    retention_hours: ${s.retention_hours}       # hours (persistent retention window)
+
+  topology:
+    n_pub_services: ${s.n_pub_services}        # distinct publishing microservices
+    pub_replicas: ${s.pub_replicas}          # K8s pod replicas per publisher
+    n_sub_services: ${s.n_sub_services}       # distinct consuming microservices
+    sub_replicas: ${s.sub_replicas}          # K8s pod replicas per consumer
+    conn_per_pod: ${s.conn_per_pod}          # sockets per pod (SDK multiplexed)
+    n_conn_admin: ${s.n_conn_admin}          # admin & monitoring sockets
+    total_pods: ${s.total_pods}            # total microservice pods
+    n_conn_peak: ${s.n_conn_peak}           # derived client sockets (~n_conn/3 per node)
+
+  consumers_and_taxonomy:
+    n_stream: ${s.n_stream}              # active Raft streams (~234 KiB/node)
+    n_consumer_peak: ${s.n_consumer_peak}       # derived durable consumers (~7.29 MB/node)
+    n_subj: ${s.n_subj}            # registered subjects in trie (~313 B/node)
+
+constants:
+  batch_size: ${s.batch_size}         # msgs (pull batch fetch RPC amortization)
+  headroom: ${s.headroom}             # % (targets 70% peak utilization)
+  mcpu_base: ${s.mcpu_base}           # mCPU (idle baseline cluster route floor)
+  ram_base: ${s.ram_base}            # MB (startup Go process RSS floor)
+  s_proto: ${s.s_proto}              # bytes (block record framing overhead)
+`;
+    }
+
+    function generateOutputYAML() {
+      if (!latestCalcState) return '';
+      const c = latestCalcState.compute;
+      const m = latestCalcState.memory;
+      const d = latestCalcState.disk;
+      const v = latestCalcState.vm;
+      const b = latestCalcState.breakdowns;
+      const g = latestCalcState.guardrails;
+
+      return `# NATS JetStream Capacity Calculator - Provisioning Specification
+# Generated at: ${new Date().toISOString()}
+
+cluster_topology:
+  nodes: 3
+  replication_factor: 3
+  storage_type: file
+  load_balancing: L4_HAProxy
+
+compute:
+  recommended_rounded_vcpu_per_node: ${c.rounded_vcpu}
+  exact_provisioned_vcpu_per_node: ${c.exact_prov_vcpu.toFixed(2)}
+  exact_provisioned_mcpu_per_node: ${c.exact_prov_mcpu.toFixed(1)}
+  raw_demand_mcpu_per_node: ${c.raw_mcpu.toFixed(1)}
+  target_utilization_pct: ${c.target_util_pct}
+  cluster_total_vcpu: ${c.cluster_total_vcpu}
+
+memory:
+  recommended_provisioned_ram_mb_per_node: ${m.rounded_prov_ram_mb}
+  recommended_provisioned_ram_gb_per_node: ${m.exact_prov_ram_gb.toFixed(2)}
+  raw_process_ram_mb_per_node: ${m.raw_process_ram_mb.toFixed(1)}
+  headroom_buffer_pct: ${m.headroom_pct}
+  cluster_total_ram_mb: ${Math.round(m.cluster_total_ram_mb)}
+
+storage_persistent_disk:
+  effective_message_size_avg_bytes: ${d.s_msg_avg}
+  effective_message_size_peak_bytes: ${d.s_msg_peak}
+  raw_storage_per_node_gb: ${d.raw_gb.toFixed(1)}
+  raw_storage_per_node_gib: ${d.raw_gib.toFixed(1)}
+  provisioned_storage_per_node_gb: ${d.prov_gb.toFixed(1)}
+  provisioned_storage_per_node_gib: ${d.prov_gib.toFixed(1)}
+  headroom_buffer_pct: 30
+  cluster_total_storage_gb: ${d.cluster_gb.toFixed(1)}
+  cluster_total_storage_gib: ${d.cluster_gib.toFixed(1)}
+  peak_write_bandwidth_node_mb_s: ${d.write_bw_node_mb.toFixed(2)}
+  peak_write_bandwidth_cluster_mb_s: ${d.write_bw_cluster_mb.toFixed(2)}
+  recommended_disk_iops_baseline: 3000
+  live_consumer_read_iops: 0  # Zero-Disk Read Replay via OS Page Cache
+
+cloud_vm_packaging:
+  sized_compute_tier: "${c.rounded_vcpu} vCPU"
+  compute_optimized_1_to_2:
+    bundled_ram_gb: ${v.opt_ram_gb}
+    spare_page_cache_ram_gb: ${v.opt_spare_gb.toFixed(1)}
+  general_purpose_1_to_4:
+    bundled_ram_gb: ${v.gen_ram_gb}
+    spare_page_cache_ram_gb: ${v.gen_spare_gb.toFixed(1)}
+  zero_disk_read_replay_cushion: "${v.cushion_label}"
+
+per_node_breakdowns:
+  cpu_mcpu:
+    idle_baseline_floor: ${b.cpu.base.toFixed(1)}
+    jetstream_write_consensus: ${b.cpu.js_write.toFixed(1)}
+    consumer_delivery_and_ack: ${b.cpu.ack.toFixed(1)}
+    pull_consumer_batching: ${b.cpu.batch.toFixed(1)}
+    core_nats_routing: ${b.cpu.core.toFixed(1)}
+    raft_stream_leases: ${b.cpu.stream.toFixed(1)}
+    client_sockets_epoll: ${b.cpu.conn.toFixed(1)}
+    total_raw_demand: ${b.cpu.total_raw.toFixed(1)}
+    total_provisioned_headroom: ${b.cpu.total_prov.toFixed(1)}
+  memory_mb:
+    baseline_process_floor: ${b.memory.base.toFixed(1)}
+    sublist_prefix_trie: ${b.memory.subj.toFixed(1)}
+    multi_raft_stream_descriptors: ${b.memory.stream.toFixed(1)}
+    durable_consumer_progress: ${b.memory.consumer.toFixed(1)}
+    client_tcp_socket_buffers: ${b.memory.conn.toFixed(1)}
+    total_raw_process_ram: ${b.memory.total_raw.toFixed(1)}
+    total_provisioned_headroom: ${b.memory.total_prov.toFixed(1)}
+
+operational_guardrails:
+  disk_fsync_ceiling: "${g.fsync.pass ? 'PASS' : 'WARN'} (${Math.round(g.fsync.val)} msgs/s/stream <= 7,000)"
+  consumer_ack_wall: "${g.ack.pass ? 'PASS' : 'WARN'} (${Math.round(g.ack.val)} ACKs/s/stream <= 10,000)"
+  socket_buffer_inflation: "${g.payload.pass ? 'PASS' : 'WARN'} (${(g.payload.val / 1024).toFixed(1)} KiB <= 8 KiB)"
+  page_cache_replay_cushion: "${g.cushion.pass ? 'PASS' : 'WARN'} (${g.cushion.val})"
+`;
+    }
+
+    function parseAndApplyInputYAML(text) {
+      const lines = text.split('\n');
+      const params = {};
+      let hasUpdates = false;
+
+      for (let line of lines) {
+        // Strip trailing comments
+        const hashIdx = line.indexOf('#');
+        let clean = hashIdx >= 0 ? line.slice(0, hashIdx) : line;
+        clean = clean.trim();
+        if (!clean || clean.startsWith('#')) continue;
+
+        const colonIdx = clean.indexOf(':');
+        if (colonIdx > 0) {
+          const key = clean.slice(0, colonIdx).trim();
+          const valStr = clean.slice(colonIdx + 1).trim();
+          const numVal = parseFloat(valStr);
+          if (!isNaN(numVal)) {
+            if (key === 'peak_multiplier') {
+              params['k_peak_js'] = numVal;
+              hasUpdates = true;
+            } else if (key === 'payload_peak_multiplier') {
+              params['k_payload_peak'] = numVal;
+              hasUpdates = true;
+            } else if (key in inputs) {
+              params[key] = numVal;
+              hasUpdates = true;
+            }
+          }
+        }
+      }
+
+      if (hasUpdates) {
+        toggleEls.input_yaml_error.style.display = 'none';
+        for (let k in params) {
+          if (inputs[k]) {
+            inputs[k].value = params[k];
+            const rangeEl = inputs[k + '_range'];
+            if (rangeEl) rangeEl.value = params[k];
+          }
+        }
+        calculate(true); // skip re-generating input yaml textarea to avoid cursor jumping
+      } else {
+        toggleEls.input_yaml_error.textContent = 'Could not parse any valid configuration parameters from YAML.';
+        toggleEls.input_yaml_error.style.display = 'block';
+      }
+      return hasUpdates;
+    }
+
+    // ==========================================
+    // VIEW TOGGLES & COPY HANDLERS
+    // ==========================================
+    // 1. Input View Toggle
+    toggleEls.btn_input_form.addEventListener('click', () => {
+      toggleEls.btn_input_form.classList.add('active');
+      toggleEls.btn_input_yaml.classList.remove('active');
+      toggleEls.input_form_container.style.display = 'block';
+      toggleEls.input_yaml_container.style.display = 'none';
+      toggleEls.input_yaml_actions.style.display = 'none';
+    });
+
+    toggleEls.btn_input_yaml.addEventListener('click', () => {
+      toggleEls.btn_input_yaml.classList.add('active');
+      toggleEls.btn_input_form.classList.remove('active');
+      toggleEls.input_form_container.style.display = 'none';
+      toggleEls.input_yaml_container.style.display = 'block';
+      toggleEls.input_yaml_actions.style.display = 'flex';
+      toggleEls.input_yaml_text.value = generateInputYAML();
+    });
+
+    // 2. Output View Toggle
+    toggleEls.btn_output_dashboard.addEventListener('click', () => {
+      toggleEls.btn_output_dashboard.classList.add('active');
+      toggleEls.btn_output_yaml.classList.remove('active');
+      toggleEls.output_dashboard_container.style.display = 'block';
+      toggleEls.output_yaml_container.style.display = 'none';
+      toggleEls.output_yaml_actions.style.display = 'none';
+    });
+
+    toggleEls.btn_output_yaml.addEventListener('click', () => {
+      toggleEls.btn_output_yaml.classList.add('active');
+      toggleEls.btn_output_dashboard.classList.remove('active');
+      toggleEls.output_dashboard_container.style.display = 'none';
+      toggleEls.output_yaml_container.style.display = 'block';
+      toggleEls.output_yaml_actions.style.display = 'flex';
+      toggleEls.output_yaml_text.value = generateOutputYAML();
+    });
+
+    // 3. Input YAML Live Editing
+    toggleEls.input_yaml_text.addEventListener('input', () => {
+      parseAndApplyInputYAML(toggleEls.input_yaml_text.value);
+    });
+
+    // 4. Clipboard Copy Handlers
+    function copyToClipboard(text, badgeEl) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+          showBadge(badgeEl);
+        }).catch(() => {
+          fallbackCopy(text, badgeEl);
+        });
+      } else {
+        fallbackCopy(text, badgeEl);
+      }
+    }
+
+    function fallbackCopy(text, badgeEl) {
+      const tempArea = document.createElement('textarea');
+      tempArea.value = text;
+      tempArea.style.position = 'fixed';
+      tempArea.style.opacity = '0';
+      document.body.appendChild(tempArea);
+      tempArea.select();
+      try {
+        document.execCommand('copy');
+        showBadge(badgeEl);
+      } catch (e) {
+        console.error('Copy failed', e);
+      }
+      document.body.removeChild(tempArea);
+    }
+
+    function showBadge(el) {
+      el.style.display = 'inline-block';
+      setTimeout(() => {
+        el.style.display = 'none';
+      }, 2000);
+    }
+
+    toggleEls.btn_copy_input_yaml.addEventListener('click', () => {
+      copyToClipboard(toggleEls.input_yaml_text.value, toggleEls.input_yaml_badge);
+    });
+
+    toggleEls.btn_copy_output_yaml.addEventListener('click', () => {
+      copyToClipboard(toggleEls.output_yaml_text.value, toggleEls.output_yaml_badge);
+    });
+
+    // Initialize calculation on page load
+    calculate();
+  </script>
+</body>
+</html>
